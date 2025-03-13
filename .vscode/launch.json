@@ -1,0 +1,67 @@
+{
+        "version": "0.2.0",
+        "configurations": [
+                {
+                        "name": "test",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "test",
+                        "program": "${fileDirname}"
+                },
+                {
+                        "name": "attach",
+                        "type": "go",
+                        "request": "attach",
+                        "mode": "local",
+                        "processId": "${command:pickGoProcess}"
+                },
+                {
+                        "name": "start server",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "start",
+                                "server",
+                                "--log-level=debug",
+                                "--log-headers=true",
+                                "--log-bodies=true",
+                                "--grpc-listener-address=localhost:8000",
+                                "--db-url=postgres://service:service123@localhost:5432/service"
+                        ]
+                },
+                {
+                        "name": "start gateway",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "start",
+                                "gateway",
+                                "--log-level=debug",
+                                "--log-headers=true",
+                                "--log-bodies=true",
+                                "--http-listener-address=localhost:8001",
+                                "--grpc-server-address=localhost:8000",
+                                "--grpc-server-plaintext"
+                        ]
+                },
+                {
+                        "name": "start publisher",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "start",
+                                "publisher",
+                                "--log-level=debug",
+                                "--log-headers=true",
+                                "--log-bodies=true",
+                                "--db-url=postgres://service:service123@localhost:5432/service"
+                        ]
+                }
+        ]
+}
