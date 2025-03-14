@@ -16,14 +16,8 @@ kind: Deployment
 metadata:
   name: fulfillment-publisher
 spec:
-  selector:
-    matchLabels:
-      app: fulfillment-publisher
   replicas: 1
   template:
-    metadata:
-      labels:
-        app: fulfillment-publisher
     spec:
       containers:
       - name: publisher
