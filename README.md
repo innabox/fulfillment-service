@@ -27,7 +27,7 @@ To run unit the unit tests run `ginkgo run -r`.
 
 ## Running the service
 
-To run the service you will previously need have the PostgreSQL database up and running, and create a database for the
+To run the service you will previously need to have the PostgreSQL server up and running, and create a database for the
 service. For example, assuming that you already have administrator access to the database you can create a `service`
 user with password `service123` and a `service` database with the following commands:
 
@@ -130,9 +130,9 @@ it:
 
 In order to be able to use gRPC in an OpenShift cluster it is necessary to enable HTTP/2:
 
-    $ oc annotate ingresses.config/cluster ingress.operator.openshift.io/default-enable-http2=true
+    $ kubectl annotate ingresses.config/cluster ingress.operator.openshift.io/default-enable-http2=true
 
-To deploy to an using the default image run the following command:
+To deploy using the default image run the following command:
 
     $ kubectl apply -k manifests
 
@@ -184,5 +184,5 @@ gRPC server and the REST gateway are working:
           "title": "your_template",
           "description": "Your template is _ugly_."
         }
-  ]
-}
+      ]
+    }
