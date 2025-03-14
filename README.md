@@ -169,7 +169,7 @@ gRPC server and the REST gateway are working:
       ]
     }
 
-    $  curl --silent --insecure https://fulfillment-api-innabox.apps.sno.home.arpa:443/api/fulfillment/v1/cluster_templates | jq
+    $  curl --silent --insecure https://fulfillment-api-innabox.apps.mycluster.com/api/fulfillment/v1/cluster_templates | jq
     {
       "size": 2,
       "total": 2,
