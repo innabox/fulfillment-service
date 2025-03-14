@@ -25,17 +25,31 @@ To build the `fulfillment-service` binary run `go build`.
 
 To run unit the unit tests run `ginkgo run -r`.
 
-## Running the service
+## Running PostgreSQL
 
-To run the service you will previously need to have the PostgreSQL server up and running, and create a database for the
-service. For example, assuming that you already have administrator access to the database you can create a `service`
-user with password `service123` and a `service` database with the following commands:
+To quickly run a local postgresql database in a container, run the following command:
 
-    postgres=# create user service with password 'service123';
+```
+podman run -d --name postgresql_database \
+  -e POSTGRESQL_USER=user -e POSTGRESQL_PASSWORD=pass -e POSTGRESQL_DATABASE=db \
+  -p 127.0.0.1:5432:5432 quay.io/sclorg/postgresql-15-c9s:latest
+```
+
+Done!
+
+Or if you prefer to install and run postgresql directly on your development
+system, you'll need to create a database for the service. For example, assuming
+that you already have administrator access to the database, you can create a
+user `user` with password `pass` and a database `db` with the following
+commands:
+
+    postgres=# create user user with password 'pass';
     CREATE ROLE
-    postgres=# create database service owner service;
+    postgres=# create database db owner user;
     CREATE DATABASE
     postgres=#
+
+## Running the fulfillment-service
 
 To run the the gRPC server use a command like this:
 
@@ -44,7 +58,7 @@ To run the the gRPC server use a command like this:
     --log-headers=true \
     --log-bodies=true \
     --grpc-listener-address=localhost:8000 \
-    --db-url=postgres://service:service123@localhost:5432/service
+    --db-url=postgres://user:pass@localhost:5432/db
 
 To run the the REST gateway use a command like this:
 
