@@ -20,7 +20,7 @@ func AddFlags(set *pflag.FlagSet) {
 	_ = set.String(
 		levelFlagName,
 		"info",
-		"Log level. Possible values are 'debug', 'info', 'warn' and 'error'. The default is 'info.",
+		"Log level. Possible values are 'debug', 'info', 'warn' and 'error'.",
 	)
 	_ = set.String(
 		fileFlagName,

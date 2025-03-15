@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 
+	"github.com/innabox/fulfillment-service/internal/logging"
 	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
@@ -49,13 +50,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	keysFile = keysFD.Name()
 
-	// Create a logger that writes to the Ginkgo writer, so that the log messages will be
-	// attached to the output of the right test:
-	options := &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}
-	handler := slog.NewJSONHandler(GinkgoWriter, options)
-	logger = slog.New(handler)
+	// Create a logger that writes to the Ginkgo writer, so that the log
+	// messages will be attached to the output of the right test:
+	logger, err = logging.NewLogger().
+		SetLevel("debug").
+		SetWriter(GinkgoWriter).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {

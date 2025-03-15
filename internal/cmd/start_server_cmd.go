@@ -14,7 +14,9 @@ language governing permissions and limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -44,13 +46,24 @@ func NewStartServerCommand() *cobra.Command {
 	flags := command.Flags()
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	database.AddFlags(flags)
+	auth.AddGrpcJwksAuthnFlags(flags)
+	flags.StringVar(
+		&runner.grpcAuthnType,
+		"grpc-authn-type",
+		auth.GrpcGuestAuthnType,
+		fmt.Sprintf(
+			"Type of gRPC authentication. Valid values are \"%s\" and \"%s\"",
+			auth.GrpcGuestAuthnType, auth.GrpcJwksAuthnType,
+		),
+	)
 	return command
 }
 
 // startServerCommandRunner contains the data and logic needed to run the `start server` command.
 type startServerCommandRunner struct {
-	logger *slog.Logger
-	flags  *pflag.FlagSet
+	logger        *slog.Logger
+	flags         *pflag.FlagSet
+	grpcAuthnType string
 }
 
 // run runs the `start server` command.
@@ -123,9 +136,34 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 
 	// Prepare the authentication interceptor:
 	c.logger.InfoContext(ctx, "Creating authentication interceptor")
-	authInterceptor, err := auth.NewInterceptor().
+	var authnFunc auth.GrpcAuthnFunc
+	switch strings.ToLower(c.grpcAuthnType) {
+	case auth.GrpcGuestAuthnType:
+		authnFunc, err = auth.NewGrpcGuestAuthnFunc().
+			SetLogger(c.logger).
+			SetFlags(c.flags).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create gRPC guest authentication function: %w", err)
+		}
+	case auth.GrpcJwksAuthnType:
+		authnFunc, err = auth.NewGrpcJwksAuthnFunc().
+			SetLogger(c.logger).
+			SetFlags(c.flags).
+			AddPublicMethodRegex(`^/grpc\.reflection\.v1\..*$`).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create gRPC JWKS authentication function: %w", err)
+		}
+	default:
+		return fmt.Errorf(
+			"unknown gRPC authentication type '%s', valid values are '%s' and '%s'",
+			c.grpcAuthnType, auth.GrpcGuestAuthnType, auth.GrpcJwksAuthnType,
+		)
+	}
+	authnInterceptor, err := auth.NewGrpcAuthnInterceptor().
 		SetLogger(c.logger).
-		SetFlags(c.flags).
+		SetFunction(authnFunc).
 		Build()
 	if err != nil {
 		return err
@@ -136,17 +174,17 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			loggingInterceptor.UnaryServer,
-			authInterceptor.UnaryServer,
+			authnInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
 			loggingInterceptor.StreamServer,
-			authInterceptor.StreamServer,
+			authnInterceptor.StreamServer,
 		),
 	)
 
 	// Register the reflection server:
 	c.logger.InfoContext(ctx, "Registering gRPC reflection server")
-	reflection.Register(grpcServer)
+	reflection.RegisterV1(grpcServer)
 
 	// Create the cluster templates server:
 	c.logger.InfoContext(ctx, "Creating cluster templates server")
