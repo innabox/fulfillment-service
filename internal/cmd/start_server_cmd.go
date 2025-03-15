@@ -47,6 +47,7 @@ func NewStartServerCommand() *cobra.Command {
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	database.AddFlags(flags)
 	auth.AddGrpcJwksAuthnFlags(flags)
+	auth.AddGrpcAclAuthzFlags(flags)
 	flags.StringVar(
 		&runner.grpcAuthnType,
 		"grpc-authn-type",
@@ -54,6 +55,15 @@ func NewStartServerCommand() *cobra.Command {
 		fmt.Sprintf(
 			"Type of gRPC authentication. Valid values are \"%s\" and \"%s\"",
 			auth.GrpcGuestAuthnType, auth.GrpcJwksAuthnType,
+		),
+	)
+	flags.StringVar(
+		&runner.grpcAuthzType,
+		"grpc-authz-type",
+		auth.GrpcAllAuthzType,
+		fmt.Sprintf(
+			"Type of gRPC authorization. Valid values are \"%s\" and \"%s\"",
+			auth.GrpcAllAuthzType, auth.GrpcAclAuthzType,
 		),
 	)
 	return command
@@ -64,6 +74,7 @@ type startServerCommandRunner struct {
 	logger        *slog.Logger
 	flags         *pflag.FlagSet
 	grpcAuthnType string
+	grpcAuthzType string
 }
 
 // run runs the `start server` command.
@@ -135,7 +146,11 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 
 	// Prepare the authentication interceptor:
-	c.logger.InfoContext(ctx, "Creating authentication interceptor")
+	c.logger.InfoContext(
+		ctx,
+		"Creating authentication interceptor",
+		slog.String("type", c.grpcAuthnType),
+	)
 	var authnFunc auth.GrpcAuthnFunc
 	switch strings.ToLower(c.grpcAuthnType) {
 	case auth.GrpcGuestAuthnType:
@@ -150,7 +165,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		authnFunc, err = auth.NewGrpcJwksAuthnFunc().
 			SetLogger(c.logger).
 			SetFlags(c.flags).
-			AddPublicMethodRegex(`^/grpc\.reflection\.v1\..*$`).
+			AddPublicMethodRegex(publicMethodRegex).
 			Build()
 		if err != nil {
 			return fmt.Errorf("failed to create gRPC JWKS authentication function: %w", err)
@@ -169,16 +184,57 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return err
 	}
 
+	// Prepare the authorization interceptor:
+	c.logger.InfoContext(
+		ctx,
+		"Creating authorization interceptor",
+		slog.String("type", c.grpcAuthzType),
+	)
+	var authzFunc auth.GrpcAuthzFunc
+	switch strings.ToLower(c.grpcAuthzType) {
+	case auth.GrpcAllAuthzType:
+		authzFunc, err = auth.NewGrpcAllAuthzFunc().
+			SetLogger(c.logger).
+			SetFlags(c.flags).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create gRPC all authorization function: %w", err)
+		}
+	case auth.GrpcAclAuthzType:
+		authzFunc, err = auth.NewGrpcAclAuthzFunc().
+			SetLogger(c.logger).
+			SetFlags(c.flags).
+			AddPublicMethodRegex(publicMethodRegex).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create gRPC ACL authorization function: %w", err)
+		}
+	default:
+		return fmt.Errorf(
+			"unknown gRPC authorization type '%s', valid values are '%s' and '%s'",
+			c.grpcAuthzType, auth.GrpcAllAuthzType, auth.GrpcAclAuthzType,
+		)
+	}
+	authzInterceptor, err := auth.NewGrpcAuthzInterceptor().
+		SetLogger(c.logger).
+		SetFunction(authzFunc).
+		Build()
+	if err != nil {
+		return err
+	}
+
 	// Create the gRPC server:
 	c.logger.InfoContext(ctx, "Creating gRPC server")
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			loggingInterceptor.UnaryServer,
 			authnInterceptor.UnaryServer,
+			authzInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
 			loggingInterceptor.StreamServer,
 			authnInterceptor.StreamServer,
+			authzInterceptor.StreamServer,
 		),
 	)
 
@@ -234,3 +290,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}()
 	return grpcServer.Serve(listener)
 }
+
+// publicMethodRegex is regular expression for the methods that are considered public, including the reflection methods.
+// These will skip authentication and authorization.
+const publicMethodRegex = `^/grpc\.reflection\.v1\..*$`
