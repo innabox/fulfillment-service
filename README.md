@@ -159,13 +159,21 @@ If you want to deploy using your own image, then you will need first to edit the
     $ cd manifests
     $ kustomize edit set image fulfillment-service=quay.io/myuser/fulfillment-service:latest
 
+The server deployed to the OpenShift cluster requires authentication. Before using it you will need to obtain the
+token of the `client` service account that is created for that. Use a command like this to obtain the token and save it
+into the `token` environment variable:
+
+    $ export token=$(kubectl create token -n innabox client)
+
 To verify that the deployment is working get the URL of the route, and use `grpcurl` and `curl` to verify that both the
 gRPC server and the REST gateway are working:
 
     $ kubectl get route -n innabox fulfillment-api -o json | jq -r '.spec.host'
     fulfillment-api-innabox.apps.mycluster.com
 
-    $ grpcurl -insecure fulfillment-api-innabox.apps.mycluster.com:443 fulfillment.v1.ClusterTemplates/List
+    $ grpcurl -insecure
+    -H "Authorization: Bearer ${token}" \
+    fulfillment-api-innabox.apps.mycluster.com:443 fulfillment.v1.ClusterTemplates/List
     {
       "size": 2,
       "total": 2,
@@ -183,7 +191,9 @@ gRPC server and the REST gateway are working:
       ]
     }
 
-    $  curl --silent --insecure https://fulfillment-api-innabox.apps.mycluster.com/api/fulfillment/v1/cluster_templates | jq
+    $  curl --silent --insecure \
+    --header "Authorization: Bearer ${token}" \
+    https://fulfillment-api-innabox.apps.mycluster.com:443/api/fulfillment/v1/cluster_templates | jq
     {
       "size": 2,
       "total": 2,
