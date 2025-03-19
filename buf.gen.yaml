@@ -18,11 +18,14 @@ managed:
   override:
   - file_option: go_package_prefix
     value: github.com/innabox/fulfillment-service/internal/api
+  disable:
+  - module: buf.build/googleapis/googleapis
+  - module: buf.build/grpc-ecosystem/grpc-gateway
 
 inputs:
 
 - git_repo: https://github.com/innabox/fulfillment-api.git
-  tag: v0.0.2
+  tag: v0.0.3
   subdir: proto
 
 plugins:

@@ -22,6 +22,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/database/models"
 	"github.com/spf13/pflag"
+	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -144,6 +145,60 @@ func (s *ClustersServer) Get(ctx context.Context,
 	response = &api.ClustersGetResponse{
 		Cluster: result,
 	}
+	return
+}
+
+func (s *ClustersServer) GetKubeconfig(ctx context.Context,
+	request *api.ClustersGetKubeconfigRequest) (response *api.ClustersGetKubeconfigResponse, err error) {
+	kubeconfig, err := s.getKubeconfig(ctx, request.ClusterId)
+	if err != nil {
+		return
+	}
+	response = &api.ClustersGetKubeconfigResponse{
+		Kubeconfig: string(kubeconfig),
+	}
+	return
+}
+
+func (s *ClustersServer) GetKubeconfigViaHttp(ctx context.Context,
+	request *api.ClustersGetKubeconfigViaHttpRequest) (response *httpbody.HttpBody, err error) {
+	kubeconfig, err := s.getKubeconfig(ctx, request.ClusterId)
+	if err != nil {
+		return
+	}
+	response = &httpbody.HttpBody{
+		ContentType: "application/yaml",
+		Data:        kubeconfig,
+	}
+	return
+}
+
+func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (kubeconfig []byte, err error) {
+	// Validate the request:
+	if clusterId == "" {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'cluster_id' is mandatory")
+		return
+	}
+
+	// Check that the cluster exists:
+	ok, err := s.daos.Clusters().Exists(ctx, clusterId)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster",
+			slog.String("cluster_id", clusterId),
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster with id '%s'", clusterId)
+		return
+	}
+	if !ok {
+		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with id '%s' not found", clusterId)
+		return
+	}
+
+	// TODO: Fetch the kubeconfig.
+	kubeconfig = []byte{}
 	return
 }
 

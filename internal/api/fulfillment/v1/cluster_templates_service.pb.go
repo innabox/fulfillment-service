@@ -20,7 +20,7 @@
 package fulfillmentv1
 
 import (
-	_ "github.com/innabox/fulfillment-service/internal/api/google/api"
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"

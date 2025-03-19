@@ -21,6 +21,7 @@ package fulfillmentv1
 
 import (
 	context "context"
+	httpbody "google.golang.org/genproto/googleapis/api/httpbody"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -32,8 +33,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Clusters_List_FullMethodName = "/fulfillment.v1.Clusters/List"
-	Clusters_Get_FullMethodName  = "/fulfillment.v1.Clusters/Get"
+	Clusters_List_FullMethodName                 = "/fulfillment.v1.Clusters/List"
+	Clusters_Get_FullMethodName                  = "/fulfillment.v1.Clusters/Get"
+	Clusters_GetKubeconfig_FullMethodName        = "/fulfillment.v1.Clusters/GetKubeconfig"
+	Clusters_GetKubeconfigViaHttp_FullMethodName = "/fulfillment.v1.Clusters/GetKubeconfigViaHttp"
 )
 
 // ClustersClient is the client API for Clusters service.
@@ -44,6 +47,18 @@ type ClustersClient interface {
 	List(ctx context.Context, in *ClustersListRequest, opts ...grpc.CallOption) (*ClustersListResponse, error)
 	// Retrieves the details of one specific cluster.
 	Get(ctx context.Context, in *ClustersGetRequest, opts ...grpc.CallOption) (*ClustersGetResponse, error)
+	// Returns the admin Kubeconfig of the cluster.
+	//
+	// This intended for use with the gRPC protocol, and it isn't mapped to an HTTP endpoint. To retrieve the Kubeconfig
+	// via HTTP see the `ClustersGetKubeconfigViaHttp` method below.
+	GetKubeconfig(ctx context.Context, in *ClustersGetKubeconfigRequest, opts ...grpc.CallOption) (*ClustersGetKubeconfigResponse, error)
+	// Returns the admin Kubeconfig of the cluster.
+	//
+	// This is intended for use with HTTP and returns the YAML text of the Kubeconfig directly using the content type
+	// `application/yaml`.
+	//
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	GetKubeconfigViaHttp(ctx context.Context, in *ClustersGetKubeconfigViaHttpRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error)
 }
 
 type clustersClient struct {
@@ -74,6 +89,26 @@ func (c *clustersClient) Get(ctx context.Context, in *ClustersGetRequest, opts .
 	return out, nil
 }
 
+func (c *clustersClient) GetKubeconfig(ctx context.Context, in *ClustersGetKubeconfigRequest, opts ...grpc.CallOption) (*ClustersGetKubeconfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClustersGetKubeconfigResponse)
+	err := c.cc.Invoke(ctx, Clusters_GetKubeconfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clustersClient) GetKubeconfigViaHttp(ctx context.Context, in *ClustersGetKubeconfigViaHttpRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(httpbody.HttpBody)
+	err := c.cc.Invoke(ctx, Clusters_GetKubeconfigViaHttp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClustersServer is the server API for Clusters service.
 // All implementations must embed UnimplementedClustersServer
 // for forward compatibility.
@@ -82,6 +117,18 @@ type ClustersServer interface {
 	List(context.Context, *ClustersListRequest) (*ClustersListResponse, error)
 	// Retrieves the details of one specific cluster.
 	Get(context.Context, *ClustersGetRequest) (*ClustersGetResponse, error)
+	// Returns the admin Kubeconfig of the cluster.
+	//
+	// This intended for use with the gRPC protocol, and it isn't mapped to an HTTP endpoint. To retrieve the Kubeconfig
+	// via HTTP see the `ClustersGetKubeconfigViaHttp` method below.
+	GetKubeconfig(context.Context, *ClustersGetKubeconfigRequest) (*ClustersGetKubeconfigResponse, error)
+	// Returns the admin Kubeconfig of the cluster.
+	//
+	// This is intended for use with HTTP and returns the YAML text of the Kubeconfig directly using the content type
+	// `application/yaml`.
+	//
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	GetKubeconfigViaHttp(context.Context, *ClustersGetKubeconfigViaHttpRequest) (*httpbody.HttpBody, error)
 	mustEmbedUnimplementedClustersServer()
 }
 
@@ -97,6 +144,12 @@ func (UnimplementedClustersServer) List(context.Context, *ClustersListRequest) (
 }
 func (UnimplementedClustersServer) Get(context.Context, *ClustersGetRequest) (*ClustersGetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedClustersServer) GetKubeconfig(context.Context, *ClustersGetKubeconfigRequest) (*ClustersGetKubeconfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetKubeconfig not implemented")
+}
+func (UnimplementedClustersServer) GetKubeconfigViaHttp(context.Context, *ClustersGetKubeconfigViaHttpRequest) (*httpbody.HttpBody, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetKubeconfigViaHttp not implemented")
 }
 func (UnimplementedClustersServer) mustEmbedUnimplementedClustersServer() {}
 func (UnimplementedClustersServer) testEmbeddedByValue()                  {}
@@ -155,6 +208,42 @@ func _Clusters_Get_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Clusters_GetKubeconfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersGetKubeconfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).GetKubeconfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_GetKubeconfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).GetKubeconfig(ctx, req.(*ClustersGetKubeconfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Clusters_GetKubeconfigViaHttp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersGetKubeconfigViaHttpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).GetKubeconfigViaHttp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_GetKubeconfigViaHttp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).GetKubeconfigViaHttp(ctx, req.(*ClustersGetKubeconfigViaHttpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Clusters_ServiceDesc is the grpc.ServiceDesc for Clusters service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -169,6 +258,14 @@ var Clusters_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _Clusters_Get_Handler,
+		},
+		{
+			MethodName: "GetKubeconfig",
+			Handler:    _Clusters_GetKubeconfig_Handler,
+		},
+		{
+			MethodName: "GetKubeconfigViaHttp",
+			Handler:    _Clusters_GetKubeconfigViaHttp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
