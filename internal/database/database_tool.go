@@ -90,7 +90,7 @@ func (b *ToolBuilder) SetFlags(flags *pflag.FlagSet) *ToolBuilder {
 		b.logger.Error(
 			"Failed to get flag value",
 			slog.String("flag", flag),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 
@@ -145,7 +145,7 @@ func (t *tool) Wait(ctx context.Context) error {
 			t.logger.InfoContext(
 				ctx,
 				"Database isn't responding yet",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			time.Sleep(1 * time.Second)
 			continue
@@ -155,7 +155,7 @@ func (t *tool) Wait(ctx context.Context) error {
 			t.logger.ErrorContext(
 				ctx,
 				"Failed to close database connection",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 		return nil
@@ -192,8 +192,8 @@ func (t *tool) Migrate(ctx context.Context) error {
 			t.logger.ErrorContext(
 				ctx,
 				"Failed to close migrations",
-				slog.String("source", sourceErr.Error()),
-				slog.String("database", databaseErr.Error()),
+				slog.Any("source", sourceErr),
+				slog.Any("database", databaseErr),
 			)
 		}
 	}()

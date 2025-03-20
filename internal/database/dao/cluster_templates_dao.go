@@ -88,7 +88,7 @@ func (d *clusterTemplatesDAO) List(ctx context.Context) (items []*models.Cluster
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -136,7 +136,7 @@ func (d *clusterTemplatesDAO) Get(ctx context.Context, id string) (item *models.
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()

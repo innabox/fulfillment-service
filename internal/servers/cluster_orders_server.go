@@ -89,7 +89,7 @@ func (s *ClusterOrdersServer) List(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to list cluster orders",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list cluster orders")
 		return
@@ -102,7 +102,7 @@ func (s *ClusterOrdersServer) List(ctx context.Context,
 			s.logger.ErrorContext(
 				ctx,
 				"Failed to map outbound cluster order",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster order")
 			return
@@ -209,7 +209,7 @@ func (s *ClusterOrdersServer) Place(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to insert cluster order",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to create order")
 		return
@@ -221,7 +221,7 @@ func (s *ClusterOrdersServer) Place(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get cluster order",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster order with identifier '%s'", id)
 		return
@@ -232,7 +232,7 @@ func (s *ClusterOrdersServer) Place(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to map outbound cluster order",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
 		return
@@ -252,7 +252,7 @@ func (s *ClusterOrdersServer) Cancel(ctx context.Context,
 			ctx,
 			"Failed to check if cluster order exists",
 			slog.String("order_id", request.OrderId),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal,
 			"failed to check if cluster order '%s' exists",
@@ -276,7 +276,7 @@ func (s *ClusterOrdersServer) Cancel(ctx context.Context,
 			ctx,
 			"Failed to update cluster order state",
 			slog.String("order_id", request.OrderId),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(
 			grpccodes.Internal,

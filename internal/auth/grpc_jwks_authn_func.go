@@ -388,7 +388,7 @@ func (f *grpcJwksAuthnFunc) callWithAuth(ctx context.Context, method string, aut
 				ctx,
 				"Authentication failed for public method",
 				slog.String("method", method),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			result = ContextWithSubject(ctx, Guest)
 			err = nil
@@ -539,7 +539,7 @@ func (f *grpcJwksAuthnFunc) loadKeys(ctx context.Context) error {
 				ctx,
 				"Failed load keys from file",
 				slog.String("file", keysFile),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}
@@ -557,7 +557,7 @@ func (f *grpcJwksAuthnFunc) loadKeys(ctx context.Context) error {
 				ctx,
 				"Failed to load keys from URL",
 				slog.String("url", keysURL),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}
@@ -578,7 +578,7 @@ func (f *grpcJwksAuthnFunc) loadKeysFile(ctx context.Context, file string) error
 				ctx,
 				"Failed to close keys file",
 				slog.String("file", file),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -607,7 +607,7 @@ func (f *grpcJwksAuthnFunc) loadKeysURL(ctx context.Context, addr string) error 
 				ctx,
 				"Failed to close response body",
 				slog.String("url", addr),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -632,7 +632,7 @@ func (f *grpcJwksAuthnFunc) selectKeysToken(ctx context.Context) string {
 				ctx,
 				"Failed to read keys token from file",
 				slog.String("file", f.keysTokenFile),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		} else {
 			return string(data)
@@ -713,7 +713,7 @@ func (f *grpcJwksAuthnFunc) readKeys(ctx context.Context, reader io.Reader) erro
 				ctx,
 				"Key will be ignored because it can't be parsed",
 				slog.String("kid", keyData.Kid),
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			continue
 		}
@@ -769,7 +769,7 @@ func (f *grpcJwksAuthnFunc) checkToken(ctx context.Context, bearer string) (toke
 			ctx,
 			"Failed to parse token",
 			slog.String("!token", bearer),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		switch {
 		case errors.Is(err, jwt.ErrTokenMalformed):

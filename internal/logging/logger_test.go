@@ -16,7 +16,9 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -686,5 +688,80 @@ var _ = Describe("Logger", func() {
 		err = json.Unmarshal([]byte(lines[0]), &msg)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(msg.MyGroup.MyField).To(Equal("***"))
+	})
+
+	It("Replaces error with the error message", func() {
+		// Create the logger:
+		buffer := &bytes.Buffer{}
+		logger, err := NewLogger().
+			SetWriter(io.MultiWriter(buffer, GinkgoWriter)).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Write a message:
+		logger.Info(
+			"my message",
+			slog.Any("error", errors.New("my error")),
+		)
+
+		// Check that error has been replaced:
+		lines := strings.Split(buffer.String(), "\n")
+		Expect(lines).To(HaveLen(2))
+		var msg struct {
+			Error errorDump `json:"error"`
+		}
+		err = json.Unmarshal([]byte(lines[0]), &msg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(msg.Error.Message).To(Equal("my error"))
+	})
+
+	It("Adds error goroutine identifier", func() {
+		// Create the logger:
+		buffer := &bytes.Buffer{}
+		logger, err := NewLogger().
+			SetWriter(io.MultiWriter(buffer, GinkgoWriter)).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Write a message:
+		logger.Info(
+			"my message",
+			slog.Any("error", errors.New("my error")),
+		)
+
+		// Check that error has been replaced:
+		lines := strings.Split(buffer.String(), "\n")
+		Expect(lines).To(HaveLen(2))
+		var msg struct {
+			Error errorDump `json:"error"`
+		}
+		err = json.Unmarshal([]byte(lines[0]), &msg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(msg.Error.Goroutine).To(BeNumerically(">=", 0))
+	})
+
+	It("Adds error stack", func() {
+		// Create the logger:
+		buffer := &bytes.Buffer{}
+		logger, err := NewLogger().
+			SetWriter(io.MultiWriter(buffer, GinkgoWriter)).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Write a message:
+		logger.Info(
+			"my message",
+			slog.Any("error", errors.New("my error")),
+		)
+
+		// Check that error has been replaced:
+		lines := strings.Split(buffer.String(), "\n")
+		Expect(lines).To(HaveLen(2))
+		var msg struct {
+			Error errorDump `json:"error"`
+		}
+		err = json.Unmarshal([]byte(lines[0]), &msg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(msg.Error.Stack).ToNot(BeEmpty())
 	})
 })
