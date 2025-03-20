@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -39,6 +40,7 @@ func NewStartGatewayCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	network.AddListenerFlags(flags, network.HttpListenerName, network.DefaultHttpAddress)
+	network.AddCorsFlags(flags, network.HttpListenerName)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	return command
 }
@@ -102,6 +104,16 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 		return err
 	}
 
+	// Add the CORS support:
+	corsMiddleware, err := network.NewCorsMiddleware().
+		SetLogger(c.logger).
+		SetFlags(c.flags, network.HttpListenerName).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create CORS middleware: %w", err)
+	}
+	handler := corsMiddleware(gatewayMux)
+
 	// Start serving:
 	c.logger.InfoContext(
 		ctx,
@@ -111,7 +123,7 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 	http2Server := &http2.Server{}
 	http1Server := &http.Server{
 		Addr:    gwListener.Addr().String(),
-		Handler: h2c.NewHandler(gatewayMux, http2Server),
+		Handler: h2c.NewHandler(handler, http2Server),
 	}
 	return http1Server.Serve(gwListener)
 }
