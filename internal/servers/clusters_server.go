@@ -87,7 +87,7 @@ func (s *ClustersServer) List(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to list clusters",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list clusters")
 		return
@@ -100,7 +100,7 @@ func (s *ClustersServer) List(ctx context.Context,
 			s.logger.ErrorContext(
 				ctx,
 				"Failed to map outbound cluster",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
 			return
@@ -136,7 +136,7 @@ func (s *ClustersServer) Get(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to map outbound cluster",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
 		return

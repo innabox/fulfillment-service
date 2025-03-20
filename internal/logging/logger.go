@@ -14,14 +14,19 @@ language governing permissions and limitations under the License.
 package logging
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
 	"os"
+	"reflect"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/DataDog/gostackparse"
 	"github.com/spf13/pflag"
 )
 
@@ -220,17 +225,29 @@ func (b *LoggerBuilder) Build() (result *slog.Logger, err error) {
 		}
 	}
 
+	// Create the helper:
+	helper := &loggerHelper{}
+
+	// Set the package prefixes that will be ignored in order to not include in the stack traces the fames of this
+	// package and of the internal Go packages that aren't of interest.
+	this := reflect.TypeOf(helper).Elem().PkgPath()
+	helper.internalFunctionPrefixes = []string{
+		"runtime/debug.",
+		"log/slog.",
+		fmt.Sprintf("%s.", this),
+	}
+
 	// Create the handler:
-	replacers := make([]func([]string, slog.Attr) slog.Attr, 0, 2)
-	replacers = append(replacers, replaceTime, replaceDuration)
+	replacers := make([]func([]string, slog.Attr) slog.Attr, 0, 3)
+	replacers = append(replacers, helper.replaceTime, helper.replaceDuration, helper.replaceError)
 	if b.redact {
-		replacers = append(replacers, replaceRedacted)
+		replacers = append(replacers, helper.replaceRedacted)
 	} else {
-		replacers = append(replacers, preserveRedacted)
+		replacers = append(replacers, helper.preserveRedacted)
 	}
 	options := &slog.HandlerOptions{
 		Level:       level,
-		ReplaceAttr: composeReplacers(replacers),
+		ReplaceAttr: helper.composeReplacers(replacers),
 	}
 	handler := slog.NewJSONHandler(writer, options)
 
@@ -302,7 +319,12 @@ func (b *LoggerBuilder) customField(name string, value any) (result any, err err
 	return
 }
 
-func composeReplacers(replacers []func([]string, slog.Attr) slog.Attr) func([]string, slog.Attr) slog.Attr {
+type loggerHelper struct {
+	internalFunctionPrefixes []string
+}
+
+func (h *loggerHelper) composeReplacers(
+	replacers []func([]string, slog.Attr) slog.Attr) func([]string, slog.Attr) slog.Attr {
 	return func(groups []string, a slog.Attr) slog.Attr {
 		for _, replacer := range replacers {
 			a = replacer(groups, a)
@@ -311,14 +333,15 @@ func composeReplacers(replacers []func([]string, slog.Attr) slog.Attr) func([]st
 	}
 }
 
-func replaceTime(groups []string, a slog.Attr) slog.Attr {
+func (h *loggerHelper) replaceTime(groups []string, a slog.Attr) slog.Attr {
 	if a.Value.Kind() == slog.KindTime {
 		value := a.Value.Time().UTC()
 		a = slog.String(a.Key, value.Format(time.RFC3339))
 	}
 	return a
 }
-func replaceDuration(groups []string, a slog.Attr) slog.Attr {
+
+func (h *loggerHelper) replaceDuration(groups []string, a slog.Attr) slog.Attr {
 	if a.Value.Kind() == slog.KindDuration {
 		value := a.Value.Duration().String()
 		a = slog.String(a.Key, value)
@@ -326,14 +349,86 @@ func replaceDuration(groups []string, a slog.Attr) slog.Attr {
 	return a
 }
 
-func replaceRedacted(groups []string, a slog.Attr) slog.Attr {
+func (h *loggerHelper) replaceError(groups []string, a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindAny {
+		err, ok := a.Value.Any().(error)
+		if ok && err != nil {
+			a = slog.Any(a.Key, h.formatError(err))
+		}
+	}
+	return a
+}
+
+func (h *loggerHelper) formatError(err error) any {
+	var dump errorDump
+	dump.Message = err.Error()
+	h.dumpStack(debug.Stack(), &dump)
+	return dump
+}
+
+type errorDump struct {
+	Message   string      `json:"message,omitempty"`
+	Goroutine int         `json:"goroutine,omitempty"`
+	Stack     []frameDump `json:"stack,omitempty"`
+}
+
+type frameDump struct {
+	Function string `json:"function,omitempty"`
+	File     string `json:"source,omitempty"`
+}
+
+func (h *loggerHelper) dumpStack(stack []byte, dump *errorDump) {
+	// Parse the stack:
+	goroutines, _ := gostackparse.Parse(bytes.NewBuffer(stack))
+	if len(goroutines) == 0 {
+		return
+	}
+	goroutine := goroutines[0]
+
+	// Add the goroutine identifier:
+	dump.Goroutine = goroutine.ID
+
+	// Skip all the stack frames till we find the first that isn't inside this logging package or the 'slog'
+	// package, as those are of no interest in most cases.
+	frames := goroutine.Stack
+	for {
+		if len(frames) == 0 {
+			break
+		}
+		frame := frames[0]
+		if !h.isInternalFunction(frame.Func) {
+			break
+		}
+		frames = frames[1:]
+	}
+
+	// Dump the rest of remaining stack frames:
+	dump.Stack = make([]frameDump, len(frames))
+	for i, frame := range frames {
+		dump.Stack[i] = frameDump{
+			Function: frame.Func,
+			File:     fmt.Sprintf("%s:%d", frame.File, frame.Line),
+		}
+	}
+}
+
+func (h *loggerHelper) isInternalFunction(function string) bool {
+	for _, internalFunctionPrefix := range h.internalFunctionPrefixes {
+		if strings.HasPrefix(function, internalFunctionPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *loggerHelper) replaceRedacted(groups []string, a slog.Attr) slog.Attr {
 	if strings.HasPrefix(a.Key, "!") {
 		a = slog.String(a.Key[1:], redactMark)
 	}
 	return a
 }
 
-func preserveRedacted(groups []string, a slog.Attr) slog.Attr {
+func (h *loggerHelper) preserveRedacted(groups []string, a slog.Attr) slog.Attr {
 	a.Key = strings.TrimPrefix(a.Key, "!")
 	return a
 }

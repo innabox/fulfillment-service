@@ -98,7 +98,7 @@ func (s *EventsServer) Watch(request *api.EventsWatchRequest,
 			s.logger.ErrorContext(
 				ctx,
 				"Failed to send event",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			return err
 		}

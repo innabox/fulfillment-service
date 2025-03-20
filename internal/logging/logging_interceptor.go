@@ -189,7 +189,7 @@ func (i *Interceptor) UnaryServer(ctx context.Context, request any, info *grpc.U
 		}
 	}
 	if err != nil {
-		errField := slog.String("error", err.Error())
+		errField := slog.Any("error", err)
 		responseFields = append(responseFields, errField)
 	}
 	i.logger.DebugContext(ctx, "Sent unary response", responseFields...)
@@ -256,7 +256,7 @@ func (i *Interceptor) StreamServer(server any, stream grpc.ServerStream, info *g
 		timeField,
 	}
 	if err != nil {
-		errField := slog.String("error", err.Error())
+		errField := slog.Any("error", err)
 		responseFields = append(responseFields, errField)
 	}
 	i.logger.DebugContext(ctx, "Sent stream stop response", responseFields...)
@@ -310,7 +310,7 @@ func (i *Interceptor) dumpMessage(ctx context.Context, key string, value any) (f
 			i.logger.ErrorContext(
 				ctx,
 				"Failed to marshal protocol buffers message",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			return
 		}
@@ -320,7 +320,7 @@ func (i *Interceptor) dumpMessage(ctx context.Context, key string, value any) (f
 			i.logger.ErrorContext(
 				ctx,
 				"Failed to unmarshal protocol buffers message",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			return
 		}
@@ -363,7 +363,7 @@ func (s *interceptorStream) RecvMsg(message any) error {
 		}
 	}
 	if err != nil {
-		errField := slog.String("error", err.Error())
+		errField := slog.Any("error", err)
 		messageFields = append(messageFields, errField)
 	}
 	s.logger.DebugContext(ctx, "Received stream message", messageFields...)
@@ -386,7 +386,7 @@ func (s *interceptorStream) SendHeader(md metadata.MD) error {
 		metadataFields = append(metadataFields, mdField)
 	}
 	if err != nil {
-		errField := slog.String("error", err.Error())
+		errField := slog.Any("error", err)
 		metadataFields = append(metadataFields, errField)
 	}
 	s.logger.DebugContext(ctx, "Sent stream metadata", metadataFields...)
@@ -408,7 +408,7 @@ func (s *interceptorStream) SendMsg(message any) error {
 		}
 	}
 	if err != nil {
-		errField := slog.String("error", err.Error())
+		errField := slog.Any("error", err)
 		messageFields = append(messageFields, errField)
 	}
 	s.logger.DebugContext(ctx, "Sent stream message", messageFields...)
@@ -431,7 +431,7 @@ func (s *interceptorStream) SetHeader(md metadata.MD) error {
 		metadataFields = append(metadataFields, mdField)
 	}
 	if err != nil {
-		errField := slog.String("error", err.Error())
+		errField := slog.Any("error", err)
 		metadataFields = append(metadataFields, errField)
 	}
 	s.logger.DebugContext(ctx, "Set stream metadata", metadataFields...)

@@ -67,7 +67,7 @@ func (b *ListenerBuilder) SetFlags(flags *pflag.FlagSet, name string) *ListenerB
 		b.logger.Error(
 			"Failed to get flag value",
 			slog.String("flag", "flag"),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 	}
 

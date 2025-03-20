@@ -92,7 +92,7 @@ func (d *clustersDAO) List(ctx context.Context) (items []*models.Cluster, err er
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -147,7 +147,7 @@ func (d *clustersDAO) Exists(ctx context.Context, id string) (ok bool, err error
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -181,7 +181,7 @@ func (d *clustersDAO) Get(ctx context.Context, id string) (item *models.Cluster,
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -229,7 +229,7 @@ func (d *clustersDAO) Insert(ctx context.Context, cluster *models.Cluster) (id s
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to commit transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()
@@ -268,7 +268,7 @@ func (d *clustersDAO) Delete(ctx context.Context, id string) error {
 			d.logger.ErrorContext(
 				ctx,
 				"Failed to commit transaction",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 		}
 	}()

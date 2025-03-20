@@ -33,6 +33,7 @@ require (
 )
 
 require (
+	github.com/DataDog/gostackparse v0.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/golang-migrate/migrate/v4 v4.18.2
 	github.com/jackc/pgx/v5 v5.7.2

@@ -88,7 +88,7 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to list cluster templates",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list cluster templates")
 		return
@@ -101,7 +101,7 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 			s.logger.ErrorContext(
 				ctx,
 				"Failed to map outbound cluster template",
-				slog.String("error", err.Error()),
+				slog.Any("error", err),
 			)
 			return
 		}
@@ -122,7 +122,7 @@ func (s *ClusterTemplatesServer) Get(ctx context.Context,
 			ctx,
 			"Failed to get cluster template",
 			slog.String("template_id", request.TemplateId),
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(
 			grpccodes.Internal,
@@ -145,7 +145,7 @@ func (s *ClusterTemplatesServer) Get(ctx context.Context,
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to map outbound cluster template",
-			slog.String("error", err.Error()),
+			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound template")
 		return
