@@ -21,8 +21,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/models"
 )
 
@@ -36,7 +36,6 @@ type ClustersDAO interface {
 
 type ClustersDAOBuilder struct {
 	logger *slog.Logger
-	pool   *pgxpool.Pool
 }
 
 type clustersDAO struct {
@@ -52,19 +51,10 @@ func (b *ClustersDAOBuilder) SetLogger(value *slog.Logger) *ClustersDAOBuilder {
 	return b
 }
 
-func (b *ClustersDAOBuilder) SetPool(value *pgxpool.Pool) *ClustersDAOBuilder {
-	b.pool = value
-	return b
-}
-
 func (b *ClustersDAOBuilder) Build() (result ClustersDAO, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = fmt.Errorf("logger is mandatory")
-		return
-	}
-	if b.pool == nil {
-		err = fmt.Errorf("database connection pool is mandatory")
 		return
 	}
 
@@ -72,30 +62,18 @@ func (b *ClustersDAOBuilder) Build() (result ClustersDAO, err error) {
 	result = &clustersDAO{
 		baseDAO: baseDAO{
 			logger: b.logger,
-			pool:   b.pool,
 		},
 	}
 	return
 }
 
 func (d *clustersDAO) List(ctx context.Context) (items []*models.Cluster, err error) {
-	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Fetch the results:
 	rows, err := tx.Query(
@@ -134,23 +112,12 @@ func (d *clustersDAO) List(ctx context.Context) (items []*models.Cluster, err er
 }
 
 func (d *clustersDAO) Exists(ctx context.Context, id string) (ok bool, err error) {
-	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Check if the row exists:
 	row := tx.QueryRow(
@@ -168,23 +135,12 @@ func (d *clustersDAO) Exists(ctx context.Context, id string) (ok bool, err error
 }
 
 func (d *clustersDAO) Get(ctx context.Context, id string) (item *models.Cluster, err error) {
-	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Fetch the results:
 	row := tx.QueryRow(
@@ -218,21 +174,12 @@ func (d *clustersDAO) Get(ctx context.Context, id string) (item *models.Cluster,
 }
 
 func (d *clustersDAO) Insert(ctx context.Context, cluster *models.Cluster) (id string, err error) {
-	// Start a transaction:
-	tx, err := d.pool.Begin(ctx)
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Commit(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to commit transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Generate a new identifier:
 	id = uuid.NewString()
@@ -256,22 +203,13 @@ func (d *clustersDAO) Insert(ctx context.Context, cluster *models.Cluster) (id s
 	return
 }
 
-func (d *clustersDAO) Delete(ctx context.Context, id string) error {
-	// Start a transaction:
-	tx, err := d.pool.Begin(ctx)
+func (d *clustersDAO) Delete(ctx context.Context, id string) (err error) {
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
-		return err
+		return
 	}
-	defer func() {
-		err := tx.Commit(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to commit transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Delete the row:
 	_, err = tx.Exec(
@@ -279,5 +217,5 @@ func (d *clustersDAO) Delete(ctx context.Context, id string) error {
 		`delete from clusters where id = $1`,
 		id,
 	)
-	return err
+	return
 }

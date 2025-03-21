@@ -9,6 +9,7 @@ To work with this project you will need the following tools:
 - [Go](https://go.dev) - Used to build the Go code.
 - [Buf](https://buf.build) - Used to generate Go code from gRPC specifications.
 - [Ginkgo](https://onsi.github.io/ginkgo) - Used to run unit tests.
+- [gomock](https://github.com/uber-go/mock) - Used to generate test mocks.
 - [Kustomize](https://kustomize.io) - Used to generate Kubernetes manifests.
 - [Kubectl](https://kubernetes.io/es/docs/reference/kubectl) - Used to deploy to an OpenShift cluster.
 - [PostgreSQL](https://www.postgresql.org) - Used to store persistent state.

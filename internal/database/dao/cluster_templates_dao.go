@@ -20,8 +20,8 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/models"
 )
 
@@ -32,7 +32,6 @@ type ClusterTemplatesDAO interface {
 
 type ClusterTemplatesDAOBuilder struct {
 	logger *slog.Logger
-	pool   *pgxpool.Pool
 }
 
 type clusterTemplatesDAO struct {
@@ -48,19 +47,10 @@ func (b *ClusterTemplatesDAOBuilder) SetLogger(value *slog.Logger) *ClusterTempl
 	return b
 }
 
-func (b *ClusterTemplatesDAOBuilder) SetPool(value *pgxpool.Pool) *ClusterTemplatesDAOBuilder {
-	b.pool = value
-	return b
-}
-
 func (b *ClusterTemplatesDAOBuilder) Build() (result ClusterTemplatesDAO, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = fmt.Errorf("logger is mandatory")
-		return
-	}
-	if b.pool == nil {
-		err = fmt.Errorf("database connection pool is mandatory")
 		return
 	}
 
@@ -68,30 +58,18 @@ func (b *ClusterTemplatesDAOBuilder) Build() (result ClusterTemplatesDAO, err er
 	result = &clusterTemplatesDAO{
 		baseDAO: baseDAO{
 			logger: b.logger,
-			pool:   b.pool,
 		},
 	}
 	return
 }
 
 func (d *clusterTemplatesDAO) List(ctx context.Context) (items []*models.ClusterTemplate, err error) {
-	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Fetch the results:
 	rows, err := tx.Query(
@@ -123,23 +101,12 @@ func (d *clusterTemplatesDAO) List(ctx context.Context) (items []*models.Cluster
 }
 
 func (d *clusterTemplatesDAO) Get(ctx context.Context, id string) (item *models.ClusterTemplate, err error) {
-	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	// Get the transaction:
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.Any("error", err),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Fetch the results:
 	row := tx.QueryRow(
