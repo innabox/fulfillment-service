@@ -222,17 +222,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 	api.RegisterClustersServer(grpcServer, clustersServer)
 
-	// Create the events server:
-	c.logger.InfoContext(ctx, "Creating events server")
-	eventsServer, err := servers.NewEventsServer().
-		SetLogger(c.logger).
-		SetFlags(c.flags).
-		Build()
-	if err != nil {
-		return errors.Wrapf(err, "failed to create events server")
-	}
-	api.RegisterEventsServer(grpcServer, eventsServer)
-
 	// Start serving:
 	c.logger.InfoContext(
 		ctx,
