@@ -25,7 +25,7 @@ managed:
 inputs:
 
 - git_repo: https://github.com/innabox/fulfillment-api.git
-  tag: v0.0.3
+  tag: v0.0.4
   subdir: proto
 
 plugins:
