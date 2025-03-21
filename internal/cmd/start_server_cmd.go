@@ -109,7 +109,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(ctx, "Creating data access objects")
 	daos, err := dao.NewSet().
 		SetLogger(c.logger).
-		SetPool(dbPool).
 		Build()
 	if err != nil {
 		return err
@@ -169,12 +168,30 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return err
 	}
 
+	// Prepare the transactions interceptor:
+	c.logger.InfoContext(ctx, "Creating transactions interceptor")
+	txManager, err := database.NewTxManager().
+		SetLogger(c.logger).
+		SetPool(dbPool).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create transactions manager: %w", err)
+	}
+	txInterceptor, err := database.NewTxInterceptor().
+		SetLogger(c.logger).
+		SetManager(txManager).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create transactions interceptor: %w", err)
+	}
+
 	// Create the gRPC server:
 	c.logger.InfoContext(ctx, "Creating gRPC server")
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			loggingInterceptor.UnaryServer,
 			authnInterceptor.UnaryServer,
+			txInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
 			loggingInterceptor.StreamServer,

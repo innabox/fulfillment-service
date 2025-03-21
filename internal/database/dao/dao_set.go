@@ -17,8 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Set interface {
@@ -35,7 +33,6 @@ type set struct {
 
 type SetBuilder struct {
 	logger *slog.Logger
-	pool   *pgxpool.Pool
 }
 
 func NewSet() *SetBuilder {
@@ -47,26 +44,16 @@ func (b *SetBuilder) SetLogger(value *slog.Logger) *SetBuilder {
 	return b
 }
 
-func (b *SetBuilder) SetPool(value *pgxpool.Pool) *SetBuilder {
-	b.pool = value
-	return b
-}
-
 func (b *SetBuilder) Build() (result Set, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
 		return
 	}
-	if b.pool == nil {
-		err = errors.New("database connection pool is mandatory")
-		return
-	}
 
 	// Create the individual DAOs:
 	clusterTemplatesDAO, err := NewClusterTemplatesDAO().
 		SetLogger(b.logger).
-		SetPool(b.pool).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster templates DAO: %w", err)
@@ -74,7 +61,6 @@ func (b *SetBuilder) Build() (result Set, err error) {
 	}
 	clusterOrdersDAO, err := NewClusterOrdersDAO().
 		SetLogger(b.logger).
-		SetPool(b.pool).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster orders DAO: %w", err)
@@ -82,7 +68,6 @@ func (b *SetBuilder) Build() (result Set, err error) {
 	}
 	clustersDAO, err := NewClustersDAO().
 		SetLogger(b.logger).
-		SetPool(b.pool).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster DAO: %w", err)

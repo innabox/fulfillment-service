@@ -15,11 +15,8 @@ package dao
 
 import (
 	"log/slog"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type baseDAO struct {
 	logger *slog.Logger
-	pool   *pgxpool.Pool
 }
