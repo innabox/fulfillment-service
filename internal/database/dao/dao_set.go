@@ -17,18 +17,20 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
+	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 )
 
 type Set interface {
-	ClusterTemplates() ClusterTemplatesDAO
-	ClusterOrders() ClusterOrdersDAO
-	Clusters() ClustersDAO
+	ClusterTemplates() *GenericDAO[*api.ClusterTemplate]
+	ClusterOrders() *GenericDAO[*api.ClusterOrder]
+	Clusters() *GenericDAO[*api.Cluster]
 }
 
 type set struct {
-	clusterTemplates ClusterTemplatesDAO
-	clusterOrders    ClusterOrdersDAO
-	clusters         ClustersDAO
+	clusterTemplates *GenericDAO[*api.ClusterTemplate]
+	clusterOrders    *GenericDAO[*api.ClusterOrder]
+	clusters         *GenericDAO[*api.Cluster]
 }
 
 type SetBuilder struct {
@@ -52,22 +54,25 @@ func (b *SetBuilder) Build() (result Set, err error) {
 	}
 
 	// Create the individual DAOs:
-	clusterTemplatesDAO, err := NewClusterTemplatesDAO().
+	clusterTemplatesDAO, err := NewGenericDAO[*api.ClusterTemplate]().
 		SetLogger(b.logger).
+		SetTable("cluster_templates").
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster templates DAO: %w", err)
 		return
 	}
-	clusterOrdersDAO, err := NewClusterOrdersDAO().
+	clusterOrdersDAO, err := NewGenericDAO[*api.ClusterOrder]().
 		SetLogger(b.logger).
+		SetTable("cluster_orders").
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster orders DAO: %w", err)
 		return
 	}
-	clustersDAO, err := NewClustersDAO().
+	clustersDAO, err := NewGenericDAO[*api.Cluster]().
 		SetLogger(b.logger).
+		SetTable("clusters").
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster DAO: %w", err)
@@ -83,14 +88,14 @@ func (b *SetBuilder) Build() (result Set, err error) {
 	return
 }
 
-func (s *set) ClusterTemplates() ClusterTemplatesDAO {
+func (s *set) ClusterTemplates() *GenericDAO[*api.ClusterTemplate] {
 	return s.clusterTemplates
 }
 
-func (s *set) ClusterOrders() ClusterOrdersDAO {
+func (s *set) ClusterOrders() *GenericDAO[*api.ClusterOrder] {
 	return s.clusterOrders
 }
 
-func (s *set) Clusters() ClustersDAO {
+func (s *set) Clusters() *GenericDAO[*api.Cluster] {
 	return s.clusters
 }

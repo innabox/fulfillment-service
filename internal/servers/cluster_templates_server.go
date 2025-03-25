@@ -25,7 +25,6 @@ import (
 
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
-	"github.com/innabox/fulfillment-service/internal/database/models"
 )
 
 type ClusterTemplatesServerBuilder struct {
@@ -93,23 +92,10 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list cluster templates")
 		return
 	}
-	results := make([]*api.ClusterTemplate, len(templates))
-	for i, template := range templates {
-		results[i] = &api.ClusterTemplate{}
-		err = s.mapOutbound(template, results[i])
-		if err != nil {
-			s.logger.ErrorContext(
-				ctx,
-				"Failed to map outbound cluster template",
-				slog.Any("error", err),
-			)
-			return
-		}
-	}
 	response = &api.ClusterTemplatesListResponse{
-		Size:  proto.Int32(int32(len(results))),
-		Total: proto.Int32(int32(len(results))),
-		Items: results,
+		Size:  proto.Int32(int32(len(templates))),
+		Total: proto.Int32(int32(len(templates))),
+		Items: templates,
 	}
 	return
 }
@@ -139,26 +125,8 @@ func (s *ClusterTemplatesServer) Get(ctx context.Context,
 		)
 		return
 	}
-	result := &api.ClusterTemplate{}
-	err = s.mapOutbound(template, result)
-	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to map outbound cluster template",
-			slog.Any("error", err),
-		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound template")
-		return
-	}
 	response = &api.ClusterTemplatesGetResponse{
-		Template: result,
+		Template: template,
 	}
 	return
-}
-
-func (s *ClusterTemplatesServer) mapOutbound(from *models.ClusterTemplate, to *api.ClusterTemplate) error {
-	to.Id = from.ID
-	to.Title = from.Title
-	to.Description = from.Description
-	return nil
 }

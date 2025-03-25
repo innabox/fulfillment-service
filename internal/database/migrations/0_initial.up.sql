@@ -13,30 +13,15 @@
 
 create table cluster_templates (
   id uuid not null primary key,
-  title text not null,
-  description text not null
+  data jsonb not null
 );
 
 create table clusters (
   id uuid not null primary key,
-  api_url text not null,
-  console_url text not null
-);
-
-create type cluster_order_state as enum (
-  'UNSPECIFIED',
-  'ACCEPTED',
-  'REJECTED',
-  'CANCELED',
-  'FULFILLED',
-  'FAILED'
+  data jsonb not null
 );
 
 create table cluster_orders (
   id uuid not null primary key,
-  template_id uuid not null,
-  state cluster_order_state not null default 'UNSPECIFIED',
-  cluster_id uuid,
-  constraint fk_template foreign key (template_id) references cluster_templates (id),
-  constraint fk_cluster foreign key (cluster_id) references clusters (id)
+  data jsonb not null
 );

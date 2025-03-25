@@ -20,7 +20,6 @@ import (
 
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
-	"github.com/innabox/fulfillment-service/internal/database/models"
 	"github.com/spf13/pflag"
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
@@ -93,24 +92,10 @@ func (s *ClustersServer) List(ctx context.Context,
 		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list clusters")
 		return
 	}
-	results := make([]*api.Cluster, len(clusters))
-	for i, model := range clusters {
-		results[i] = &api.Cluster{}
-		err = s.mapOutbound(model, results[i])
-		if err != nil {
-			s.logger.ErrorContext(
-				ctx,
-				"Failed to map outbound cluster",
-				slog.Any("error", err),
-			)
-			err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
-			return
-		}
-	}
 	response = &api.ClustersListResponse{
-		Size:  proto.Int32(int32(len(results))),
-		Total: proto.Int32(int32(len(results))),
-		Items: results,
+		Size:  proto.Int32(int32(len(clusters))),
+		Total: proto.Int32(int32(len(clusters))),
+		Items: clusters,
 	}
 	return
 }
@@ -131,19 +116,8 @@ func (s *ClustersServer) Get(ctx context.Context,
 		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with id '%s' not found", request.ClusterId)
 		return
 	}
-	result := &api.Cluster{}
-	err = s.mapOutbound(cluster, result)
-	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to map outbound cluster",
-			slog.Any("error", err),
-		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
-		return
-	}
 	response = &api.ClustersGetResponse{
-		Cluster: result,
+		Cluster: cluster,
 	}
 	return
 }
@@ -200,17 +174,4 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (k
 	// TODO: Fetch the kubeconfig.
 	kubeconfig = []byte{}
 	return
-}
-
-func (s *ClustersServer) mapOutbound(from *models.Cluster, to *api.Cluster) error {
-	to.Id = from.ID
-	if to.Spec == nil {
-		to.Spec = &api.ClusterSpec{}
-	}
-	if to.Status == nil {
-		to.Status = &api.ClusterStatus{}
-	}
-	to.Status.ApiUrl = from.APIURL
-	to.Status.ConsoleUrl = from.ConsoleURL
-	return nil
 }
