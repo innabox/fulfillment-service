@@ -82,7 +82,10 @@ func (b *ClusterOrdersServerBuilder) Build() (result *ClusterOrdersServer, err e
 
 func (s *ClusterOrdersServer) List(ctx context.Context,
 	request *api.ClusterOrdersListRequest) (response *api.ClusterOrdersListResponse, err error) {
-	orders, err := s.daos.ClusterOrders().List(ctx)
+	orders, err := s.daos.ClusterOrders().List(ctx, dao.ListRequest{
+		Offset: request.GetOffset(),
+		Limit:  request.GetLimit(),
+	})
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -93,9 +96,9 @@ func (s *ClusterOrdersServer) List(ctx context.Context,
 		return
 	}
 	response = &api.ClusterOrdersListResponse{
-		Size:  proto.Int32(int32(len(orders))),
-		Total: proto.Int32(int32(len(orders))),
-		Items: orders,
+		Size:  proto.Int32(orders.Size),
+		Total: proto.Int32(orders.Total),
+		Items: orders.Items,
 	}
 	return
 }
@@ -183,6 +186,9 @@ func (s *ClusterOrdersServer) Place(ctx context.Context,
 	order := &api.ClusterOrder{
 		Spec: &api.ClusterOrderSpec{
 			TemplateId: templateId,
+		},
+		Status: &api.ClusterOrderStatus{
+			State: api.ClusterOrderState_CLUSTER_ORDER_STATE_ACCEPTED,
 		},
 	}
 	_, err = s.daos.ClusterOrders().Insert(ctx, order)

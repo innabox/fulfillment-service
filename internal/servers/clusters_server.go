@@ -82,7 +82,10 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 
 func (s *ClustersServer) List(ctx context.Context,
 	request *api.ClustersListRequest) (response *api.ClustersListResponse, err error) {
-	clusters, err := s.daos.Clusters().List(ctx)
+	clusters, err := s.daos.Clusters().List(ctx, dao.ListRequest{
+		Offset: request.GetOffset(),
+		Limit:  request.GetLimit(),
+	})
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -93,9 +96,9 @@ func (s *ClustersServer) List(ctx context.Context,
 		return
 	}
 	response = &api.ClustersListResponse{
-		Size:  proto.Int32(int32(len(clusters))),
-		Total: proto.Int32(int32(len(clusters))),
-		Items: clusters,
+		Size:  proto.Int32(clusters.Size),
+		Total: proto.Int32(clusters.Total),
+		Items: clusters.Items,
 	}
 	return
 }

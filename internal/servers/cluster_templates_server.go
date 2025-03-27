@@ -82,7 +82,10 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 
 func (s *ClusterTemplatesServer) List(ctx context.Context,
 	request *api.ClusterTemplatesListRequest) (response *api.ClusterTemplatesListResponse, err error) {
-	templates, err := s.daos.ClusterTemplates().List(ctx)
+	templates, err := s.daos.ClusterTemplates().List(ctx, dao.ListRequest{
+		Offset: request.GetOffset(),
+		Limit:  request.GetLimit(),
+	})
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -93,9 +96,9 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 		return
 	}
 	response = &api.ClusterTemplatesListResponse{
-		Size:  proto.Int32(int32(len(templates))),
-		Total: proto.Int32(int32(len(templates))),
-		Items: templates,
+		Size:  proto.Int32(templates.Size),
+		Total: proto.Int32(templates.Total),
+		Items: templates.Items,
 	}
 	return
 }
