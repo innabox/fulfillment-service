@@ -15,6 +15,7 @@ package logging
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,6 +29,9 @@ import (
 
 	"github.com/DataDog/gostackparse"
 	"github.com/spf13/pflag"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // LoggerBuilder contains the data and logic needed to create a logger. Don't create instances of this directly, use the
@@ -238,8 +242,12 @@ func (b *LoggerBuilder) Build() (result *slog.Logger, err error) {
 	}
 
 	// Create the handler:
-	replacers := make([]func([]string, slog.Attr) slog.Attr, 0, 3)
-	replacers = append(replacers, helper.replaceTime, helper.replaceDuration, helper.replaceError)
+	replacers := []func([]string, slog.Attr) slog.Attr{
+		helper.replaceTime,
+		helper.replaceDuration,
+		helper.replaceError,
+		helper.replaceProtoMessage,
+	}
 	if b.redact {
 		replacers = append(replacers, helper.replaceRedacted)
 	} else {
@@ -359,6 +367,29 @@ func (h *loggerHelper) replaceError(groups []string, a slog.Attr) slog.Attr {
 	return a
 }
 
+func (h *loggerHelper) replaceProtoMessage(groups []string, a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindAny {
+		message, ok := a.Value.Any().(proto.Message)
+		if ok && message != nil {
+			wrapper, err := anypb.New(message)
+			if err != nil {
+				return a
+			}
+			data, err := protoMarshalOptions.Marshal(wrapper)
+			if err != nil {
+				return a
+			}
+			var value any
+			err = json.Unmarshal(data, &value)
+			if err != nil {
+				return a
+			}
+			a = slog.Any(a.Key, value)
+		}
+	}
+	return a
+}
+
 func (h *loggerHelper) formatError(err error) any {
 	var dump errorDump
 	dump.Message = err.Error()
@@ -441,3 +472,8 @@ const (
 
 // Mark that replaces redacted fields.
 const redactMark = "***"
+
+// protoMarshalOptions contains the options used to render protocol buffers messages.
+var protoMarshalOptions = protojson.MarshalOptions{
+	UseProtoNames: true,
+}

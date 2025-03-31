@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/pflag"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 var _ = Describe("Logger", func() {
@@ -763,5 +764,34 @@ var _ = Describe("Logger", func() {
 		err = json.Unmarshal([]byte(lines[0]), &msg)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(msg.Error.Stack).ToNot(BeEmpty())
+	})
+
+	It("Writes protocol buffers messages with type", func() {
+		// Create the logger:
+		buffer := &bytes.Buffer{}
+		logger, err := NewLogger().
+			SetWriter(io.MultiWriter(buffer, GinkgoWriter)).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Write a message:
+		object := wrapperspb.Int32(42)
+		logger.Info(
+			"my message",
+			slog.Any("object", object),
+		)
+
+		// Check that object has been replaced with the corresponding JSON document, including the type:
+		lines := strings.Split(buffer.String(), "\n")
+		Expect(lines).To(HaveLen(2))
+		var msg struct {
+			Object any `json:"object"`
+		}
+		err = json.Unmarshal([]byte(lines[0]), &msg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(msg.Object).To(Equal(map[string]any{
+			"@type": "type.googleapis.com/google.protobuf.Int32Value",
+			"value": 42.0,
+		}))
 	})
 })
