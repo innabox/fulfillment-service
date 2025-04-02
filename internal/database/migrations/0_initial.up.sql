@@ -12,7 +12,7 @@
 --
 
 create table cluster_templates (
-  id uuid not null primary key,
+  id text not null primary key,
   data jsonb not null
 );
 
