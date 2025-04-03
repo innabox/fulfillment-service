@@ -13,18 +13,10 @@
 
 insert into cluster_templates (id, data) values
 (
-  'my-template',
+  'ocp_4_17_small',
   '{
-    "id": "my-template",
-    "title": "My template",
-    "description": "My template is *nice*."
-  }'
-),
-(
-  'your-template',
-  '{
-    "id": "your-template",
-    "title": "Your template",
-    "description": "Your template is _ugly_."
+    "id": "ocp_4_17_small",
+    "title": "OpenShift 4.17 small",
+    "description": "OpenShift 4.17 with `small` instances as worker nodes."
   }'
 );
