@@ -13,15 +13,37 @@
 
 create table cluster_templates (
   id text not null primary key,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
   data jsonb not null
 );
 
 create table clusters (
-  id uuid not null primary key,
+  id text not null primary key,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
   data jsonb not null
 );
 
 create table cluster_orders (
-  id uuid not null primary key,
+  id text not null primary key,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
+  data jsonb not null
+);
+
+create schema private;
+
+create table private.cluster_orders (
+  id text not null primary key references cluster_orders(id) on delete cascade,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
+  data jsonb not null
+);
+
+create table private.hubs (
+  id text not null primary key,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
   data jsonb not null
 );

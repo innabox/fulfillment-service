@@ -15,15 +15,21 @@ package network
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/pflag"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials/oauth"
+	experiementalcredentials "google.golang.org/grpc/experimental/credentials"
 )
 
 // GrpcClientBuilder contains the data and logic needed to create a gRPC client. Don't create instances of this object
@@ -34,6 +40,9 @@ type GrpcClientBuilder struct {
 	serverAddress   string
 	serverPlaintext bool
 	serverInsecure  bool
+	caFiles         []string
+	token           string
+	tokenFile       string
 }
 
 // NewClient creates a builder that can then used to configure and create a gRPC client.
@@ -106,6 +115,35 @@ func (b *GrpcClientBuilder) SetFlags(flags *pflag.FlagSet, name string) *GrpcCli
 		b.SetServerInsecure(serverInsecureValue)
 	}
 
+	// Token:
+	flag = grpcClientFlagName(name, grpcClientTokenFlagSuffix)
+	tokenValue, err := flags.GetString(flag)
+	if err != nil {
+		failure()
+	} else {
+		b.SetToken(tokenValue)
+	}
+
+	// Token file:
+	flag = grpcClientFlagName(name, grpcClientTokenFileFlagSuffix)
+	tokenFileValue, err := flags.GetString(flag)
+	if err != nil {
+		failure()
+	} else {
+		b.SetTokenFile(tokenFileValue)
+	}
+
+	// CA file:
+	flag = grpcClientFlagName(name, grpcClientCaFileFlagSuffix)
+	caFileValues, err := flags.GetStringArray(flag)
+	if err != nil {
+		failure()
+	} else {
+		for _, caFileValue := range caFileValues {
+			b.AddCaFile(caFileValue)
+		}
+	}
+
 	return b
 }
 
@@ -134,6 +172,31 @@ func (b *GrpcClientBuilder) SetServerInsecure(value bool) *GrpcClientBuilder {
 	return b
 }
 
+// AddCaFile adds a file containing CA certificates trusted by the client. This is optional, by default all the CAs
+// trusted by the system are also trusted by the client.
+func (b *GrpcClientBuilder) AddCaFile(value string) *GrpcClientBuilder {
+	b.caFiles = append(b.caFiles, value)
+	return b
+}
+
+// SetToken sets the token that the client will use to authenticate to the server. This is optional, by default no
+// authentication credentials are sent.
+//
+// Note that this is incompatible with SetTokenFile.
+func (b *GrpcClientBuilder) SetToken(value string) *GrpcClientBuilder {
+	b.token = value
+	return b
+}
+
+// SetTokenFile sets the path of the file containing the token that the client will use to authenticate to the server.
+// This is optional, by default no authentication credentials are sent.
+//
+// Note that this is incompatible with SetToken.
+func (b *GrpcClientBuilder) SetTokenFile(value string) *GrpcClientBuilder {
+	b.tokenFile = value
+	return b
+}
+
 // Build uses the data stored in the builder to create a new network client.
 func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	// Check parameters:
@@ -147,6 +210,10 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	}
 	if b.serverAddress == "" {
 		err = errors.New("server address is mandatory")
+		return
+	}
+	if b.token != "" && b.tokenFile != "" {
+		err = errors.New("token and token file are incompatible")
 		return
 	}
 
@@ -166,7 +233,7 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 		return
 	}
 
-	// Calculate the options:
+	// Set the TLS options:
 	var options []grpc.DialOption
 	var transportCredentials credentials.TransportCredentials
 	if b.serverPlaintext {
@@ -176,10 +243,66 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 		if b.serverInsecure {
 			tlsConfig.InsecureSkipVerify = true
 		}
-		transportCredentials = credentials.NewTLS(tlsConfig)
+		if len(b.caFiles) > 0 {
+			var caPool *x509.CertPool
+			caPool, err = x509.SystemCertPool()
+			if err != nil {
+				return
+			}
+			caPool = caPool.Clone()
+			for _, caFile := range b.caFiles {
+				var data []byte
+				data, err = os.ReadFile(caFile)
+				if err != nil {
+					err = fmt.Errorf("failed to read CA file '%s': %w", caFile, err)
+					return
+				}
+				ok := caPool.AppendCertsFromPEM(data)
+				if !ok {
+					err = fmt.Errorf("file '%s' doesn't contain any CA certificate", caFile)
+					return
+				}
+				b.logger.Debug(
+					"Loaded CA file",
+					slog.String("file", caFile),
+				)
+			}
+			tlsConfig.RootCAs = caPool
+		}
+
+		// TODO: This should have been the non-experimental package, but we need to use this one because
+		// currently the OpenShift router doesn't seem to support ALPN, and the regular credentials package
+		// requires it since version 1.67. See here for details:
+		//
+		// https://github.com/grpc/grpc-go/issues/434
+		// https://github.com/grpc/grpc-go/pull/7980
+		//
+		// Is there a way to configure the OpenShift router to avoid this?
+		transportCredentials = experiementalcredentials.NewTLSWithALPNDisabled(tlsConfig)
 	}
 	if transportCredentials != nil {
 		options = append(options, grpc.WithTransportCredentials(transportCredentials))
+	}
+
+	// Set the authentication options:
+	token := b.token
+	if token == "" && b.tokenFile != "" {
+		var data []byte
+		data, err = os.ReadFile(b.tokenFile)
+		if err != nil {
+			err = fmt.Errorf("failed to read token from file '%s': %w", b.tokenFile, err)
+			return
+		}
+		token = strings.TrimSpace(string(data))
+	}
+	if token != "" {
+		oauthToken := &oauth2.Token{
+			AccessToken: token,
+		}
+		oauthSource := oauth.TokenSource{
+			TokenSource: oauth2.StaticTokenSource(oauthToken),
+		}
+		options = append(options, grpc.WithPerRPCCredentials(oauthSource))
 	}
 
 	// Create the client:

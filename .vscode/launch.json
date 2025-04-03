@@ -2,6 +2,13 @@
         "version": "0.2.0",
         "configurations": [
                 {
+                        "name": "run",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${file}"
+                },
+                {
                         "name": "test",
                         "type": "go",
                         "request": "launch",
@@ -49,18 +56,19 @@
                         ]
                 },
                 {
-                        "name": "start publisher",
+                        "name": "start controller",
                         "type": "go",
                         "request": "launch",
                         "mode": "auto",
                         "program": "${workspaceFolder}",
                         "args": [
                                 "start",
-                                "publisher",
+                                "controller",
                                 "--log-level=debug",
                                 "--log-headers=true",
                                 "--log-bodies=true",
-                                "--db-url=postgres://service:service123@localhost:5432/service"
+                                "--grpc-server-address=localhost:8000",
+                                "--grpc-server-plaintext"
                         ]
                 }
         ]

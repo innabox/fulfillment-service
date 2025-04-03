@@ -32,6 +32,9 @@ import (
 //	--api-server-address string API server address. (default "localhost:8000")
 //	--api-server-plaintext      API disable TLS.
 //	--api-server-insecure       API disable TLS certificate validation.
+//	--api-ca-file               API trusted CA file.
+//	--api-token                 API token.
+//	--api-token-file            API token file.
 func AddGrpcClientFlags(flags *pflag.FlagSet, name, addr string) {
 	_ = flags.String(
 		grpcClientFlagName(name, grpcClientServerNetworkFlagSuffix),
@@ -53,6 +56,21 @@ func AddGrpcClientFlags(flags *pflag.FlagSet, name, addr string) {
 		false,
 		fmt.Sprintf("%s disable TLS certificate validation.", name),
 	)
+	_ = flags.StringArray(
+		grpcClientFlagName(name, grpcClientCaFileFlagSuffix),
+		[]string{},
+		fmt.Sprintf("%s trusted CA file.", name),
+	)
+	_ = flags.String(
+		grpcClientFlagName(name, grpcClientTokenFlagSuffix),
+		"",
+		fmt.Sprintf("%s authentication token.", name),
+	)
+	_ = flags.String(
+		grpcClientFlagName(name, grpcClientTokenFileFlagSuffix),
+		"",
+		fmt.Sprintf("%s authentication token file.", name),
+	)
 }
 
 // Names of the flags:
@@ -61,6 +79,9 @@ const (
 	grpcClientServerAddrFlagSuffix      = "server-address"
 	grpcClientServerPlaintextFlagSuffix = "server-plaintext"
 	grpcClientServerInsecureFlagSuffix  = "server-insecure"
+	grpcClientCaFileFlagSuffix          = "ca-file"
+	grpcClientTokenFlagSuffix           = "token"
+	grpcClientTokenFileFlagSuffix       = "token-file"
 )
 
 // grpcClientFlagName calculates a complete flag name from a client name and a flag name suffix. For example, if the

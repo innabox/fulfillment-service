@@ -17,13 +17,16 @@
 // 	protoc        (unknown)
 // source: fulfillment/v1/cluster_template_type.proto
 
+//go:build !protoopaque
+
 package fulfillmentv1
 
 import (
+	v1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	reflect "reflect"
-	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -37,14 +40,20 @@ const (
 // A cluster template defines a type of cluster that can be ordered by the user. Note that the user doesn't create these
 // templates: the system provides a collection of them, and the user chooses one.
 type ClusterTemplate struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"hybrid.v1"`
 	// Unique identifier of the template.
-	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id       string       `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata *v1.Metadata `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Human friendly short description of the template, only a few words, suitable for displaying in one single
 	// line on a UI or CLI.
-	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	// Human friendly long description of the template, using Markdown format.
-	Description   string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	// Definitions of the parameters that can be used to customize the template.
+	//
+	// Note that these are only the *definitions* of the parameters, not the actual values. The actual values are in the
+	// `spec.template_parameters` field of the cluster order.
+	Parameters    []*ClusterTemplateParameterDefinition `protobuf:"bytes,5,rep,name=parameters,proto3" json:"parameters,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -74,16 +83,18 @@ func (x *ClusterTemplate) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ClusterTemplate.ProtoReflect.Descriptor instead.
-func (*ClusterTemplate) Descriptor() ([]byte, []int) {
-	return file_fulfillment_v1_cluster_template_type_proto_rawDescGZIP(), []int{0}
-}
-
 func (x *ClusterTemplate) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *ClusterTemplate) GetMetadata() *v1.Metadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
 }
 
 func (x *ClusterTemplate) GetTitle() string {
@@ -100,57 +111,351 @@ func (x *ClusterTemplate) GetDescription() string {
 	return ""
 }
 
+func (x *ClusterTemplate) GetParameters() []*ClusterTemplateParameterDefinition {
+	if x != nil {
+		return x.Parameters
+	}
+	return nil
+}
+
+func (x *ClusterTemplate) SetId(v string) {
+	x.Id = v
+}
+
+func (x *ClusterTemplate) SetMetadata(v *v1.Metadata) {
+	x.Metadata = v
+}
+
+func (x *ClusterTemplate) SetTitle(v string) {
+	x.Title = v
+}
+
+func (x *ClusterTemplate) SetDescription(v string) {
+	x.Description = v
+}
+
+func (x *ClusterTemplate) SetParameters(v []*ClusterTemplateParameterDefinition) {
+	x.Parameters = v
+}
+
+func (x *ClusterTemplate) HasMetadata() bool {
+	if x == nil {
+		return false
+	}
+	return x.Metadata != nil
+}
+
+func (x *ClusterTemplate) ClearMetadata() {
+	x.Metadata = nil
+}
+
+type ClusterTemplate_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	// Unique identifier of the template.
+	Id       string
+	Metadata *v1.Metadata
+	// Human friendly short description of the template, only a few words, suitable for displaying in one single
+	// line on a UI or CLI.
+	Title string
+	// Human friendly long description of the template, using Markdown format.
+	Description string
+	// Definitions of the parameters that can be used to customize the template.
+	//
+	// Note that these are only the *definitions* of the parameters, not the actual values. The actual values are in the
+	// `spec.template_parameters` field of the cluster order.
+	Parameters []*ClusterTemplateParameterDefinition
+}
+
+func (b0 ClusterTemplate_builder) Build() *ClusterTemplate {
+	m0 := &ClusterTemplate{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.Id = b.Id
+	x.Metadata = b.Metadata
+	x.Title = b.Title
+	x.Description = b.Description
+	x.Parameters = b.Parameters
+	return m0
+}
+
+// Contains type and documentation of a template parameter.
+type ClusterTemplateParameterDefinition struct {
+	state protoimpl.MessageState `protogen:"hybrid.v1"`
+	// Name of the parameter.
+	//
+	// This is the name that should be used in the `template_parameters` field of the order to assign a value to the
+	// parameter.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Human friendly short description of the parameter, only a few words, suitable for displaying in one single line on
+	// a UI or CLI.
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// Human friendly description of the parameter, using Markdown format.
+	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	// Indicates if this parameter is required or optional.
+	//
+	// Values for required parameters must be included when sending the order, otherwise it will be rejected.
+	//
+	// Note that there may be other dependencies between parameters which may cause a order to be rejected. For example,
+	// the allowed values of a parameter may depend on the value of another parameter. That kind of information will be in
+	// the `description` field.
+	Required bool `protobuf:"varint,4,opt,name=required,proto3" json:"required,omitempty"`
+	// Type of the parameter.
+	//
+	// The possible values are the same as those used by the `type_url` field of the `Any` type:
+	//
+	// | Type                           | Value                                             |
+	// |--------------------------------|---------------------------------------------------|
+	// | Boolean                        | `type.googleapis.com/google.protobuf.BoolValue`   |
+	// | Integer number, 32 bits        | `type.googleapis.com/google.protobuf.Int32Value`  |
+	// | Integer number, 64 bits        | `type.googleapis.com/google.protobuf.Int64Value`  |
+	// | Floating point number, 32 bits | `type.googleapis.com/google.protobuf.FloatValue`  |
+	// | Floating point number, 64 bits | `type.googleapis.com/google.protobuf.DoubleValue` |
+	// | String                         | `type.googleapis.com/google.protobuf.StringValue` |
+	// | Timestamp                      | `type.googleapis.com/google.protobuf.Timestamp`   |
+	// | Duration                       | `type.googleapis.com/google.protobuf.Duration`    |
+	// | Array of bytes                 | `type.googleapis.com/google.protobuf.BytesValue`  |
+	// | Any JSON value                 | `type.googleapis.com/google.protobuf.Value`       |
+	//
+	// When using the HTTP+JSON version of the API the value provided in the `template_parameters` field of the order
+	// must be represented as documented in the (ProtoJSON format document)[https://protobuf.dev/programming-guides/json].
+	Type string `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	// Default value for optional parameters.
+	Default       *anypb.Any `protobuf:"bytes,6,opt,name=default,proto3" json:"default,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClusterTemplateParameterDefinition) Reset() {
+	*x = ClusterTemplateParameterDefinition{}
+	mi := &file_fulfillment_v1_cluster_template_type_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClusterTemplateParameterDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClusterTemplateParameterDefinition) ProtoMessage() {}
+
+func (x *ClusterTemplateParameterDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_fulfillment_v1_cluster_template_type_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (x *ClusterTemplateParameterDefinition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ClusterTemplateParameterDefinition) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *ClusterTemplateParameterDefinition) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ClusterTemplateParameterDefinition) GetRequired() bool {
+	if x != nil {
+		return x.Required
+	}
+	return false
+}
+
+func (x *ClusterTemplateParameterDefinition) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ClusterTemplateParameterDefinition) GetDefault() *anypb.Any {
+	if x != nil {
+		return x.Default
+	}
+	return nil
+}
+
+func (x *ClusterTemplateParameterDefinition) SetName(v string) {
+	x.Name = v
+}
+
+func (x *ClusterTemplateParameterDefinition) SetTitle(v string) {
+	x.Title = v
+}
+
+func (x *ClusterTemplateParameterDefinition) SetDescription(v string) {
+	x.Description = v
+}
+
+func (x *ClusterTemplateParameterDefinition) SetRequired(v bool) {
+	x.Required = v
+}
+
+func (x *ClusterTemplateParameterDefinition) SetType(v string) {
+	x.Type = v
+}
+
+func (x *ClusterTemplateParameterDefinition) SetDefault(v *anypb.Any) {
+	x.Default = v
+}
+
+func (x *ClusterTemplateParameterDefinition) HasDefault() bool {
+	if x == nil {
+		return false
+	}
+	return x.Default != nil
+}
+
+func (x *ClusterTemplateParameterDefinition) ClearDefault() {
+	x.Default = nil
+}
+
+type ClusterTemplateParameterDefinition_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	// Name of the parameter.
+	//
+	// This is the name that should be used in the `template_parameters` field of the order to assign a value to the
+	// parameter.
+	Name string
+	// Human friendly short description of the parameter, only a few words, suitable for displaying in one single line on
+	// a UI or CLI.
+	Title string
+	// Human friendly description of the parameter, using Markdown format.
+	Description string
+	// Indicates if this parameter is required or optional.
+	//
+	// Values for required parameters must be included when sending the order, otherwise it will be rejected.
+	//
+	// Note that there may be other dependencies between parameters which may cause a order to be rejected. For example,
+	// the allowed values of a parameter may depend on the value of another parameter. That kind of information will be in
+	// the `description` field.
+	Required bool
+	// Type of the parameter.
+	//
+	// The possible values are the same as those used by the `type_url` field of the `Any` type:
+	//
+	// | Type                           | Value                                             |
+	// |--------------------------------|---------------------------------------------------|
+	// | Boolean                        | `type.googleapis.com/google.protobuf.BoolValue`   |
+	// | Integer number, 32 bits        | `type.googleapis.com/google.protobuf.Int32Value`  |
+	// | Integer number, 64 bits        | `type.googleapis.com/google.protobuf.Int64Value`  |
+	// | Floating point number, 32 bits | `type.googleapis.com/google.protobuf.FloatValue`  |
+	// | Floating point number, 64 bits | `type.googleapis.com/google.protobuf.DoubleValue` |
+	// | String                         | `type.googleapis.com/google.protobuf.StringValue` |
+	// | Timestamp                      | `type.googleapis.com/google.protobuf.Timestamp`   |
+	// | Duration                       | `type.googleapis.com/google.protobuf.Duration`    |
+	// | Array of bytes                 | `type.googleapis.com/google.protobuf.BytesValue`  |
+	// | Any JSON value                 | `type.googleapis.com/google.protobuf.Value`       |
+	//
+	// When using the HTTP+JSON version of the API the value provided in the `template_parameters` field of the order
+	// must be represented as documented in the (ProtoJSON format document)[https://protobuf.dev/programming-guides/json].
+	Type string
+	// Default value for optional parameters.
+	Default *anypb.Any
+}
+
+func (b0 ClusterTemplateParameterDefinition_builder) Build() *ClusterTemplateParameterDefinition {
+	m0 := &ClusterTemplateParameterDefinition{}
+	b, x := &b0, m0
+	_, _ = b, x
+	x.Name = b.Name
+	x.Title = b.Title
+	x.Description = b.Description
+	x.Required = b.Required
+	x.Type = b.Type
+	x.Default = b.Default
+	return m0
+}
+
 var File_fulfillment_v1_cluster_template_type_proto protoreflect.FileDescriptor
 
 var file_fulfillment_v1_cluster_template_type_proto_rawDesc = string([]byte{
 	0x0a, 0x2a, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2f, 0x76, 0x31,
 	0x2f, 0x63, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x5f, 0x74, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74,
 	0x65, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0e, 0x66, 0x75,
-	0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x22, 0x59, 0x0a, 0x0f,
-	0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x12,
-	0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x12,
-	0x14, 0x0a, 0x05, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05,
-	0x74, 0x69, 0x74, 0x6c, 0x65, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x63, 0x72, 0x69, 0x70,
-	0x74, 0x69, 0x6f, 0x6e, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64, 0x65, 0x73, 0x63,
-	0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0xd9, 0x01, 0x0a, 0x12, 0x63, 0x6f, 0x6d, 0x2e,
-	0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x42, 0x18,
-	0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x54,
-	0x79, 0x70, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x50, 0x67, 0x69, 0x74, 0x68,
-	0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x69, 0x6e, 0x6e, 0x61, 0x62, 0x6f, 0x78, 0x2f, 0x66,
-	0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x73, 0x65, 0x72, 0x76, 0x69,
-	0x63, 0x65, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x61, 0x70, 0x69, 0x2f,
-	0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2f, 0x76, 0x31, 0x3b, 0x66,
-	0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x46,
-	0x58, 0x58, 0xaa, 0x02, 0x0e, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74,
-	0x2e, 0x56, 0x31, 0xca, 0x02, 0x0e, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e,
-	0x74, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x1a, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65,
-	0x6e, 0x74, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
-	0x61, 0xea, 0x02, 0x0f, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x3a,
-	0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x1a, 0x19, 0x67, 0x6f,
+	0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x61, 0x6e,
+	0x79, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x1d, 0x73, 0x68, 0x61, 0x72, 0x65, 0x64, 0x2f,
+	0x76, 0x31, 0x2f, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x5f, 0x74, 0x79, 0x70, 0x65,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xde, 0x01, 0x0a, 0x0f, 0x43, 0x6c, 0x75, 0x73, 0x74,
+	0x65, 0x72, 0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x2f, 0x0a, 0x08, 0x6d, 0x65,
+	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x73,
+	0x68, 0x61, 0x72, 0x65, 0x64, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
+	0x61, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x14, 0x0a, 0x05, 0x74,
+	0x69, 0x74, 0x6c, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x74, 0x69, 0x74, 0x6c,
+	0x65, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64, 0x65, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74,
+	0x69, 0x6f, 0x6e, 0x12, 0x52, 0x0a, 0x0a, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72,
+	0x73, 0x18, 0x05, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x32, 0x2e, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c,
+	0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72,
+	0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65,
+	0x72, 0x44, 0x65, 0x66, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x0a, 0x70, 0x61, 0x72,
+	0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x22, 0xd0, 0x01, 0x0a, 0x22, 0x43, 0x6c, 0x75, 0x73,
+	0x74, 0x65, 0x72, 0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x50, 0x61, 0x72, 0x61, 0x6d,
+	0x65, 0x74, 0x65, 0x72, 0x44, 0x65, 0x66, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12,
+	0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6e, 0x61,
+	0x6d, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x05, 0x74, 0x69, 0x74, 0x6c, 0x65, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x63,
+	0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64,
+	0x65, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1a, 0x0a, 0x08, 0x72, 0x65,
+	0x71, 0x75, 0x69, 0x72, 0x65, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x08, 0x72, 0x65,
+	0x71, 0x75, 0x69, 0x72, 0x65, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x74, 0x79, 0x70, 0x65, 0x18, 0x05,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x74, 0x79, 0x70, 0x65, 0x12, 0x2e, 0x0a, 0x07, 0x64, 0x65,
+	0x66, 0x61, 0x75, 0x6c, 0x74, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x67, 0x6f,
+	0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x41, 0x6e,
+	0x79, 0x52, 0x07, 0x64, 0x65, 0x66, 0x61, 0x75, 0x6c, 0x74, 0x42, 0xd9, 0x01, 0x0a, 0x12, 0x63,
+	0x6f, 0x6d, 0x2e, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2e, 0x76,
+	0x31, 0x42, 0x18, 0x43, 0x6c, 0x75, 0x73, 0x74, 0x65, 0x72, 0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61,
+	0x74, 0x65, 0x54, 0x79, 0x70, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x50, 0x67,
+	0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x69, 0x6e, 0x6e, 0x61, 0x62, 0x6f,
+	0x78, 0x2f, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x73, 0x65,
+	0x72, 0x76, 0x69, 0x63, 0x65, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x61,
+	0x70, 0x69, 0x2f, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2f, 0x76,
+	0x31, 0x3b, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x76, 0x31, 0xa2,
+	0x02, 0x03, 0x46, 0x58, 0x58, 0xaa, 0x02, 0x0e, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d,
+	0x65, 0x6e, 0x74, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x0e, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c,
+	0x6d, 0x65, 0x6e, 0x74, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x1a, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c,
+	0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61,
+	0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0f, 0x46, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65,
+	0x6e, 0x74, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 })
 
-var (
-	file_fulfillment_v1_cluster_template_type_proto_rawDescOnce sync.Once
-	file_fulfillment_v1_cluster_template_type_proto_rawDescData []byte
-)
-
-func file_fulfillment_v1_cluster_template_type_proto_rawDescGZIP() []byte {
-	file_fulfillment_v1_cluster_template_type_proto_rawDescOnce.Do(func() {
-		file_fulfillment_v1_cluster_template_type_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_fulfillment_v1_cluster_template_type_proto_rawDesc), len(file_fulfillment_v1_cluster_template_type_proto_rawDesc)))
-	})
-	return file_fulfillment_v1_cluster_template_type_proto_rawDescData
-}
-
-var file_fulfillment_v1_cluster_template_type_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_fulfillment_v1_cluster_template_type_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_fulfillment_v1_cluster_template_type_proto_goTypes = []any{
-	(*ClusterTemplate)(nil), // 0: fulfillment.v1.ClusterTemplate
+	(*ClusterTemplate)(nil),                    // 0: fulfillment.v1.ClusterTemplate
+	(*ClusterTemplateParameterDefinition)(nil), // 1: fulfillment.v1.ClusterTemplateParameterDefinition
+	(*v1.Metadata)(nil),                        // 2: shared.v1.Metadata
+	(*anypb.Any)(nil),                          // 3: google.protobuf.Any
 }
 var file_fulfillment_v1_cluster_template_type_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: fulfillment.v1.ClusterTemplate.metadata:type_name -> shared.v1.Metadata
+	1, // 1: fulfillment.v1.ClusterTemplate.parameters:type_name -> fulfillment.v1.ClusterTemplateParameterDefinition
+	3, // 2: fulfillment.v1.ClusterTemplateParameterDefinition.default:type_name -> google.protobuf.Any
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_fulfillment_v1_cluster_template_type_proto_init() }
@@ -164,7 +469,7 @@ func file_fulfillment_v1_cluster_template_type_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fulfillment_v1_cluster_template_type_proto_rawDesc), len(file_fulfillment_v1_cluster_template_type_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -27,7 +27,6 @@ var _ = Describe("Transaction manager", func() {
 
 		db := dbServer.MakeDatabase()
 		DeferCleanup(db.Close)
-
 		pool, err = pgxpool.New(ctx, db.MakeURL())
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(pool.Close)

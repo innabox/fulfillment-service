@@ -18,28 +18,25 @@ import (
 	"errors"
 	"log/slog"
 
-	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
-	"github.com/spf13/pflag"
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type ClustersServerBuilder struct {
 	logger *slog.Logger
-	flags  *pflag.FlagSet
-	daos   dao.Set
 }
 
-var _ api.ClustersServer = (*ClustersServer)(nil)
+var _ ffv1.ClustersServer = (*ClustersServer)(nil)
 
 type ClustersServer struct {
-	api.UnimplementedClustersServer
+	ffv1.UnimplementedClustersServer
 
-	logger *slog.Logger
-	daos   dao.Set
+	logger      *slog.Logger
+	clustersDao *dao.GenericDAO[*ffv1.Cluster]
+	generic     *GenericServer[*ffv1.Cluster]
 }
 
 func NewClustersServer() *ClustersServerBuilder {
@@ -51,95 +48,90 @@ func (b *ClustersServerBuilder) SetLogger(value *slog.Logger) *ClustersServerBui
 	return b
 }
 
-func (b *ClustersServerBuilder) SetDAOs(value dao.Set) *ClustersServerBuilder {
-	b.daos = value
-	return b
-}
-
-func (b *ClustersServerBuilder) SetFlags(value *pflag.FlagSet) *ClustersServerBuilder {
-	b.flags = value
-	return b
-}
-
 func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
 		return
 	}
-	if b.daos == nil {
-		err = errors.New("data access objects are mandatory")
+
+	// Create the DAOs:
+	clustersDao, err := dao.NewGenericDAO[*ffv1.Cluster]().
+		SetLogger(b.logger).
+		SetTable("clusters").
+		Build()
+	if err != nil {
+		return
+	}
+
+	// Create the generic server:
+	generic, err := NewGenericServer[*ffv1.Cluster]().
+		SetLogger(b.logger).
+		SetService(ffv1.Clusters_ServiceDesc.ServiceName).
+		SetTable("clusters").
+		Build()
+	if err != nil {
 		return
 	}
 
 	// Create and populate the object:
 	result = &ClustersServer{
-		logger: b.logger,
-		daos:   b.daos,
+		logger:      b.logger,
+		clustersDao: clustersDao,
+		generic:     generic,
 	}
 	return
 }
 
 func (s *ClustersServer) List(ctx context.Context,
-	request *api.ClustersListRequest) (response *api.ClustersListResponse, err error) {
-	clusters, err := s.daos.Clusters().List(ctx, dao.ListRequest{
-		Offset: request.GetOffset(),
-		Limit:  request.GetLimit(),
-	})
-	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to list clusters",
-			slog.Any("error", err),
-		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list clusters")
-		return
-	}
-	response = &api.ClustersListResponse{
-		Size:  proto.Int32(clusters.Size),
-		Total: proto.Int32(clusters.Total),
-		Items: clusters.Items,
-	}
+	request *ffv1.ClustersListRequest) (response *ffv1.ClustersListResponse, err error) {
+	err = s.generic.List(ctx, request, &response)
 	return
 }
 
 func (s *ClustersServer) Get(ctx context.Context,
-	request *api.ClustersGetRequest) (response *api.ClustersGetResponse, err error) {
-	cluster, err := s.daos.Clusters().Get(ctx, request.ClusterId)
+	request *ffv1.ClustersGetRequest) (response *ffv1.ClustersGetResponse, err error) {
+	err = s.generic.Get(ctx, request, &response)
+	return
+}
+
+func (s *ClustersServer) Create(ctx context.Context,
+	request *ffv1.ClustersCreateRequest) (response *ffv1.ClustersCreateResponse, err error) {
+	err = s.validateId(ctx, request.Object)
 	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to get cluster",
-			slog.String("cluster_id", request.ClusterId),
-		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster with id '%s'", request.ClusterId)
 		return
 	}
-	if cluster == nil {
-		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with id '%s' not found", request.ClusterId)
-		return
-	}
-	response = &api.ClustersGetResponse{
-		Cluster: cluster,
-	}
+	err = s.generic.Create(ctx, request, &response)
+	return
+}
+
+func (s *ClustersServer) Update(ctx context.Context,
+	request *ffv1.ClustersUpdateRequest) (response *ffv1.ClustersUpdateResponse, err error) {
+	err = s.generic.Update(ctx, request, &response)
+	return
+}
+
+func (s *ClustersServer) Delete(ctx context.Context,
+	request *ffv1.ClustersDeleteRequest) (response *ffv1.ClustersDeleteResponse, err error) {
+	err = s.generic.Delete(ctx, request, &response)
 	return
 }
 
 func (s *ClustersServer) GetKubeconfig(ctx context.Context,
-	request *api.ClustersGetKubeconfigRequest) (response *api.ClustersGetKubeconfigResponse, err error) {
-	kubeconfig, err := s.getKubeconfig(ctx, request.ClusterId)
+	request *ffv1.ClustersGetKubeconfigRequest) (response *ffv1.ClustersGetKubeconfigResponse, err error) {
+	kubeconfig, err := s.getKubeconfig(ctx, request.Id)
 	if err != nil {
 		return
 	}
-	response = &api.ClustersGetKubeconfigResponse{
+	response = &ffv1.ClustersGetKubeconfigResponse{
 		Kubeconfig: string(kubeconfig),
 	}
 	return
 }
 
 func (s *ClustersServer) GetKubeconfigViaHttp(ctx context.Context,
-	request *api.ClustersGetKubeconfigViaHttpRequest) (response *httpbody.HttpBody, err error) {
-	kubeconfig, err := s.getKubeconfig(ctx, request.ClusterId)
+	request *ffv1.ClustersGetKubeconfigViaHttpRequest) (response *httpbody.HttpBody, err error) {
+	kubeconfig, err := s.getKubeconfig(ctx, request.Id)
 	if err != nil {
 		return
 	}
@@ -150,31 +142,48 @@ func (s *ClustersServer) GetKubeconfigViaHttp(ctx context.Context,
 	return
 }
 
-func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (kubeconfig []byte, err error) {
+func (s *ClustersServer) getKubeconfig(ctx context.Context, id string) (kubeconfig []byte, err error) {
 	// Validate the request:
-	if clusterId == "" {
+	if id == "" {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'cluster_id' is mandatory")
 		return
 	}
 
 	// Check that the cluster exists:
-	ok, err := s.daos.Clusters().Exists(ctx, clusterId)
+	exists, err := s.clustersDao.Exists(ctx, id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get cluster",
-			slog.String("cluster_id", clusterId),
+			slog.String("cluster_id", id),
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster with id '%s'", clusterId)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster with id '%s'", id)
 		return
 	}
-	if !ok {
-		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with id '%s' not found", clusterId)
+	if !exists {
+		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with id '%s' not found", id)
 		return
 	}
 
 	// TODO: Fetch the kubeconfig.
 	kubeconfig = []byte{}
 	return
+}
+
+func (s *ClustersServer) validateId(ctx context.Context, object *ffv1.Cluster) error {
+	if object == nil {
+		return grpcstatus.Error(
+			grpccodes.InvalidArgument,
+			"object is mandatory",
+		)
+	}
+	id := object.Id
+	if id != "" {
+		return grpcstatus.Error(
+			grpccodes.InvalidArgument,
+			"identifier isn't allowed",
+		)
+	}
+	return nil
 }

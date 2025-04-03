@@ -37,6 +37,9 @@ const (
 	Clusters_Get_FullMethodName                  = "/fulfillment.v1.Clusters/Get"
 	Clusters_GetKubeconfig_FullMethodName        = "/fulfillment.v1.Clusters/GetKubeconfig"
 	Clusters_GetKubeconfigViaHttp_FullMethodName = "/fulfillment.v1.Clusters/GetKubeconfigViaHttp"
+	Clusters_Create_FullMethodName               = "/fulfillment.v1.Clusters/Create"
+	Clusters_Update_FullMethodName               = "/fulfillment.v1.Clusters/Update"
+	Clusters_Delete_FullMethodName               = "/fulfillment.v1.Clusters/Delete"
 )
 
 // ClustersClient is the client API for Clusters service.
@@ -59,6 +62,37 @@ type ClustersClient interface {
 	//
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	GetKubeconfigViaHttp(ctx context.Context, in *ClustersGetKubeconfigViaHttpRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error)
+	// Creates a new cluster.
+	//
+	// Note that this operation is not allowed for regular users, only for the server. Regular users create clusters
+	// indirectly, creating a cluster order that will eventually result in the system creating a cluster.
+	Create(ctx context.Context, in *ClustersCreateRequest, opts ...grpc.CallOption) (*ClustersCreateResponse, error)
+	// Updates an existing cluster.
+	//
+	// In the HTTP+JSON version of the API this is mapped to the `PATCH` verb and the `update_mask` field is automatically
+	// populated from the list of fields present in the request body. For example, to update the `state` of a cluster to
+	// `READY` the request line should be like this:
+	//
+	// ```http
+	// PATCH /api/fulfillment/v1/clusters/123
+	// ```
+	//
+	// And the request body should be like this:
+	//
+	// ```json
+	//
+	//	{
+	//	  "status": {
+	//	    "state": "CLUSTER_STATE_READY"
+	//	  }
+	//	}
+	//
+	// ```
+	//
+	// The response body will contain the modified object.
+	Update(ctx context.Context, in *ClustersUpdateRequest, opts ...grpc.CallOption) (*ClustersUpdateResponse, error)
+	// Delete a cluster.
+	Delete(ctx context.Context, in *ClustersDeleteRequest, opts ...grpc.CallOption) (*ClustersDeleteResponse, error)
 }
 
 type clustersClient struct {
@@ -109,6 +143,36 @@ func (c *clustersClient) GetKubeconfigViaHttp(ctx context.Context, in *ClustersG
 	return out, nil
 }
 
+func (c *clustersClient) Create(ctx context.Context, in *ClustersCreateRequest, opts ...grpc.CallOption) (*ClustersCreateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClustersCreateResponse)
+	err := c.cc.Invoke(ctx, Clusters_Create_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clustersClient) Update(ctx context.Context, in *ClustersUpdateRequest, opts ...grpc.CallOption) (*ClustersUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClustersUpdateResponse)
+	err := c.cc.Invoke(ctx, Clusters_Update_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clustersClient) Delete(ctx context.Context, in *ClustersDeleteRequest, opts ...grpc.CallOption) (*ClustersDeleteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClustersDeleteResponse)
+	err := c.cc.Invoke(ctx, Clusters_Delete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClustersServer is the server API for Clusters service.
 // All implementations must embed UnimplementedClustersServer
 // for forward compatibility.
@@ -129,6 +193,37 @@ type ClustersServer interface {
 	//
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	GetKubeconfigViaHttp(context.Context, *ClustersGetKubeconfigViaHttpRequest) (*httpbody.HttpBody, error)
+	// Creates a new cluster.
+	//
+	// Note that this operation is not allowed for regular users, only for the server. Regular users create clusters
+	// indirectly, creating a cluster order that will eventually result in the system creating a cluster.
+	Create(context.Context, *ClustersCreateRequest) (*ClustersCreateResponse, error)
+	// Updates an existing cluster.
+	//
+	// In the HTTP+JSON version of the API this is mapped to the `PATCH` verb and the `update_mask` field is automatically
+	// populated from the list of fields present in the request body. For example, to update the `state` of a cluster to
+	// `READY` the request line should be like this:
+	//
+	// ```http
+	// PATCH /api/fulfillment/v1/clusters/123
+	// ```
+	//
+	// And the request body should be like this:
+	//
+	// ```json
+	//
+	//	{
+	//	  "status": {
+	//	    "state": "CLUSTER_STATE_READY"
+	//	  }
+	//	}
+	//
+	// ```
+	//
+	// The response body will contain the modified object.
+	Update(context.Context, *ClustersUpdateRequest) (*ClustersUpdateResponse, error)
+	// Delete a cluster.
+	Delete(context.Context, *ClustersDeleteRequest) (*ClustersDeleteResponse, error)
 	mustEmbedUnimplementedClustersServer()
 }
 
@@ -150,6 +245,15 @@ func (UnimplementedClustersServer) GetKubeconfig(context.Context, *ClustersGetKu
 }
 func (UnimplementedClustersServer) GetKubeconfigViaHttp(context.Context, *ClustersGetKubeconfigViaHttpRequest) (*httpbody.HttpBody, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubeconfigViaHttp not implemented")
+}
+func (UnimplementedClustersServer) Create(context.Context, *ClustersCreateRequest) (*ClustersCreateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
+}
+func (UnimplementedClustersServer) Update(context.Context, *ClustersUpdateRequest) (*ClustersUpdateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedClustersServer) Delete(context.Context, *ClustersDeleteRequest) (*ClustersDeleteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 func (UnimplementedClustersServer) mustEmbedUnimplementedClustersServer() {}
 func (UnimplementedClustersServer) testEmbeddedByValue()                  {}
@@ -244,6 +348,60 @@ func _Clusters_GetKubeconfigViaHttp_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Clusters_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersCreateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).Create(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_Create_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).Create(ctx, req.(*ClustersCreateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Clusters_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersUpdateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).Update(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_Update_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).Update(ctx, req.(*ClustersUpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Clusters_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).Delete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_Delete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).Delete(ctx, req.(*ClustersDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Clusters_ServiceDesc is the grpc.ServiceDesc for Clusters service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +424,18 @@ var Clusters_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKubeconfigViaHttp",
 			Handler:    _Clusters_GetKubeconfigViaHttp_Handler,
+		},
+		{
+			MethodName: "Create",
+			Handler:    _Clusters_Create_Handler,
+		},
+		{
+			MethodName: "Update",
+			Handler:    _Clusters_Update_Handler,
+		},
+		{
+			MethodName: "Delete",
+			Handler:    _Clusters_Delete_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

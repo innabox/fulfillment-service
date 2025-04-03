@@ -1,0 +1,52 @@
+#
+# Copyright (c) 2025 Red Hat Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+# specific language governing permissions and limitations under the License.
+#
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fulfillment-controller
+spec:
+  selector:
+    matchLabels:
+      app: fulfillment-controller
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: fulfillment-controller
+    spec:
+      serviceAccountName: controller
+      containers:
+
+      - name: controller
+        image: fulfillment-service
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command:
+        - /bin/sh
+        - -c
+        - |
+          exec /usr/local/bin/fulfillment-service \
+          start controller \
+          --log-level="debug" \
+          --log-headers="true" \
+          --log-bodies="true" \
+          --grpc-server-network="tcp" \
+          --grpc-server-address="fulfillment-api.${NAMESPACE}.svc:8000" \
+          --grpc-ca-file="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt" \
+          --grpc-ca-file="/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt" \
+          --grpc-token-file="/var/run/secrets/kubernetes.io/serviceaccount/token"
