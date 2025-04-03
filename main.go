@@ -33,6 +33,7 @@ func main() {
 		SetIn(os.Stdin).
 		SetOut(os.Stdout).
 		SetErr(os.Stderr).
+		AddCommand(cmd.NewDevCommand).
 		AddCommand(cmd.NewExampleCommand).
 		AddCommand(cmd.NewVersionCommand).
 		AddCommand(cmd.Start).
