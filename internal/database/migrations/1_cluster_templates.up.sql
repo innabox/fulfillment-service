@@ -13,17 +13,17 @@
 
 insert into cluster_templates (id, data) values
 (
-  'my-template',
+  'my_template',
   '{
-    "id": "my-template",
+    "id": "my_template",
     "title": "My template",
     "description": "My template is *nice*."
   }'
 ),
 (
-  'your-template',
+  'your_template',
   '{
-    "id": "your-template",
+    "id": "your_template",
     "title": "Your template",
     "description": "Your template is _ugly_."
   }'

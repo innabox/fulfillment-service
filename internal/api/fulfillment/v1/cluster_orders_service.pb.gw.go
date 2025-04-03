@@ -73,13 +73,13 @@ func request_ClusterOrders_Get_0(ctx context.Context, marshaler runtime.Marshale
 		metadata runtime.ServerMetadata
 		err      error
 	)
-	val, ok := pathParams["order_id"]
+	val, ok := pathParams["id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "order_id")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
 	}
-	protoReq.OrderId, err = runtime.String(val)
+	protoReq.Id, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "order_id", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
 	}
 	msg, err := client.Get(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
@@ -91,75 +91,153 @@ func local_request_ClusterOrders_Get_0(ctx context.Context, marshaler runtime.Ma
 		metadata runtime.ServerMetadata
 		err      error
 	)
-	val, ok := pathParams["order_id"]
+	val, ok := pathParams["id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "order_id")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
 	}
-	protoReq.OrderId, err = runtime.String(val)
+	protoReq.Id, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "order_id", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
 	}
 	msg, err := server.Get(ctx, &protoReq)
 	return msg, metadata, err
 }
 
-func request_ClusterOrders_Place_0(ctx context.Context, marshaler runtime.Marshaler, client ClusterOrdersClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func request_ClusterOrders_Create_0(ctx context.Context, marshaler runtime.Marshaler, client ClusterOrdersClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ClusterOrdersPlaceRequest
+		protoReq ClusterOrdersCreateRequest
 		metadata runtime.ServerMetadata
 	)
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq.Object); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	msg, err := client.Place(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	msg, err := client.Create(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
 
-func local_request_ClusterOrders_Place_0(ctx context.Context, marshaler runtime.Marshaler, server ClusterOrdersServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func local_request_ClusterOrders_Create_0(ctx context.Context, marshaler runtime.Marshaler, server ClusterOrdersServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ClusterOrdersPlaceRequest
+		protoReq ClusterOrdersCreateRequest
 		metadata runtime.ServerMetadata
 	)
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq.Object); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
-	msg, err := server.Place(ctx, &protoReq)
+	msg, err := server.Create(ctx, &protoReq)
 	return msg, metadata, err
 }
 
-func request_ClusterOrders_Cancel_0(ctx context.Context, marshaler runtime.Marshaler, client ClusterOrdersClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func request_ClusterOrders_Delete_0(ctx context.Context, marshaler runtime.Marshaler, client ClusterOrdersClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ClusterOrdersCancelRequest
+		protoReq ClusterOrdersDeleteRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
-	val, ok := pathParams["order_id"]
+	val, ok := pathParams["id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "order_id")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
 	}
-	protoReq.OrderId, err = runtime.String(val)
+	protoReq.Id, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "order_id", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
 	}
-	msg, err := client.Cancel(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	msg, err := client.Delete(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
 
-func local_request_ClusterOrders_Cancel_0(ctx context.Context, marshaler runtime.Marshaler, server ClusterOrdersServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func local_request_ClusterOrders_Delete_0(ctx context.Context, marshaler runtime.Marshaler, server ClusterOrdersServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ClusterOrdersCancelRequest
+		protoReq ClusterOrdersDeleteRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
-	val, ok := pathParams["order_id"]
+	val, ok := pathParams["id"]
 	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "order_id")
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
 	}
-	protoReq.OrderId, err = runtime.String(val)
+	protoReq.Id, err = runtime.String(val)
 	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "order_id", err)
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
 	}
-	msg, err := server.Cancel(ctx, &protoReq)
+	msg, err := server.Delete(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+var filter_ClusterOrders_UpdateStatus_0 = &utilities.DoubleArray{Encoding: map[string]int{"status": 0, "id": 1}, Base: []int{1, 1, 2, 0, 0}, Check: []int{0, 1, 1, 2, 3}}
+
+func request_ClusterOrders_UpdateStatus_0(ctx context.Context, marshaler runtime.Marshaler, client ClusterOrdersClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ClusterOrdersUpdateStatusRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	newReader, berr := utilities.IOReaderFactory(req.Body)
+	if berr != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", berr)
+	}
+	if err := marshaler.NewDecoder(newReader()).Decode(&protoReq.Status); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if protoReq.UpdateMask == nil || len(protoReq.UpdateMask.GetPaths()) == 0 {
+		if fieldMask, err := runtime.FieldMaskFromRequestBody(newReader(), protoReq.Status); err != nil {
+			return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+		} else {
+			protoReq.UpdateMask = fieldMask
+		}
+	}
+	val, ok := pathParams["id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
+	}
+	protoReq.Id, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
+	}
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_ClusterOrders_UpdateStatus_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := client.UpdateStatus(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_ClusterOrders_UpdateStatus_0(ctx context.Context, marshaler runtime.Marshaler, server ClusterOrdersServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ClusterOrdersUpdateStatusRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	newReader, berr := utilities.IOReaderFactory(req.Body)
+	if berr != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", berr)
+	}
+	if err := marshaler.NewDecoder(newReader()).Decode(&protoReq.Status); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if protoReq.UpdateMask == nil || len(protoReq.UpdateMask.GetPaths()) == 0 {
+		if fieldMask, err := runtime.FieldMaskFromRequestBody(newReader(), protoReq.Status); err != nil {
+			return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+		} else {
+			protoReq.UpdateMask = fieldMask
+		}
+	}
+	val, ok := pathParams["id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "id")
+	}
+	protoReq.Id, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
+	}
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_ClusterOrders_UpdateStatus_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.UpdateStatus(ctx, &protoReq)
 	return msg, metadata, err
 }
 
@@ -195,7 +273,7 @@ func RegisterClusterOrdersHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Get", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{order_id}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Get", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{id}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -207,47 +285,67 @@ func RegisterClusterOrdersHandlerServer(ctx context.Context, mux *runtime.ServeM
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ClusterOrders_Get_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ClusterOrders_Get_0(annotatedContext, mux, outboundMarshaler, w, req, response_ClusterOrders_Get_0{resp.(*ClusterOrdersGetResponse)}, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodPost, pattern_ClusterOrders_Place_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_ClusterOrders_Create_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Place", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Create", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := local_request_ClusterOrders_Place_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		resp, md, err := local_request_ClusterOrders_Create_0(annotatedContext, inboundMarshaler, server, req, pathParams)
 		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ClusterOrders_Place_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ClusterOrders_Create_0(annotatedContext, mux, outboundMarshaler, w, req, response_ClusterOrders_Create_0{resp.(*ClusterOrdersCreateResponse)}, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodDelete, pattern_ClusterOrders_Cancel_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodDelete, pattern_ClusterOrders_Delete_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Cancel", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{order_id}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Delete", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{id}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := local_request_ClusterOrders_Cancel_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		resp, md, err := local_request_ClusterOrders_Delete_0(annotatedContext, inboundMarshaler, server, req, pathParams)
 		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ClusterOrders_Cancel_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ClusterOrders_Delete_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPatch, pattern_ClusterOrders_UpdateStatus_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/UpdateStatus", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{id}/status"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_ClusterOrders_UpdateStatus_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_ClusterOrders_UpdateStatus_0(annotatedContext, mux, outboundMarshaler, w, req, response_ClusterOrders_UpdateStatus_0{resp.(*ClusterOrdersUpdateStatusResponse)}, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -310,7 +408,7 @@ func RegisterClusterOrdersHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Get", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{order_id}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Get", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{id}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -321,55 +419,98 @@ func RegisterClusterOrdersHandlerClient(ctx context.Context, mux *runtime.ServeM
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ClusterOrders_Get_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ClusterOrders_Get_0(annotatedContext, mux, outboundMarshaler, w, req, response_ClusterOrders_Get_0{resp.(*ClusterOrdersGetResponse)}, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodPost, pattern_ClusterOrders_Place_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodPost, pattern_ClusterOrders_Create_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Place", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Create", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := request_ClusterOrders_Place_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		resp, md, err := request_ClusterOrders_Create_0(annotatedContext, inboundMarshaler, client, req, pathParams)
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ClusterOrders_Place_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ClusterOrders_Create_0(annotatedContext, mux, outboundMarshaler, w, req, response_ClusterOrders_Create_0{resp.(*ClusterOrdersCreateResponse)}, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodDelete, pattern_ClusterOrders_Cancel_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodDelete, pattern_ClusterOrders_Delete_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Cancel", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{order_id}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/Delete", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{id}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := request_ClusterOrders_Cancel_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		resp, md, err := request_ClusterOrders_Delete_0(annotatedContext, inboundMarshaler, client, req, pathParams)
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ClusterOrders_Cancel_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ClusterOrders_Delete_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPatch, pattern_ClusterOrders_UpdateStatus_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fulfillment.v1.ClusterOrders/UpdateStatus", runtime.WithHTTPPathPattern("/api/fulfillment/v1/cluster_orders/{id}/status"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_ClusterOrders_UpdateStatus_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_ClusterOrders_UpdateStatus_0(annotatedContext, mux, outboundMarshaler, w, req, response_ClusterOrders_UpdateStatus_0{resp.(*ClusterOrdersUpdateStatusResponse)}, mux.GetForwardResponseOptions()...)
 	})
 	return nil
 }
 
+type response_ClusterOrders_Get_0 struct {
+	*ClusterOrdersGetResponse
+}
+
+func (m response_ClusterOrders_Get_0) XXX_ResponseBody() interface{} {
+	return m.Object
+}
+
+type response_ClusterOrders_Create_0 struct {
+	*ClusterOrdersCreateResponse
+}
+
+func (m response_ClusterOrders_Create_0) XXX_ResponseBody() interface{} {
+	return m.Object
+}
+
+type response_ClusterOrders_UpdateStatus_0 struct {
+	*ClusterOrdersUpdateStatusResponse
+}
+
+func (m response_ClusterOrders_UpdateStatus_0) XXX_ResponseBody() interface{} {
+	return m.Status
+}
+
 var (
-	pattern_ClusterOrders_List_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"api", "fulfillment", "v1", "cluster_orders"}, ""))
-	pattern_ClusterOrders_Get_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"api", "fulfillment", "v1", "cluster_orders", "order_id"}, ""))
-	pattern_ClusterOrders_Place_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"api", "fulfillment", "v1", "cluster_orders"}, ""))
-	pattern_ClusterOrders_Cancel_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"api", "fulfillment", "v1", "cluster_orders", "order_id"}, ""))
+	pattern_ClusterOrders_List_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"api", "fulfillment", "v1", "cluster_orders"}, ""))
+	pattern_ClusterOrders_Get_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"api", "fulfillment", "v1", "cluster_orders", "id"}, ""))
+	pattern_ClusterOrders_Create_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"api", "fulfillment", "v1", "cluster_orders"}, ""))
+	pattern_ClusterOrders_Delete_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"api", "fulfillment", "v1", "cluster_orders", "id"}, ""))
+	pattern_ClusterOrders_UpdateStatus_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"api", "fulfillment", "v1", "cluster_orders", "id", "status"}, ""))
 )
 
 var (
-	forward_ClusterOrders_List_0   = runtime.ForwardResponseMessage
-	forward_ClusterOrders_Get_0    = runtime.ForwardResponseMessage
-	forward_ClusterOrders_Place_0  = runtime.ForwardResponseMessage
-	forward_ClusterOrders_Cancel_0 = runtime.ForwardResponseMessage
+	forward_ClusterOrders_List_0         = runtime.ForwardResponseMessage
+	forward_ClusterOrders_Get_0          = runtime.ForwardResponseMessage
+	forward_ClusterOrders_Create_0       = runtime.ForwardResponseMessage
+	forward_ClusterOrders_Delete_0       = runtime.ForwardResponseMessage
+	forward_ClusterOrders_UpdateStatus_0 = runtime.ForwardResponseMessage
 )

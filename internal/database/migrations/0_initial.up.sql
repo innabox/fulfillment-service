@@ -17,11 +17,23 @@ create table cluster_templates (
 );
 
 create table clusters (
-  id uuid not null primary key,
+  id text not null primary key,
   data jsonb not null
 );
 
 create table cluster_orders (
-  id uuid not null primary key,
+  id text not null primary key,
+  data jsonb not null
+);
+
+create schema admin;
+
+create table admin.cluster_orders (
+  id text not null primary key,
+  data jsonb not null
+);
+
+create table admin.hubs (
+  id text not null primary key,
   data jsonb not null
 );

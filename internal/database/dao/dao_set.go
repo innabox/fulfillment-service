@@ -14,23 +14,29 @@ language governing permissions and limitations under the License.
 package dao
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 
-	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	"github.com/google/uuid"
+	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
+	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type Set interface {
-	ClusterTemplates() *GenericDAO[*api.ClusterTemplate]
-	ClusterOrders() *GenericDAO[*api.ClusterOrder]
-	Clusters() *GenericDAO[*api.Cluster]
+	ClusterOrders() *GenericDAO[*fulfillmentv1.ClusterOrder]
+	ClusterTemplates() *GenericDAO[*fulfillmentv1.ClusterTemplate]
+	Clusters() *GenericDAO[*fulfillmentv1.Cluster]
 }
 
 type set struct {
-	clusterTemplates *GenericDAO[*api.ClusterTemplate]
-	clusterOrders    *GenericDAO[*api.ClusterOrder]
-	clusters         *GenericDAO[*api.Cluster]
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	clusterTemplates *GenericDAO[*fulfillmentv1.ClusterTemplate]
+	clusterOrders    *GenericDAO[*fulfillmentv1.ClusterOrder]
+	clusters         *GenericDAO[*fulfillmentv1.Cluster]
 }
 
 type SetBuilder struct {
@@ -53,49 +59,95 @@ func (b *SetBuilder) Build() (result Set, err error) {
 		return
 	}
 
-	// Create the individual DAOs:
-	clusterTemplatesDAO, err := NewGenericDAO[*api.ClusterTemplate]().
+	// Create the result early, so that we can the reference to the event callback to create the individual DAOs:
+	s := &set{
+		logger: b.logger,
+	}
+
+	// Create the notifier:
+	s.notifier, err = database.NewNotifier().
 		SetLogger(b.logger).
-		SetTable("cluster_templates").
+		SetChannel("events").
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create notifier: %w", err)
+		return
+	}
+
+	// Cluster the individual DAOs:
+	s.clusterTemplates, err = NewGenericDAO[*fulfillmentv1.ClusterTemplate]().
+		SetLogger(b.logger).
+		SetTable("public.cluster_templates").
+		AddEventCallback(s.notifyEvent).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster templates DAO: %w", err)
 		return
 	}
-	clusterOrdersDAO, err := NewGenericDAO[*api.ClusterOrder]().
+	s.clusterOrders, err = NewGenericDAO[*fulfillmentv1.ClusterOrder]().
 		SetLogger(b.logger).
-		SetTable("cluster_orders").
+		SetTable("public.cluster_orders").
+		AddEventCallback(s.notifyEvent).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create cluster orders DAO: %w", err)
 		return
 	}
-	clustersDAO, err := NewGenericDAO[*api.Cluster]().
+	s.clusters, err = NewGenericDAO[*fulfillmentv1.Cluster]().
 		SetLogger(b.logger).
-		SetTable("clusters").
+		SetTable("public.clusters").
+		AddEventCallback(s.notifyEvent).
 		Build()
 	if err != nil {
-		err = fmt.Errorf("failed to create cluster DAO: %w", err)
+		err = fmt.Errorf("failed to create clusters DAO: %w", err)
 		return
 	}
 
-	// Create and populate the result:
-	result = &set{
-		clusterTemplates: clusterTemplatesDAO,
-		clusterOrders:    clusterOrdersDAO,
-		clusters:         clustersDAO,
-	}
+	result = s
 	return
 }
 
-func (s *set) ClusterTemplates() *GenericDAO[*api.ClusterTemplate] {
+func (s *set) ClusterTemplates() *GenericDAO[*fulfillmentv1.ClusterTemplate] {
 	return s.clusterTemplates
 }
 
-func (s *set) ClusterOrders() *GenericDAO[*api.ClusterOrder] {
+func (s *set) ClusterOrders() *GenericDAO[*fulfillmentv1.ClusterOrder] {
 	return s.clusterOrders
 }
 
-func (s *set) Clusters() *GenericDAO[*api.Cluster] {
+func (s *set) Clusters() *GenericDAO[*fulfillmentv1.Cluster] {
 	return s.clusters
+}
+
+// notifyEvent converts the DAO event into an API event and publishes it using the PostgreSQL NOTIFY command.
+func (s *set) notifyEvent(ctx context.Context, e Event) (err error) {
+	event := &eventsv1.Event{}
+	event.Id = uuid.NewString()
+	switch e.Type {
+	case EventTypeCreated:
+		event.Type = eventsv1.EventType_EVENT_TYPE_OBJECT_CREATED
+	case EventTypeUpdated:
+		event.Type = eventsv1.EventType_EVENT_TYPE_OBJECT_UPDATED
+	case EventTypeDeleted:
+		event.Type = eventsv1.EventType_EVENT_TYPE_OBJECT_DELETED
+	default:
+		return fmt.Errorf("unknown event kind '%s'", e.Type)
+	}
+	switch object := e.Object.(type) {
+	case *fulfillmentv1.Cluster:
+		event.Payload = &eventsv1.Event_Cluster{
+			Cluster: object,
+		}
+	case *fulfillmentv1.ClusterOrder:
+		event.Payload = &eventsv1.Event_ClusterOrder{
+			ClusterOrder: object,
+		}
+	case *fulfillmentv1.ClusterTemplate:
+		event.Payload = &eventsv1.Event_ClusterTemplate{
+			ClusterTemplate: object,
+		}
+	default:
+		return fmt.Errorf("unknown object type '%T'", object)
+	}
+	return s.notifier.Notify(ctx, event)
 }

@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -25,13 +26,16 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/innabox/fulfillment-service/internal"
-	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	adminv1 "github.com/innabox/fulfillment-service/internal/api/admin/v1"
+	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
+	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/logging"
 	"github.com/innabox/fulfillment-service/internal/network"
 	"github.com/innabox/fulfillment-service/internal/servers"
+	"github.com/innabox/fulfillment-service/internal/servers/admin"
 )
 
 // NewStartServerCommand creates and returns the `start server` command.
@@ -119,6 +123,12 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	// Create the data access objects:
 	c.logger.InfoContext(ctx, "Creating data access objects")
 	daos, err := dao.NewSet().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return err
+	}
+	adminDao, err := dao.NewAdminSet().
 		SetLogger(c.logger).
 		Build()
 	if err != nil {
@@ -269,7 +279,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to create cluster templates server")
 	}
-	api.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
+	fulfillmentv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
 
 	// Create the cluster orders server:
 	c.logger.InfoContext(ctx, "Creating cluster orders server")
@@ -281,7 +291,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to create cluster orders server")
 	}
-	api.RegisterClusterOrdersServer(grpcServer, clusterOrdersServer)
+	fulfillmentv1.RegisterClusterOrdersServer(grpcServer, clusterOrdersServer)
 
 	// Create the clusters server:
 	c.logger.InfoContext(ctx, "Creating clusters server")
@@ -293,7 +303,55 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to create clusters server")
 	}
-	api.RegisterClustersServer(grpcServer, clustersServer)
+	fulfillmentv1.RegisterClustersServer(grpcServer, clustersServer)
+
+	// Create the admin cluster orders server:
+	c.logger.InfoContext(ctx, "Creating admin cluster orders server")
+	adminClusterOrdersServer, err := admin.NewClusterOrdersServer().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		SetDAOs(adminDao).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create admin cluster orders server")
+	}
+	adminv1.RegisterClusterOrdersServer(grpcServer, adminClusterOrdersServer)
+
+	// Create the admin hubs server:
+	c.logger.InfoContext(ctx, "Creating hubs server")
+	adminHubsServer, err := admin.NewHubsServer().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		SetDAOs(adminDao).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create hubs server")
+	}
+	adminv1.RegisterHubsServer(grpcServer, adminHubsServer)
+
+	// Create the events server:
+	c.logger.InfoContext(ctx, "Creating events server")
+	eventsServer, err := servers.NewEventsServer().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		SetDbUrl(dbTool.URL()).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create events server")
+	}
+	go func() {
+		err := eventsServer.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			c.logger.InfoContext(ctx, "Events server finished")
+		} else {
+			c.logger.ErrorContext(
+				ctx,
+				"Events server finished",
+				slog.Any("error", err),
+			)
+		}
+	}()
+	eventsv1.RegisterEventsServer(grpcServer, eventsServer)
 
 	// Start serving:
 	c.logger.InfoContext(

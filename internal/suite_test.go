@@ -20,7 +20,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestInernal(t *testing.T) {
+func TestInternal(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Internal")
 }

@@ -105,17 +105,17 @@ func (s *ClusterOrdersServer) List(ctx context.Context,
 
 func (s *ClusterOrdersServer) Get(ctx context.Context,
 	request *api.ClusterOrdersGetRequest) (response *api.ClusterOrdersGetResponse, err error) {
-	order, err := s.daos.ClusterOrders().Get(ctx, request.OrderId)
+	order, err := s.daos.ClusterOrders().Get(ctx, request.Id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get cluster order",
-			slog.String("order_id", request.OrderId),
+			slog.String("order_id", request.Id),
 		)
 		err = grpcstatus.Errorf(
 			grpccodes.Internal,
 			"failed to get cluster order with identifier '%s'",
-			request.OrderId,
+			request.Id,
 		)
 		return
 	}
@@ -123,42 +123,42 @@ func (s *ClusterOrdersServer) Get(ctx context.Context,
 		err = grpcstatus.Errorf(
 			grpccodes.NotFound,
 			"cluster order with identifier '%s' not found",
-			request.OrderId,
+			request.Id,
 		)
 		return
 	}
 	response = &api.ClusterOrdersGetResponse{
-		Order: order,
+		Object: order,
 	}
 	return
 }
 
-func (s *ClusterOrdersServer) Place(ctx context.Context,
-	request *api.ClusterOrdersPlaceRequest) (response *api.ClusterOrdersPlaceResponse, err error) {
+func (s *ClusterOrdersServer) Create(ctx context.Context,
+	request *api.ClusterOrdersCreateRequest) (response *api.ClusterOrdersCreateResponse, err error) {
 	// Validate the request:
-	if request.Order == nil {
+	if request.Object == nil {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "order is required")
 		return
 	}
-	if request.Order.Id != "" {
+	if request.Object.Id != "" {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "order identifier isn't allowed")
 		return
 	}
-	if request.Order.Spec == nil {
+	if request.Object.Spec == nil {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "order spec is required")
 		return
 	}
-	if request.Order.Spec.TemplateId == "" {
+	if request.Object.Spec.TemplateId == "" {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template identifier is required")
 		return
 	}
-	if request.Order.Status != nil {
+	if request.Object.Status != nil {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "status isn't allowed")
 		return
 	}
 
 	// Check that the requested template exists:
-	templateId := request.Order.Spec.TemplateId
+	templateId := request.Object.Spec.TemplateId
 	template, err := s.daos.ClusterTemplates().Get(ctx, templateId)
 	if err != nil {
 		s.logger.ErrorContext(
@@ -187,9 +187,7 @@ func (s *ClusterOrdersServer) Place(ctx context.Context,
 		Spec: &api.ClusterOrderSpec{
 			TemplateId: templateId,
 		},
-		Status: &api.ClusterOrderStatus{
-			State: api.ClusterOrderState_CLUSTER_ORDER_STATE_ACCEPTED,
-		},
+		Status: &api.ClusterOrderStatus{},
 	}
 	_, err = s.daos.ClusterOrders().Insert(ctx, order)
 	if err != nil {
@@ -203,31 +201,31 @@ func (s *ClusterOrdersServer) Place(ctx context.Context,
 	}
 
 	// Return the result:
-	response = &api.ClusterOrdersPlaceResponse{
-		Order: order,
+	response = &api.ClusterOrdersCreateResponse{
+		Object: order,
 	}
 	return
 }
 
-func (s *ClusterOrdersServer) Cancel(ctx context.Context,
-	request *api.ClusterOrdersCancelRequest) (response *api.ClusterOrdersCancelResponse, err error) {
+func (s *ClusterOrdersServer) Delete(ctx context.Context,
+	request *api.ClusterOrdersDeleteRequest) (response *api.ClusterOrdersDeleteResponse, err error) {
 	// Fetch the order:
-	order, err := s.daos.ClusterOrders().Get(ctx, request.OrderId)
+	order, err := s.daos.ClusterOrders().Get(ctx, request.Id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get cluster order",
-			slog.String("order_id", request.OrderId),
+			slog.String("order_id", request.Id),
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster order '%s'", request.OrderId)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster order '%s'", request.Id)
 		return
 	}
 	if order == nil {
 		err = grpcstatus.Errorf(
 			grpccodes.InvalidArgument,
 			"cluster order with identifier '%s' doesn't exist",
-			request.OrderId,
+			request.Id,
 		)
 		return
 	}
@@ -236,22 +234,80 @@ func (s *ClusterOrdersServer) Cancel(ctx context.Context,
 	if order.Status == nil {
 		order.Status = &api.ClusterOrderStatus{}
 	}
-	order.Status.State = api.ClusterOrderState_CLUSTER_ORDER_STATE_CANCELED
+	order.Status.State = api.ClusterOrderState_CLUSTER_ORDER_STATE_FAILED
 	err = s.daos.ClusterOrders().Update(ctx, order.Id, order)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to update cluster order state",
-			slog.String("order_id", request.OrderId),
+			slog.String("order_id", request.Id),
 			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(
 			grpccodes.Internal,
 			"failed to update state for cluster order with identifier '%s'",
-			request.OrderId,
+			request.Id,
 		)
 		return
 	}
-	response = &api.ClusterOrdersCancelResponse{}
+	response = &api.ClusterOrdersDeleteResponse{}
+	return
+}
+
+func (s *ClusterOrdersServer) UpdateStatus(ctx context.Context,
+	request *api.ClusterOrdersUpdateStatusRequest) (response *api.ClusterOrdersUpdateStatusResponse, err error) {
+	// Validate the request:
+	if request.Id == "" {
+		err = grpcstatus.Errorf(grpccodes.Internal, "order identifier is required")
+		return
+	}
+	if request.Status == nil {
+		err = grpcstatus.Errorf(grpccodes.Internal, "order status is required")
+		return
+	}
+
+	// Fetch the order:
+	order, err := s.daos.ClusterOrders().Get(ctx, request.Id)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster order",
+			slog.String("id", request.Id),
+			slog.Any("error", err),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster order '%s'", request.Id)
+		return
+	}
+	if order == nil {
+		err = grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"cluster order with identifier '%s' doesn't exist",
+			request.Id,
+		)
+		return
+	}
+
+	// Merge the request data into the old data:
+	order.Status = request.Status
+
+	// Save the result:
+	err = s.daos.ClusterOrders().Update(ctx, order.Id, order)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to update cluster order status",
+			slog.String("order_id", request.Id),
+			slog.Any("error", err),
+		)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to update status for cluster order with identifier '%s'",
+			request.Id,
+		)
+		return
+	}
+	response = &api.ClusterOrdersUpdateStatusResponse{
+		Status: order.Status,
+	}
 	return
 }

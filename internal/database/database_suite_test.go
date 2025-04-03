@@ -29,26 +29,20 @@ func TestDatabase(t *testing.T) {
 	RunSpecs(t, "Database")
 }
 
-// logger is the logger that will be used by the tests.
-var logger *slog.Logger
-
-// dbServer is the database dbServer that will be used to create the databases used by the tests.
-var dbServer *DatabaseServer
+var (
+	logger   *slog.Logger
+	dbServer *DatabaseServer
+)
 
 var _ = BeforeSuite(func() {
 	var err error
 
-	// Create a logger that writes to the Ginkgo stream:
 	logger, err = logging.NewLogger().
+		SetLevel("debug").
 		SetOut(GinkgoWriter).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 
-	// Start the database server:
 	dbServer = MakeDatabaseServer()
-})
-
-var _ = AfterSuite(func() {
-	// Stop the database server:
-	dbServer.Close()
+	DeferCleanup(dbServer.Close)
 })

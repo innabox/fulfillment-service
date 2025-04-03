@@ -203,6 +203,20 @@ var _ = Describe("Generic DAO", func() {
 			Expect(data).ToNot(BeNil())
 		})
 
+		It("Generates non empty identifiers", func() {
+			object := &api.Cluster{}
+			id, err := generic.Insert(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(id).ToNot(BeEmpty())
+		})
+
+		It("Puts the generated identifier inside the object", func() {
+			object := &api.Cluster{}
+			id, err := generic.Insert(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.Id).To(Equal(id))
+		})
+
 		It("Gets object", func() {
 			// Insert the row:
 			id, err := generic.Insert(ctx, &api.Cluster{})

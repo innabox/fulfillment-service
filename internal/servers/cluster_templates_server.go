@@ -105,18 +105,18 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 
 func (s *ClusterTemplatesServer) Get(ctx context.Context,
 	request *api.ClusterTemplatesGetRequest) (response *api.ClusterTemplatesGetResponse, err error) {
-	template, err := s.daos.ClusterTemplates().Get(ctx, request.TemplateId)
+	template, err := s.daos.ClusterTemplates().Get(ctx, request.Id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get cluster template",
-			slog.String("template_id", request.TemplateId),
+			slog.String("template_id", request.Id),
 			slog.Any("error", err),
 		)
 		err = grpcstatus.Errorf(
 			grpccodes.Internal,
 			"failed to get cluster template with identifier '%s'",
-			request.TemplateId,
+			request.Id,
 		)
 		return
 	}
@@ -124,12 +124,12 @@ func (s *ClusterTemplatesServer) Get(ctx context.Context,
 		err = grpcstatus.Errorf(
 			grpccodes.NotFound,
 			"cluster template with identifier '%s' not found",
-			request.TemplateId,
+			request.Id,
 		)
 		return
 	}
 	response = &api.ClusterTemplatesGetResponse{
-		Template: template,
+		Object: template,
 	}
 	return
 }
