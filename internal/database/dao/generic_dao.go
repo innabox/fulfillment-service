@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -29,11 +30,12 @@ import (
 
 // GenericDAOBuilder is a builder for creating generic data access objects.
 type GenericDAOBuilder[M proto.Message] struct {
-	logger       *slog.Logger
-	table        string
-	defaultOrder string
-	defaultLimit int32
-	maxLimit     int32
+	logger         *slog.Logger
+	table          string
+	defaultOrder   string
+	defaultLimit   int32
+	maxLimit       int32
+	eventCallbacks []EventCallback
 }
 
 // GenericDAO provides generic data access operations for protocol buffers messages. It assumes that objects will be
@@ -44,13 +46,14 @@ type GenericDAOBuilder[M proto.Message] struct {
 //
 // Objects must have field named `id` of string type.
 type GenericDAO[M proto.Message] struct {
-	logger       *slog.Logger
-	table        string
-	defaultOrder string
-	defaultLimit int32
-	maxLimit     int32
-	reflectMsg   protoreflect.Message
-	reflectId    protoreflect.FieldDescriptor
+	logger         *slog.Logger
+	table          string
+	defaultOrder   string
+	defaultLimit   int32
+	maxLimit       int32
+	eventCallbacks []EventCallback
+	reflectMsg     protoreflect.Message
+	reflectId      protoreflect.FieldDescriptor
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
@@ -91,6 +94,16 @@ func (b *GenericDAOBuilder[M]) SetDefaultLimit(value int) *GenericDAOBuilder[M] 
 // SetMaxLimit sets the maximum number of items returned. This is optional and the default value is 1000.
 func (b *GenericDAOBuilder[M]) SetMaxLimit(value int) *GenericDAOBuilder[M] {
 	b.maxLimit = int32(value)
+	return b
+}
+
+// AddEventCallback adds a function that will be called to process events when the DAO creates, updates or deletes
+// an object.
+//
+// The functions are called synchronously, in the same order they were added, and with the same context used by the
+// DAO for its operations. If any of them returns an error the transaction will be rolled back.
+func (b *GenericDAOBuilder[M]) AddEventCallback(value EventCallback) *GenericDAOBuilder[M] {
+	b.eventCallbacks = append(b.eventCallbacks, value)
 	return b
 }
 
@@ -135,13 +148,14 @@ func (b *GenericDAOBuilder[M]) Build() (result *GenericDAO[M], err error) {
 
 	// Create and populate the object:
 	result = &GenericDAO[M]{
-		logger:       b.logger,
-		table:        b.table,
-		defaultOrder: b.defaultOrder,
-		defaultLimit: b.defaultLimit,
-		maxLimit:     b.maxLimit,
-		reflectMsg:   reflectMsg,
-		reflectId:    reflectId,
+		logger:         b.logger,
+		table:          b.table,
+		defaultOrder:   b.defaultOrder,
+		defaultLimit:   b.defaultLimit,
+		maxLimit:       b.maxLimit,
+		eventCallbacks: slices.Clone(b.eventCallbacks),
+		reflectMsg:     reflectMsg,
+		reflectId:      reflectId,
 	}
 	return
 }
@@ -200,23 +214,23 @@ func (d *GenericDAO[M]) List(ctx context.Context, request ListRequest) (response
 
 	// Count the total number of results, disregarding the offset and the limit:
 	totalQuery := fmt.Sprintf("select count(*) from %s", d.table)
-	row := tx.QueryRow(ctx, totalQuery)
+	totalRow := tx.QueryRow(ctx, totalQuery)
 	var total int
-	err = row.Scan(&total)
+	err = totalRow.Scan(&total)
 	if err != nil {
 		return
 	}
 
 	// Fetch the results:
 	itemsQuery := fmt.Sprintf("select data from %s %s offset $1 limit $2", d.table, order)
-	rows, err := tx.Query(ctx, itemsQuery, offset, limit)
+	itemsRows, err := tx.Query(ctx, itemsQuery, offset, limit)
 	if err != nil {
 		return
 	}
 	var items []M
-	for rows.Next() {
+	for itemsRows.Next() {
 		var data []byte
-		err = rows.Scan(&data)
+		err = itemsRows.Scan(&data)
 		if err != nil {
 			return
 		}
@@ -227,7 +241,7 @@ func (d *GenericDAO[M]) List(ctx context.Context, request ListRequest) (response
 		}
 		items = append(items, item)
 	}
-	err = rows.Err()
+	err = itemsRows.Err()
 	if err != nil {
 		return
 	}
@@ -296,8 +310,12 @@ func (d *GenericDAO[M]) Insert(ctx context.Context, object M) (id string, err er
 	}
 	defer tx.ReportError(&err)
 
-	// Generate a new identifier:
-	tmp := uuid.NewString()
+	// Generate a new identifier if needed:
+	reflect := object.ProtoReflect()
+	tmp := reflect.Get(d.reflectId).Interface().(string)
+	if tmp == "" {
+		tmp = uuid.NewString()
+	}
 	object.ProtoReflect().Set(d.reflectId, protoreflect.ValueOfString(tmp))
 
 	// Insert the row:
@@ -310,6 +328,17 @@ func (d *GenericDAO[M]) Insert(ctx context.Context, object M) (id string, err er
 	if err != nil {
 		return
 	}
+
+	// Fire the event:
+	err = d.fireEvent(ctx, Event{
+		Type:   EventTypeCreated,
+		Object: object,
+	})
+	if err != nil {
+		return
+	}
+
+	// Return the generated identifier:
 	id = tmp
 	return
 }
@@ -323,13 +352,42 @@ func (d *GenericDAO[M]) Update(ctx context.Context, id string, object M) (err er
 	}
 	defer tx.ReportError(&err)
 
-	// Update the row:
-	data, err := protojson.Marshal(object)
+	// Fetch the current data:
+	query := fmt.Sprintf("select data from %s where id = $1", d.table)
+	row := tx.QueryRow(ctx, query, id)
+	var data []byte
+	err = row.Scan(&data)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = nil
+		return
+	}
+	current := d.reflectMsg.New().Interface().(M)
+	err = protojson.Unmarshal(data, current)
 	if err != nil {
 		return
 	}
-	query := fmt.Sprintf("update %s set data = $1 where id = $2", d.table)
+
+	// Do nothing if there are no changes:
+	if proto.Equal(current, object) {
+		return
+	}
+
+	// Save the updated data:
+	data, err = protojson.Marshal(object)
+	if err != nil {
+		return
+	}
+	query = fmt.Sprintf("update %s set data = $1 where id = $2", d.table)
 	_, err = tx.Exec(ctx, query, data, id)
+	if err != nil {
+		return
+	}
+
+	// Fire the event:
+	err = d.fireEvent(ctx, Event{
+		Type:   EventTypeUpdated,
+		Object: object,
+	})
 	return
 }
 
@@ -342,8 +400,35 @@ func (d *GenericDAO[M]) Delete(ctx context.Context, id string) (err error) {
 	}
 	defer tx.ReportError(&err)
 
-	// Delete the row:
-	query := fmt.Sprintf("delete from %s where id = $1", d.table)
-	_, err = tx.Exec(ctx, query)
+	// Delete the row and simultaneousyly retrieve the data, as we need it to fire the event later:
+	query := fmt.Sprintf("delete from %s where id = $1 returning data", d.table)
+	row := tx.QueryRow(ctx, query, id)
+	var data []byte
+	err = row.Scan(&data)
+	if err != nil {
+		return
+	}
+	object := d.reflectMsg.New().Interface().(M)
+	err = protojson.Unmarshal(data, object)
+	if err != nil {
+		return
+	}
+
+	// Fire the event if needed:
+	err = d.fireEvent(ctx, Event{
+		Type:   EventTypeDeleted,
+		Object: object,
+	})
 	return
+}
+
+func (d *GenericDAO[M]) fireEvent(ctx context.Context, event Event) error {
+	event.Table = d.table
+	for _, eventCallback := range d.eventCallbacks {
+		err := eventCallback(ctx, event)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
