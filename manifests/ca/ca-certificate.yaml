@@ -11,31 +11,14 @@
 # specific language governing permissions and limitations under the License.
 #
 
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: innabox
-labels:
-- includeSelectors: true
-  pairs:
-    app: fulfillment-service
-
-resources:
-- namespace.yaml
-- ca
-- database
-- service
-- client
-
-generatorOptions:
-  disableNameSuffixHash: true
-
-images:
-- name: envoy
-  newName: docker.io/envoyproxy/envoy
-  newTag: v1.33.0
-- name: fulfillment-service
-  newName: quay.io/innabox/fulfillment-service
-  newTag: latest
-- name: postgres
-  newName: quay.io/sclorg/postgresql-15-c9s
-  newTag: latest
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ca-certificate
+spec:
+  commonName: Innabox CA
+  isCA: true
+  issuerRef:
+    kind: Issuer
+    name: ca-issuer
+  secretName: ca-key

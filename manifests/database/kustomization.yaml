@@ -9,3 +9,13 @@ resources:
 - pvc.yaml
 - service.yaml
 - statefulset.yaml
+- server-cert.yaml
+- client-cert.yaml
+
+configMapGenerator:
+- name: fulfillment-database-server
+  files:
+  - files/server.conf
+- name: fulfillment-database-access
+  files:
+  - files/access.conf
