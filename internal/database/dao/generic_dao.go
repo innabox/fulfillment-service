@@ -18,57 +18,75 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"slices"
+	"time"
 
 	"github.com/google/uuid"
-	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
+// Object is the interface that should be satisfied by objects to be managed by the generic DAO.
+type Object interface {
+	proto.Message
+	GetId() string
+	SetId(string)
+	GetMetadata() *sharedv1.Metadata
+	SetMetadata(*sharedv1.Metadata)
+}
+
 // GenericDAOBuilder is a builder for creating generic data access objects.
-type GenericDAOBuilder[M proto.Message] struct {
-	logger       *slog.Logger
-	table        string
-	defaultOrder string
-	defaultLimit int32
-	maxLimit     int32
+type GenericDAOBuilder[O Object] struct {
+	logger         *slog.Logger
+	table          string
+	defaultOrder   string
+	defaultLimit   int32
+	maxLimit       int32
+	eventCallbacks []EventCallback
 }
 
 // GenericDAO provides generic data access operations for protocol buffers messages. It assumes that objects will be
-// stored in tables with two columns:
+// stored in tables with the following columns:
 //
 //   - `id` - The unique identifier of the object.
+//   - `creation_timestamp` - The time the object was created.
+//   - `deletion_timestamp` - The time the object was deleted.
 //   - `data` - The serialized object, using the protocol buffers JSON serialization.
 //
 // Objects must have field named `id` of string type.
-type GenericDAO[M proto.Message] struct {
-	logger       *slog.Logger
-	table        string
-	defaultOrder string
-	defaultLimit int32
-	maxLimit     int32
-	reflectMsg   protoreflect.Message
-	reflectId    protoreflect.FieldDescriptor
+type GenericDAO[O Object] struct {
+	logger         *slog.Logger
+	table          string
+	defaultOrder   string
+	defaultLimit   int32
+	maxLimit       int32
+	eventCallbacks []EventCallback
+	objectType     reflect.Type
+	marshalOptions protojson.MarshalOptions
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
-func NewGenericDAO[M proto.Message]() *GenericDAOBuilder[M] {
-	return &GenericDAOBuilder[M]{
+func NewGenericDAO[O Object]() *GenericDAOBuilder[O] {
+	return &GenericDAOBuilder[O]{
 		defaultLimit: 100,
 		maxLimit:     1000,
 	}
 }
 
 // SetLogger sets the logger. This is mandatory.
-func (b *GenericDAOBuilder[M]) SetLogger(value *slog.Logger) *GenericDAOBuilder[M] {
+func (b *GenericDAOBuilder[O]) SetLogger(value *slog.Logger) *GenericDAOBuilder[O] {
 	b.logger = value
 	return b
 }
 
 // SetTable sets the table name. This is mandatory.
-func (b *GenericDAOBuilder[M]) SetTable(value string) *GenericDAOBuilder[M] {
+func (b *GenericDAOBuilder[O]) SetTable(value string) *GenericDAOBuilder[O] {
 	b.table = value
 	return b
 }
@@ -76,26 +94,36 @@ func (b *GenericDAOBuilder[M]) SetTable(value string) *GenericDAOBuilder[M] {
 // SetDefaultOrder sets the default order criteria to use when nothing has been requested by the user. This is optional
 // and the default is no order. This is intended only for use in unit tests, where it is convenient to have some
 // predictable ordering.
-func (b *GenericDAOBuilder[M]) SetDefaultOrder(value string) *GenericDAOBuilder[M] {
+func (b *GenericDAOBuilder[O]) SetDefaultOrder(value string) *GenericDAOBuilder[O] {
 	b.defaultOrder = value
 	return b
 }
 
 // SetDefaultLimit sets the default number of items returned. It will be used when the value of the limit parameter
 // of the list request is zero. This is optional, and the default is 100.
-func (b *GenericDAOBuilder[M]) SetDefaultLimit(value int) *GenericDAOBuilder[M] {
+func (b *GenericDAOBuilder[O]) SetDefaultLimit(value int) *GenericDAOBuilder[O] {
 	b.defaultLimit = int32(value)
 	return b
 }
 
 // SetMaxLimit sets the maximum number of items returned. This is optional and the default value is 1000.
-func (b *GenericDAOBuilder[M]) SetMaxLimit(value int) *GenericDAOBuilder[M] {
+func (b *GenericDAOBuilder[O]) SetMaxLimit(value int) *GenericDAOBuilder[O] {
 	b.maxLimit = int32(value)
 	return b
 }
 
+// AddEventCallback adds a function that will be called to process events when the DAO creates, updates or deletes
+// an object.
+//
+// The functions are called synchronously, in the same order they were added, and with the same context used by the
+// DAO for its operations. If any of them returns an error the transaction will be rolled back.
+func (b *GenericDAOBuilder[O]) AddEventCallback(value EventCallback) *GenericDAOBuilder[O] {
+	b.eventCallbacks = append(b.eventCallbacks, value)
+	return b
+}
+
 // Build creates a new generic DAO using the configuration stored in the builder.
-func (b *GenericDAOBuilder[M]) Build() (result *GenericDAO[M], err error) {
+func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -123,25 +151,24 @@ func (b *GenericDAOBuilder[M]) Build() (result *GenericDAO[M], err error) {
 	}
 
 	// Find the reflection type of the generic parameter, so that we can allocate instances when needed:
-	var object M
-	reflectMsg := object.ProtoReflect()
+	var object O
+	objectType := reflect.TypeOf(object).Elem()
 
-	// Check that the object has an `id` field, and save it for future use:
-	reflectId := reflectMsg.Type().Descriptor().Fields().ByName("id")
-	if reflectId == nil {
-		err = fmt.Errorf("object of type '%T' doesn't have an identifier field", object)
-		return
+	// Prepare the JSON marshalling options:
+	marshalOptions := protojson.MarshalOptions{
+		UseProtoNames: true,
 	}
 
 	// Create and populate the object:
-	result = &GenericDAO[M]{
-		logger:       b.logger,
-		table:        b.table,
-		defaultOrder: b.defaultOrder,
-		defaultLimit: b.defaultLimit,
-		maxLimit:     b.maxLimit,
-		reflectMsg:   reflectMsg,
-		reflectId:    reflectId,
+	result = &GenericDAO[O]{
+		logger:         b.logger,
+		table:          b.table,
+		defaultOrder:   b.defaultOrder,
+		defaultLimit:   b.defaultLimit,
+		maxLimit:       b.maxLimit,
+		eventCallbacks: slices.Clone(b.eventCallbacks),
+		objectType:     objectType,
+		marshalOptions: marshalOptions,
 	}
 	return
 }
@@ -168,14 +195,18 @@ type ListResponse[I any] struct {
 }
 
 // List retrieves all rows from the table and deserializes them into a slice of messages.
-func (d *GenericDAO[M]) List(ctx context.Context, request ListRequest) (response ListResponse[M], err error) {
-	// Start a transaction:
+func (d *GenericDAO[O]) List(ctx context.Context, request ListRequest) (response ListResponse[O], err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
+	response, err = d.list(ctx, tx, request)
+	return
+}
 
+func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRequest) (response ListResponse[O],
+	err error) {
 	// Calculate the order cluase:
 	var order string
 	if d.defaultOrder != "" {
@@ -200,34 +231,61 @@ func (d *GenericDAO[M]) List(ctx context.Context, request ListRequest) (response
 
 	// Count the total number of results, disregarding the offset and the limit:
 	totalQuery := fmt.Sprintf("select count(*) from %s", d.table)
-	row := tx.QueryRow(ctx, totalQuery)
+	totalRow := tx.QueryRow(ctx, totalQuery)
 	var total int
-	err = row.Scan(&total)
+	err = totalRow.Scan(&total)
 	if err != nil {
 		return
 	}
 
 	// Fetch the results:
-	itemsQuery := fmt.Sprintf("select data from %s %s offset $1 limit $2", d.table, order)
-	rows, err := tx.Query(ctx, itemsQuery, offset, limit)
+	itemsQuery := fmt.Sprintf(
+		`
+		select
+			id,
+			creation_timestamp,
+			deletion_timestamp,
+			data
+		from
+			%s
+		%s
+		offset $1
+		limit $2
+		`,
+		d.table, order,
+	)
+	itemsRows, err := tx.Query(ctx, itemsQuery, offset, limit)
 	if err != nil {
 		return
 	}
-	var items []M
-	for rows.Next() {
-		var data []byte
-		err = rows.Scan(&data)
+	var items []O
+	for itemsRows.Next() {
+		var (
+			id         string
+			creationTs time.Time
+			deletionTs time.Time
+			data       []byte
+		)
+		err = itemsRows.Scan(
+			&id,
+			&creationTs,
+			&deletionTs,
+			&data,
+		)
 		if err != nil {
 			return
 		}
-		item := d.reflectMsg.New().Interface().(M)
-		err = protojson.Unmarshal(data, item)
+		item := d.newObject()
+		err = d.unmarshalData(data, item)
 		if err != nil {
 			return
 		}
+		md := d.makeMetadata(creationTs, deletionTs)
+		item.SetId(id)
+		item.SetMetadata(md)
 		items = append(items, item)
 	}
-	err = rows.Err()
+	err = itemsRows.Err()
 	if err != nil {
 		return
 	}
@@ -239,45 +297,80 @@ func (d *GenericDAO[M]) List(ctx context.Context, request ListRequest) (response
 
 // Get retrieves a single row by its identifier and deserializes it into a message. Returns nil and no error if there
 // is no row with the given identifier.
-func (d *GenericDAO[M]) Get(ctx context.Context, id string) (result M, err error) {
-	// Start a transaction:
+func (d *GenericDAO[O]) Get(ctx context.Context, id string) (result O, err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
+	result, err = d.get(ctx, tx, id)
+	return
+}
 
-	// Fetch the results:
-	query := fmt.Sprintf("select data from %s where id = $1", d.table)
+func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (result O, err error) {
+	if id == "" {
+		err = errors.New("object identifier is mandatory")
+		return
+	}
+	query := fmt.Sprintf(
+		`
+		select
+			creation_timestamp,
+			deletion_timestamp,
+			data
+		from
+			%s
+		where
+			id = $1
+		`,
+		d.table,
+	)
 	row := tx.QueryRow(ctx, query, id)
-	var data []byte
-	err = row.Scan(&data)
+	var (
+		creationTs time.Time
+		deletionTs time.Time
+		data       []byte
+	)
+	err = row.Scan(
+		&creationTs,
+		&deletionTs,
+		&data,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 		return
 	}
-	tmp := d.reflectMsg.New().Interface().(M)
-	err = protojson.Unmarshal(data, tmp)
+	gotten := d.newObject()
+	err = d.unmarshalData(data, gotten)
 	if err != nil {
 		return
 	}
-	result = tmp
+	md := d.makeMetadata(creationTs, deletionTs)
+	gotten.SetId(id)
+	gotten.SetMetadata(md)
+	result = gotten
 	return
 }
 
 // Exists checks if a row with the given identifiers exists. Returns false and no error if there is no row with the
 // given identifier.
-func (d *GenericDAO[M]) Exists(ctx context.Context, id string) (ok bool, err error) {
-	// Start a transaction:
+func (d *GenericDAO[O]) Exists(ctx context.Context, id string) (ok bool, err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
+	ok, err = d.exists(ctx, tx, id)
+	return
+}
 
-	// Check if the row exists:
-	query := fmt.Sprintf("select count(*) from %s where id = $1", d.table)
-	row := tx.QueryRow(ctx, query, id)
+func (d *GenericDAO[O]) exists(ctx context.Context, tx database.Tx, id string) (ok bool, err error) {
+	if id == "" {
+		err = errors.New("object identifier is mandatory")
+		return
+	}
+	sql := fmt.Sprintf("select count(*) from %s where id = $1", d.table)
+	row := tx.QueryRow(ctx, sql, id)
 	var count int
 	err = row.Scan(&count)
 	if err != nil {
@@ -287,63 +380,258 @@ func (d *GenericDAO[M]) Exists(ctx context.Context, id string) (ok bool, err err
 	return
 }
 
-// Insert adds a new row to the table with a generated identifier and serialized data.
-func (d *GenericDAO[M]) Insert(ctx context.Context, object M) (id string, err error) {
-	// Start a transaction:
+// Create adds a new row to the table with a generated identifier and serialized data.
+func (d *GenericDAO[O]) Create(ctx context.Context, object O) (result O, err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
+	result, err = d.create(ctx, tx, object)
+	return
+}
 
-	// Generate a new identifier:
-	tmp := uuid.NewString()
-	object.ProtoReflect().Set(d.reflectId, protoreflect.ValueOfString(tmp))
+func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (result O, err error) {
+	// Generate an identifier if needed:
+	id := object.GetId()
+	if id == "" {
+		id = d.newId()
+	}
 
-	// Insert the row:
-	data, err := protojson.Marshal(object)
+	// Save the object:
+	data, err := d.marshalData(object)
 	if err != nil {
 		return
 	}
-	query := fmt.Sprintf("insert into %s (id, data) values ($1, $2)", d.table)
-	_, err = tx.Exec(ctx, query, tmp, data)
+	sql := fmt.Sprintf(
+		`
+		insert into %s (
+			id,
+			data
+		) values (
+		 	$1,
+			$2
+		)
+		returning
+			creation_timestamp,
+			deletion_timestamp
+		`,
+		d.table,
+	)
+	row := tx.QueryRow(ctx, sql, id, data)
+	var (
+		creationTs time.Time
+		deletionTs time.Time
+	)
+	err = row.Scan(
+		&creationTs,
+		&deletionTs,
+	)
 	if err != nil {
 		return
 	}
-	id = tmp
+	created := d.cloneObject(object)
+	md := d.makeMetadata(creationTs, deletionTs)
+	created.SetId(id)
+	created.SetMetadata(md)
+
+	// Fire the event:
+	err = d.fireEvent(ctx, Event{
+		Type:   EventTypeCreated,
+		Object: created,
+	})
+	if err != nil {
+		return
+	}
+
+	result = created
 	return
 }
 
 // Update modifies an existing row in the table by its identifier with the result of serializing the provided object.
-func (d *GenericDAO[M]) Update(ctx context.Context, id string, object M) (err error) {
-	// Start a transaction:
+func (d *GenericDAO[O]) Update(ctx context.Context, object O) (result O, err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
+	result, err = d.update(ctx, tx, object)
+	return
+}
 
-	// Update the row:
-	data, err := protojson.Marshal(object)
+func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (result O, err error) {
+	// Get the current object:
+	id := object.GetId()
+	if id == "" {
+		err = errors.New("object identifier is mandatory")
+		return
+	}
+	current, err := d.get(ctx, tx, id)
 	if err != nil {
 		return
 	}
-	query := fmt.Sprintf("update %s set data = $1 where id = $2", d.table)
-	_, err = tx.Exec(ctx, query, data, id)
+
+	// Do nothing if there are no changes:
+	updated := d.cloneObject(object)
+	updated.SetMetadata(nil)
+	current.SetMetadata(nil)
+	if proto.Equal(updated, current) {
+		return
+	}
+
+	// Save the object:
+	data, err := d.marshalData(object)
+	if err != nil {
+		return
+	}
+	sql := fmt.Sprintf(
+		`
+		update %s set
+			data = $1
+		where
+			id = $2
+		returning
+			creation_timestamp,
+			deletion_timestamp
+		`,
+		d.table,
+	)
+	row := tx.QueryRow(ctx, sql, data, id)
+	var (
+		creationTs time.Time
+		deletionTs time.Time
+	)
+	err = row.Scan(
+		&creationTs,
+		&deletionTs,
+	)
+	if err != nil {
+		return
+	}
+	md := d.makeMetadata(creationTs, deletionTs)
+	updated.SetId(id)
+	updated.SetMetadata(md)
+
+	// Fire the event:
+	err = d.fireEvent(ctx, Event{
+		Type:   EventTypeUpdated,
+		Object: updated,
+	})
+
+	result = updated
 	return
 }
 
 // Delete removes a row from the table by its identifier.
-func (d *GenericDAO[M]) Delete(ctx context.Context, id string) (err error) {
+func (d *GenericDAO[O]) Delete(ctx context.Context, id string) (err error) {
 	// Start a transaction:
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
-
-	// Delete the row:
-	query := fmt.Sprintf("delete from %s where id = $1", d.table)
-	_, err = tx.Exec(ctx, query)
+	err = d.delete(ctx, tx, id)
 	return
+}
+
+func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (err error) {
+	if id == "" {
+		err = errors.New("object identifier is mandatory")
+		return
+	}
+
+	// Set the deletion timestamp of the row and simultaneousyly retrieve the data, as we need it to fire the event
+	// later:
+	sql := fmt.Sprintf(
+		`
+		update %s set
+			deletion_timestamp = now()
+		where
+			id = $1
+		returning
+			creation_timestamp,
+			deletion_timestamp,
+			data
+		`,
+		d.table,
+	)
+	row := tx.QueryRow(ctx, sql, id)
+	var (
+		creationTs time.Time
+		deletionTs time.Time
+		data       []byte
+	)
+	err = row.Scan(
+		&creationTs,
+		&deletionTs,
+		&data,
+	)
+	if err != nil {
+		return
+	}
+	deleted := d.newObject()
+	err = d.unmarshalData(data, deleted)
+	if err != nil {
+		return
+	}
+	md := d.makeMetadata(creationTs, deletionTs)
+	deleted.SetId(id)
+	deleted.SetMetadata(md)
+
+	// Fire the event:
+	err = d.fireEvent(ctx, Event{
+		Type:   EventTypeDeleted,
+		Object: deleted,
+	})
+
+	return
+}
+
+func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {
+	event.Table = d.table
+	for _, eventCallback := range d.eventCallbacks {
+		err := eventCallback(ctx, event)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *GenericDAO[O]) newId() string {
+	return uuid.NewString()
+}
+
+func (d *GenericDAO[O]) newObject() O {
+	return reflect.New(d.objectType).Interface().(O)
+}
+
+func (d *GenericDAO[O]) cloneObject(object O) O {
+	return proto.Clone(object).(O)
+}
+
+func (d *GenericDAO[O]) marshalData(object O) (result []byte, err error) {
+	// We need to marshal the object without the identifier and the metadata because those are stored in separate
+	// columns.
+	id := object.GetId()
+	md := object.GetMetadata()
+	result, err = d.marshalOptions.Marshal(object)
+	object.SetId(id)
+	object.SetMetadata(md)
+	return
+}
+
+func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
+	return protojson.Unmarshal(data, object)
+}
+
+func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) *sharedv1.Metadata {
+	result := &sharedv1.Metadata{}
+	if creationTimestamp.Unix() != 0 {
+		result.SetCreationTimestamp(timestamppb.New(creationTimestamp))
+	}
+	if deletionTimestamp.Unix() != 0 {
+		result.SetDeletionTimestamp(timestamppb.New(deletionTimestamp))
+	}
+	return result
 }

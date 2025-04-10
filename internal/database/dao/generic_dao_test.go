@@ -22,7 +22,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -96,17 +95,6 @@ var _ = Describe("Generic DAO", func() {
 			Expect(generic).To(BeNil())
 		})
 
-		It("Fails if object doesn't have identifier", func() {
-			generic, err := NewGenericDAO[*wrapperspb.Int32Value]().
-				SetLogger(logger).
-				SetTable("integers").
-				Build()
-			Expect(err).To(MatchError(
-				"object of type '*wrapperspb.Int32Value' doesn't have an identifier field",
-			))
-			Expect(generic).To(BeNil())
-		})
-
 		It("Fails if default limit is zero", func() {
 			generic, err := NewGenericDAO[*api.Cluster]().
 				SetLogger(logger).
@@ -171,7 +159,9 @@ var _ = Describe("Generic DAO", func() {
 				ctx,
 				`
 				create table clusters (
-					id uuid not null primary key,
+					id text not null primary key,
+					creation_timestamp timestamp with time zone not null default now(),
+					deletion_timestamp timestamp with time zone not null default 'epoch',
 					data jsonb not null
 				)
 				`,
@@ -189,36 +179,75 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("Inserts object", func() {
-			// Insert the object:
+		It("Creates object", func() {
 			object := &api.Cluster{}
-			id, err := generic.Insert(ctx, object)
+			created, err := generic.Create(ctx, object)
 			Expect(err).ToNot(HaveOccurred())
+			result, err := generic.Get(ctx, created.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+		})
 
-			// Check the database:
-			row := tx.QueryRow(ctx, `select data from clusters where id = $1`, id)
-			var data []byte
-			err = row.Scan(&data)
+		It("Sets metadata when creating", func() {
+			object := &api.Cluster{}
+			result, err := generic.Create(ctx, object)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(data).ToNot(BeNil())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Metadata).ToNot(BeNil())
+		})
+
+		It("Sets creation timestamp when creating", func() {
+			object := &api.Cluster{}
+			result, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+			Expect(result.Metadata).ToNot(BeNil())
+			Expect(result.Metadata.CreationTimestamp).ToNot(BeNil())
+			Expect(result.Metadata.CreationTimestamp.AsTime()).ToNot(BeZero())
+		})
+
+		It("Doesn't set deletion timestamp when creating", func() {
+			object, err := generic.Create(ctx, &api.Cluster{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object).ToNot(BeNil())
+			Expect(object.Metadata).ToNot(BeNil())
+			Expect(object.Metadata.DeletionTimestamp).To(BeNil())
+		})
+
+		It("Generates non empty identifiers", func() {
+			object, err := generic.Create(ctx, &api.Cluster{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+		})
+
+		It("Doesn't put the generated identifier inside the input object", func() {
+			object := &api.Cluster{}
+			_, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetId()).To(BeEmpty())
+		})
+
+		It("Doesn't put the generated metadata inside the input object", func() {
+			object := &api.Cluster{}
+			_, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.Metadata).To(BeNil())
 		})
 
 		It("Gets object", func() {
-			// Insert the row:
-			id, err := generic.Insert(ctx, &api.Cluster{})
+			object, err := generic.Create(ctx, &api.Cluster{})
 			Expect(err).ToNot(HaveOccurred())
-
-			// Try to get it:
-			object, err := generic.Get(ctx, id)
+			result, err := generic.Get(ctx, object.GetId())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(object).ToNot(BeNil())
+			Expect(result).ToNot(BeNil())
 		})
 
 		It("Lists objects", func() {
 			// Insert a couple of rows:
 			const count = 2
 			for range count {
-				_, err := generic.Insert(ctx, &api.Cluster{})
+				_, err := generic.Create(ctx, &api.Cluster{})
 				Expect(err).ToNot(HaveOccurred())
 			}
 
@@ -240,8 +269,10 @@ var _ = Describe("Generic DAO", func() {
 				// intended for use only in these unit tests.
 				objects = make([]*api.Cluster, objectCount)
 				for i := range len(objects) {
-					objects[i] = &api.Cluster{}
-					_, err := generic.Insert(ctx, objects[i])
+					objects[i] = &api.Cluster{
+						Id: uuid.NewString(),
+					}
+					_, err := generic.Create(ctx, objects[i])
 					Expect(err).ToNot(HaveOccurred())
 				}
 				sort.Slice(objects, func(i, j int) bool {
@@ -345,19 +376,14 @@ var _ = Describe("Generic DAO", func() {
 
 		Describe("Check if object exists", func() {
 			It("Returns true if the object exists", func() {
-				// Insert the object:
-				object := &api.Cluster{}
-				id, err := generic.Insert(ctx, object)
+				object, err := generic.Create(ctx, &api.Cluster{})
 				Expect(err).ToNot(HaveOccurred())
-
-				// Check if it exists:
-				exists, err := generic.Exists(ctx, id)
+				exists, err := generic.Exists(ctx, object.GetId())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(exists).To(BeTrue())
 			})
 
 			It("Returns false if the object doesn't exist", func() {
-				// The database is empty, check the result:
 				exists, err := generic.Exists(ctx, uuid.NewString())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(exists).To(BeFalse())
@@ -365,23 +391,17 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Updates object", func() {
-			// Create the object:
-			object := &api.Cluster{
+			object, err := generic.Create(ctx, &api.Cluster{
 				Status: &api.ClusterStatus{
 					ApiUrl: "my_url",
 				},
-			}
-			id, err := generic.Insert(ctx, object)
+			})
 			Expect(err).ToNot(HaveOccurred())
-
-			// Try to update:
 			object.Status.ApiUrl = "your_url"
-			err = generic.Update(ctx, id, object)
+			object, err = generic.Update(ctx, object)
 			Expect(err).ToNot(HaveOccurred())
-
-			// Get it and verify that the changes have been applied:
-			object, err = generic.Get(ctx, id)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(object).ToNot(BeNil())
+			Expect(object.Status).ToNot(BeNil())
 			Expect(object.Status.ApiUrl).To(Equal("your_url"))
 		})
 	})

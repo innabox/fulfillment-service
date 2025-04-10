@@ -1,4 +1,7 @@
 *.log
+*.orig
+*.patch
+*.rej
 *.test
 /fulfillment-service
 __debug_bin*

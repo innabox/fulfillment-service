@@ -17,6 +17,8 @@
 // 	protoc        (unknown)
 // source: fulfillment/v1/openapi_options.proto
 
+//go:build !protoopaque
+
 package fulfillmentv1
 
 import (

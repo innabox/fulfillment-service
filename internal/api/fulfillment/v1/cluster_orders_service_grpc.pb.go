@@ -34,8 +34,9 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ClusterOrders_List_FullMethodName   = "/fulfillment.v1.ClusterOrders/List"
 	ClusterOrders_Get_FullMethodName    = "/fulfillment.v1.ClusterOrders/Get"
-	ClusterOrders_Place_FullMethodName  = "/fulfillment.v1.ClusterOrders/Place"
-	ClusterOrders_Cancel_FullMethodName = "/fulfillment.v1.ClusterOrders/Cancel"
+	ClusterOrders_Create_FullMethodName = "/fulfillment.v1.ClusterOrders/Create"
+	ClusterOrders_Update_FullMethodName = "/fulfillment.v1.ClusterOrders/Update"
+	ClusterOrders_Delete_FullMethodName = "/fulfillment.v1.ClusterOrders/Delete"
 )
 
 // ClusterOrdersClient is the client API for ClusterOrders service.
@@ -46,10 +47,34 @@ type ClusterOrdersClient interface {
 	List(ctx context.Context, in *ClusterOrdersListRequest, opts ...grpc.CallOption) (*ClusterOrdersListResponse, error)
 	// Retrieves the details of one specific cluster order.
 	Get(ctx context.Context, in *ClusterOrdersGetRequest, opts ...grpc.CallOption) (*ClusterOrdersGetResponse, error)
-	// Places a new cluster order.
-	Place(ctx context.Context, in *ClusterOrdersPlaceRequest, opts ...grpc.CallOption) (*ClusterOrdersPlaceResponse, error)
-	// Cancels a cluster order.
-	Cancel(ctx context.Context, in *ClusterOrdersCancelRequest, opts ...grpc.CallOption) (*ClusterOrdersCancelResponse, error)
+	// Creates a new cluster order.
+	Create(ctx context.Context, in *ClusterOrdersCreateRequest, opts ...grpc.CallOption) (*ClusterOrdersCreateResponse, error)
+	// Updates an existing cluster order.
+	//
+	// In the HTTP+JSON version of the API this is mapped to the `PATCH` verb and the `update_mask` field is automatically
+	// populated from the list of fields present in the request body. For example, to update the `state` of an order to
+	// `FULFILLED` the request line should be like this:
+	//
+	// ```http
+	// PATCH /api/fulfillment/v1/cluster_orders/123
+	// ```
+	//
+	// And the request body should be like this:
+	//
+	// ```json
+	//
+	//	{
+	//	  "status": {
+	//	    "state": "CLUSTER_ORDER_STATE_FULFILLED"
+	//	  }
+	//	}
+	//
+	// ```
+	//
+	// The response body will contain the modified object.
+	Update(ctx context.Context, in *ClusterOrdersUpdateRequest, opts ...grpc.CallOption) (*ClusterOrdersUpdateResponse, error)
+	// Delete a cluster order.
+	Delete(ctx context.Context, in *ClusterOrdersDeleteRequest, opts ...grpc.CallOption) (*ClusterOrdersDeleteResponse, error)
 }
 
 type clusterOrdersClient struct {
@@ -80,20 +105,30 @@ func (c *clusterOrdersClient) Get(ctx context.Context, in *ClusterOrdersGetReque
 	return out, nil
 }
 
-func (c *clusterOrdersClient) Place(ctx context.Context, in *ClusterOrdersPlaceRequest, opts ...grpc.CallOption) (*ClusterOrdersPlaceResponse, error) {
+func (c *clusterOrdersClient) Create(ctx context.Context, in *ClusterOrdersCreateRequest, opts ...grpc.CallOption) (*ClusterOrdersCreateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ClusterOrdersPlaceResponse)
-	err := c.cc.Invoke(ctx, ClusterOrders_Place_FullMethodName, in, out, cOpts...)
+	out := new(ClusterOrdersCreateResponse)
+	err := c.cc.Invoke(ctx, ClusterOrders_Create_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *clusterOrdersClient) Cancel(ctx context.Context, in *ClusterOrdersCancelRequest, opts ...grpc.CallOption) (*ClusterOrdersCancelResponse, error) {
+func (c *clusterOrdersClient) Update(ctx context.Context, in *ClusterOrdersUpdateRequest, opts ...grpc.CallOption) (*ClusterOrdersUpdateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ClusterOrdersCancelResponse)
-	err := c.cc.Invoke(ctx, ClusterOrders_Cancel_FullMethodName, in, out, cOpts...)
+	out := new(ClusterOrdersUpdateResponse)
+	err := c.cc.Invoke(ctx, ClusterOrders_Update_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clusterOrdersClient) Delete(ctx context.Context, in *ClusterOrdersDeleteRequest, opts ...grpc.CallOption) (*ClusterOrdersDeleteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClusterOrdersDeleteResponse)
+	err := c.cc.Invoke(ctx, ClusterOrders_Delete_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,10 +143,34 @@ type ClusterOrdersServer interface {
 	List(context.Context, *ClusterOrdersListRequest) (*ClusterOrdersListResponse, error)
 	// Retrieves the details of one specific cluster order.
 	Get(context.Context, *ClusterOrdersGetRequest) (*ClusterOrdersGetResponse, error)
-	// Places a new cluster order.
-	Place(context.Context, *ClusterOrdersPlaceRequest) (*ClusterOrdersPlaceResponse, error)
-	// Cancels a cluster order.
-	Cancel(context.Context, *ClusterOrdersCancelRequest) (*ClusterOrdersCancelResponse, error)
+	// Creates a new cluster order.
+	Create(context.Context, *ClusterOrdersCreateRequest) (*ClusterOrdersCreateResponse, error)
+	// Updates an existing cluster order.
+	//
+	// In the HTTP+JSON version of the API this is mapped to the `PATCH` verb and the `update_mask` field is automatically
+	// populated from the list of fields present in the request body. For example, to update the `state` of an order to
+	// `FULFILLED` the request line should be like this:
+	//
+	// ```http
+	// PATCH /api/fulfillment/v1/cluster_orders/123
+	// ```
+	//
+	// And the request body should be like this:
+	//
+	// ```json
+	//
+	//	{
+	//	  "status": {
+	//	    "state": "CLUSTER_ORDER_STATE_FULFILLED"
+	//	  }
+	//	}
+	//
+	// ```
+	//
+	// The response body will contain the modified object.
+	Update(context.Context, *ClusterOrdersUpdateRequest) (*ClusterOrdersUpdateResponse, error)
+	// Delete a cluster order.
+	Delete(context.Context, *ClusterOrdersDeleteRequest) (*ClusterOrdersDeleteResponse, error)
 	mustEmbedUnimplementedClusterOrdersServer()
 }
 
@@ -128,11 +187,14 @@ func (UnimplementedClusterOrdersServer) List(context.Context, *ClusterOrdersList
 func (UnimplementedClusterOrdersServer) Get(context.Context, *ClusterOrdersGetRequest) (*ClusterOrdersGetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
-func (UnimplementedClusterOrdersServer) Place(context.Context, *ClusterOrdersPlaceRequest) (*ClusterOrdersPlaceResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Place not implemented")
+func (UnimplementedClusterOrdersServer) Create(context.Context, *ClusterOrdersCreateRequest) (*ClusterOrdersCreateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
 }
-func (UnimplementedClusterOrdersServer) Cancel(context.Context, *ClusterOrdersCancelRequest) (*ClusterOrdersCancelResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Cancel not implemented")
+func (UnimplementedClusterOrdersServer) Update(context.Context, *ClusterOrdersUpdateRequest) (*ClusterOrdersUpdateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedClusterOrdersServer) Delete(context.Context, *ClusterOrdersDeleteRequest) (*ClusterOrdersDeleteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 func (UnimplementedClusterOrdersServer) mustEmbedUnimplementedClusterOrdersServer() {}
 func (UnimplementedClusterOrdersServer) testEmbeddedByValue()                       {}
@@ -191,38 +253,56 @@ func _ClusterOrders_Get_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ClusterOrders_Place_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ClusterOrdersPlaceRequest)
+func _ClusterOrders_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClusterOrdersCreateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ClusterOrdersServer).Place(ctx, in)
+		return srv.(ClusterOrdersServer).Create(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ClusterOrders_Place_FullMethodName,
+		FullMethod: ClusterOrders_Create_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusterOrdersServer).Place(ctx, req.(*ClusterOrdersPlaceRequest))
+		return srv.(ClusterOrdersServer).Create(ctx, req.(*ClusterOrdersCreateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ClusterOrders_Cancel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ClusterOrdersCancelRequest)
+func _ClusterOrders_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClusterOrdersUpdateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ClusterOrdersServer).Cancel(ctx, in)
+		return srv.(ClusterOrdersServer).Update(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ClusterOrders_Cancel_FullMethodName,
+		FullMethod: ClusterOrders_Update_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClusterOrdersServer).Cancel(ctx, req.(*ClusterOrdersCancelRequest))
+		return srv.(ClusterOrdersServer).Update(ctx, req.(*ClusterOrdersUpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ClusterOrders_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClusterOrdersDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterOrdersServer).Delete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterOrders_Delete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterOrdersServer).Delete(ctx, req.(*ClusterOrdersDeleteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -243,12 +323,16 @@ var ClusterOrders_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ClusterOrders_Get_Handler,
 		},
 		{
-			MethodName: "Place",
-			Handler:    _ClusterOrders_Place_Handler,
+			MethodName: "Create",
+			Handler:    _ClusterOrders_Create_Handler,
 		},
 		{
-			MethodName: "Cancel",
-			Handler:    _ClusterOrders_Cancel_Handler,
+			MethodName: "Update",
+			Handler:    _ClusterOrders_Update_Handler,
+		},
+		{
+			MethodName: "Delete",
+			Handler:    _ClusterOrders_Delete_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

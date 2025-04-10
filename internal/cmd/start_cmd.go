@@ -18,12 +18,13 @@ import (
 )
 
 // Create creates and returns the `start` command.
-func Start() *cobra.Command {
+func NewStartCommand() *cobra.Command {
 	result := &cobra.Command{
 		Use:   "start",
 		Short: "Starts components",
 		Args:  cobra.NoArgs,
 	}
+	result.AddCommand(NewStartControllerCommand())
 	result.AddCommand(NewStartGatewayCommand())
 	result.AddCommand(NewStartServerCommand())
 	return result

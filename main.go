@@ -34,9 +34,8 @@ func main() {
 		SetOut(os.Stdout).
 		SetErr(os.Stderr).
 		AddCommand(cmd.NewDevCommand).
-		AddCommand(cmd.NewExampleCommand).
+		AddCommand(cmd.NewStartCommand).
 		AddCommand(cmd.NewVersionCommand).
-		AddCommand(cmd.Start).
 		Build()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
