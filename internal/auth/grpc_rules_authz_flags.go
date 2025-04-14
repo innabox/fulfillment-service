@@ -15,16 +15,16 @@ package auth
 
 import "github.com/spf13/pflag"
 
-// AddGrpcAclAuthzFlags adds the flags related to authorization with ACL files to the given flag set.
-func AddGrpcAclAuthzFlags(set *pflag.FlagSet) {
+// AddGrpcRulesAuthzFlags adds the flags related to authorization with rules to the given flag set.
+func AddGrpcRulesAuthzFlags(set *pflag.FlagSet) {
 	_ = set.StringArray(
-		grpcAclAuthzFileFlagName,
+		grpcRulesAuthzFileFlagName,
 		[]string{},
-		"File containing the ACL.",
+		"File containing the rules.",
 	)
 }
 
 // Names of the flags:
 const (
-	grpcAclAuthzFileFlagName = "grpc-authz-acl-file"
+	grpcRulesAuthzFileFlagName = "grpc-authz-rules-file"
 )

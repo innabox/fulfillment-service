@@ -11,8 +11,6 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-// This file contains functions that extract information from the context.
-
 package auth
 
 // Subject represents an entity, such as person or a service account.

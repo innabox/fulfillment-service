@@ -49,7 +49,7 @@ func NewStartServerCommand() *cobra.Command {
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	database.AddFlags(flags)
 	auth.AddGrpcJwksAuthnFlags(flags)
-	auth.AddGrpcAclAuthzFlags(flags)
+	auth.AddGrpcRulesAuthzFlags(flags)
 	flags.StringVar(
 		&runner.grpcAuthnType,
 		"grpc-authn-type",
@@ -65,7 +65,7 @@ func NewStartServerCommand() *cobra.Command {
 		auth.GrpcAllAuthzType,
 		fmt.Sprintf(
 			"Type of gRPC authorization. Valid values are \"%s\" and \"%s\"",
-			auth.GrpcAllAuthzType, auth.GrpcAclAuthzType,
+			auth.GrpcAllAuthzType, auth.GrpcRulesAuthzType,
 		),
 	)
 	return command
@@ -192,19 +192,18 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		if err != nil {
 			return fmt.Errorf("failed to create gRPC all authorization function: %w", err)
 		}
-	case auth.GrpcAclAuthzType:
-		authzFunc, err = auth.NewGrpcAclAuthzFunc().
+	case auth.GrpcRulesAuthzType:
+		authzFunc, err = auth.NewGrpcRulesAuthzFunc().
 			SetLogger(c.logger).
 			SetFlags(c.flags).
-			AddPublicMethodRegex(publicMethodRegex).
 			Build()
 		if err != nil {
-			return fmt.Errorf("failed to create gRPC ACL authorization function: %w", err)
+			return fmt.Errorf("failed to create gRPC rules authorization function: %w", err)
 		}
 	default:
 		return fmt.Errorf(
 			"unknown gRPC authorization type '%s', valid values are '%s' and '%s'",
-			c.grpcAuthzType, auth.GrpcAllAuthzType, auth.GrpcAclAuthzType,
+			c.grpcAuthzType, auth.GrpcAllAuthzType, auth.GrpcRulesAuthzType,
 		)
 	}
 	authzInterceptor, err := auth.NewGrpcAuthzInterceptor().

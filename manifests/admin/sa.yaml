@@ -11,10 +11,7 @@
 # specific language governing permissions and limitations under the License.
 #
 
-# Grant access to the 'client' service account.
-- claim: sub
-  pattern: ^system:serviceaccount:innabox:client$
-
-# Grant access to the 'controller' service account.
-- claim: sub
-  pattern: ^system:serviceaccount:innabox:controller$
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin

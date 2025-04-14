@@ -12,7 +12,7 @@ resources:
 
 configMapGenerator:
 - files:
-  - files/acl.yaml
+  - files/rules.yaml
   name: fulfillment-service-config
 - files:
   - files/envoy.yaml
