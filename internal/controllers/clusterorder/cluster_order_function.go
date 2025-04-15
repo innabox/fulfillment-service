@@ -15,6 +15,7 @@ package clusterorder
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,6 +25,8 @@ import (
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/anypb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/clientcmd"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -206,13 +209,20 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	// Prepare the template parameters:
+	templateParameters, err := t.prepareTemplateParameters(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
 	if err != nil {
 		return err
 	}
 	spec := map[string]any{
-		"templateID": t.object.Spec.TemplateId,
+		"templateID":         t.object.Spec.TemplateId,
+		"templateParameters": templateParameters,
 	}
 	if object == nil {
 		object := &unstructured.Unstructured{}
@@ -382,4 +392,44 @@ func (t *task) selectHub(ctx context.Context) error {
 		t.hub = response.Object
 	}
 	return nil
+}
+
+func (t *task) prepareTemplateParameters(ctx context.Context) (result string, err error) {
+	// We represent the template parameters as a map where the keys are the names and the values are protocol
+	// buffers `Any` objects, but the Kubernetes controller expects a JSON object where the fields are the names
+	// of the parameters and the values are the JSON representations of the values, so we need to do the conversion.
+	paramsJson := map[string]any{}
+	for paramName, paramAny := range t.object.Spec.TemplateParameters {
+		var paramJson any
+		paramJson, err = t.convertTemplateParam(ctx, paramName, paramAny)
+		if err != nil {
+			return
+		}
+		paramsJson[paramName] = paramJson
+	}
+	paramsBytes, err := json.Marshal(paramsJson)
+	if err != nil {
+		return
+	}
+	result = string(paramsBytes)
+	return
+}
+
+func (t *task) convertTemplateParam(ctx context.Context, paramName string, paramAny *anypb.Any) (result any,
+	err error) {
+	paramMsg, err := paramAny.UnmarshalNew()
+	if err != nil {
+		return
+	}
+	paramBytes, err := protojson.Marshal(paramMsg)
+	if err != nil {
+		return
+	}
+	var paramValue any
+	err = json.Unmarshal(paramBytes, &paramValue)
+	if err != nil {
+		return
+	}
+	result = paramValue
+	return
 }

@@ -17,6 +17,32 @@ insert into cluster_templates (id, data) values
   '{
     "id": "ocp_4_17_small",
     "title": "OpenShift 4.17 small",
-    "description": "OpenShift 4.17 with `small` instances as worker nodes."
+    "description": "OpenShift 4.17 with `small` instances as worker nodes.",
+    "parameters": [
+      {
+        "type": "type.googleapis.com/google.protobuf.BoolValue",
+        "name": "my_bool",
+        "default": {
+          "@type": "type.googleapis.com/google.protobuf.BoolValue",
+          "value": true
+        }
+      },
+      {
+        "type": "type.googleapis.com/google.protobuf.Int32Value",
+        "name": "my_int",
+        "default": {
+          "@type": "type.googleapis.com/google.protobuf.Int32Value",
+          "value": 42
+        }
+      },
+      {
+        "type": "type.googleapis.com/google.protobuf.StringValue",
+        "name": "my_string",
+        "default": {
+          "@type": "type.googleapis.com/google.protobuf.StringValue",
+          "value": "my_value"
+        }
+      }
+    ]
   }'
 );
