@@ -11,11 +11,27 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package clusterorder
+package gvks
 
-import (
-	"fmt"
-)
+import "k8s.io/apimachinery/pkg/runtime/schema"
 
-// IdLabels is the label where the fulfillment API will write the identifier of the order.
-var idLabel = fmt.Sprintf("%s/%s", ObjectGvk.Group, "clusterorder-uuid")
+var ClusterOrder = schema.GroupVersionKind{
+	Group:   "cloudkit.openshift.io",
+	Version: "v1alpha1",
+	Kind:    "ClusterOrder",
+}
+
+var ClusterOrderList = listGVK(ClusterOrder)
+
+var HostedCluster = schema.GroupVersionKind{
+	Group:   "hypershift.openshift.io",
+	Version: "v1beta1",
+	Kind:    "HostedCluster",
+}
+
+var HostedClusterList = listGVK(HostedCluster)
+
+func listGVK(gvk schema.GroupVersionKind) schema.GroupVersionKind {
+	gvk.Kind = gvk.Kind + "List"
+	return gvk
+}

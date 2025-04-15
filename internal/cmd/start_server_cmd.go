@@ -19,11 +19,14 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"k8s.io/klog/v2"
+	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
@@ -86,6 +89,11 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 
 	// Get the dependencies from the context:
 	c.logger = internal.LoggerFromContext(ctx)
+
+	// Configure the Kubernetes libraries to use the logger:
+	logrLogger := logr.FromSlogHandler(c.logger.Handler())
+	crlog.SetLogger(logrLogger)
+	klog.SetLogger(logrLogger)
 
 	// Save the flags:
 	c.flags = cmd.Flags()
@@ -290,6 +298,16 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return errors.Wrapf(err, "failed to create private cluster orders server")
 	}
 	privatev1.RegisterClusterOrdersServer(grpcServer, privateClusterOrdersServer)
+
+	// Create the private clusters server:
+	c.logger.InfoContext(ctx, "Creating private clusters server")
+	privateClustersServer, err := servers.NewPrivateClustersServer().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create private clusters server")
+	}
+	privatev1.RegisterClustersServer(grpcServer, privateClustersServer)
 
 	// Create the private hubs server:
 	c.logger.InfoContext(ctx, "Creating hubs server")

@@ -615,6 +615,8 @@ func (d *GenericDAO[O]) marshalData(object O) (result []byte, err error) {
 	// columns.
 	id := object.GetId()
 	md := object.GetMetadata()
+	object.SetId("")
+	object.SetMetadata(nil)
 	result, err = d.marshalOptions.Marshal(object)
 	object.SetId(id)
 	object.SetMetadata(md)

@@ -11,19 +11,30 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package clusterorder
+package jq
 
-import "k8s.io/apimachinery/pkg/runtime/schema"
-
-var ObjectGvk = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
-	Version: "v1alpha1",
-	Kind:    "ClusterOrder",
+type Variable struct {
+	name  string
+	value any
 }
 
-var ListGvk = listGVK(ObjectGvk)
+func String(name, value string) Variable {
+	return Variable{
+		name:  name,
+		value: value,
+	}
+}
 
-func listGVK(gvk schema.GroupVersionKind) schema.GroupVersionKind {
-	gvk.Kind = gvk.Kind + "List"
-	return gvk
+func Int(name string, value int) Variable {
+	return Variable{
+		name:  name,
+		value: value,
+	}
+}
+
+func Any(name string, value any) Variable {
+	return Variable{
+		name:  name,
+		value: value,
+	}
 }

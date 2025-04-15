@@ -41,6 +41,13 @@ create table private.cluster_orders (
   data jsonb not null
 );
 
+create table private.clusters (
+  id text not null primary key references clusters(id) on delete cascade,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
+  data jsonb not null
+);
+
 create table private.hubs (
   id text not null primary key,
   creation_timestamp timestamp with time zone not null default now(),

@@ -32,6 +32,8 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
 
 // objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
@@ -214,11 +216,11 @@ func (t *task) update(ctx context.Context) error {
 	}
 	if object == nil {
 		object := &unstructured.Unstructured{}
-		object.SetGroupVersionKind(ObjectGvk)
+		object.SetGroupVersionKind(gvks.ClusterOrder)
 		object.SetNamespace(t.hub.Namespace)
 		object.SetGenerateName(objectPrefix)
 		object.SetLabels(map[string]string{
-			idLabel: t.object.Id,
+			labels.ClusterOrderUuid: t.object.Id,
 		})
 		err = unstructured.SetNestedField(object.Object, spec, "spec")
 		if err != nil {
@@ -304,12 +306,12 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 		return
 	}
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(ListGvk)
+	list.SetGroupVersionKind(gvks.ClusterOrderList)
 	err = client.List(
 		ctx, list,
 		clnt.InNamespace(t.hub.Namespace),
 		clnt.MatchingLabels{
-			idLabel: t.object.Id,
+			labels.ClusterOrderUuid: t.object.Id,
 		},
 	)
 	if err != nil {
