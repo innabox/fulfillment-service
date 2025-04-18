@@ -215,6 +215,7 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 	type requestIface interface {
 		GetOffset() int32
 		GetLimit() int32
+		GetFilter() string
 	}
 	type responseIface[O dao.Object] interface {
 		SetSize(int32)
@@ -225,6 +226,7 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 	daoRequest := dao.ListRequest{}
 	daoRequest.Offset = requestMsg.GetOffset()
 	daoRequest.Limit = requestMsg.GetLimit()
+	daoRequest.Filter = requestMsg.GetFilter()
 	daoResponse, err := s.dao.List(ctx, daoRequest)
 	if err != nil {
 		s.logger.ErrorContext(

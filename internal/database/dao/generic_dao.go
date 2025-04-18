@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"slices"
 	"time"
 
@@ -61,14 +60,15 @@ type GenericDAOBuilder[O Object] struct {
 //
 // Objects must have field named `id` of string type.
 type GenericDAO[O Object] struct {
-	logger         *slog.Logger
-	table          string
-	defaultOrder   string
-	defaultLimit   int32
-	maxLimit       int32
-	eventCallbacks []EventCallback
-	objectType     reflect.Type
-	marshalOptions protojson.MarshalOptions
+	logger           *slog.Logger
+	table            string
+	defaultOrder     string
+	defaultLimit     int32
+	maxLimit         int32
+	eventCallbacks   []EventCallback
+	objectTemplate   O
+	marshalOptions   protojson.MarshalOptions
+	filterTranslator *FilterTranslator[O]
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
@@ -150,25 +150,35 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		return
 	}
 
-	// Find the reflection type of the generic parameter, so that we can allocate instances when needed:
+	// Create the template that we will clone when we need to create a new object:
 	var object O
-	objectType := reflect.TypeOf(object).Elem()
+	objectTemplate := object.ProtoReflect().New().Interface().(O)
 
 	// Prepare the JSON marshalling options:
 	marshalOptions := protojson.MarshalOptions{
 		UseProtoNames: true,
 	}
 
+	// Create the filter translator:
+	filterTranslator, err := NewFilterTranslator[O]().
+		SetLogger(b.logger).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create filter translator: %w", err)
+		return
+	}
+
 	// Create and populate the object:
 	result = &GenericDAO[O]{
-		logger:         b.logger,
-		table:          b.table,
-		defaultOrder:   b.defaultOrder,
-		defaultLimit:   b.defaultLimit,
-		maxLimit:       b.maxLimit,
-		eventCallbacks: slices.Clone(b.eventCallbacks),
-		objectType:     objectType,
-		marshalOptions: marshalOptions,
+		logger:           b.logger,
+		table:            b.table,
+		defaultOrder:     b.defaultOrder,
+		defaultLimit:     b.defaultLimit,
+		maxLimit:         b.maxLimit,
+		eventCallbacks:   slices.Clone(b.eventCallbacks),
+		objectTemplate:   objectTemplate,
+		marshalOptions:   marshalOptions,
+		filterTranslator: filterTranslator,
 	}
 	return
 }
@@ -180,6 +190,9 @@ type ListRequest struct {
 
 	// Limit specifies the maximum number of items.
 	Limit int32
+
+	// Filter is the CEL expression that defines which objects should be returned.
+	Filter string
 }
 
 // ListResponse represents the result of a paginated query.
@@ -207,10 +220,19 @@ func (d *GenericDAO[O]) List(ctx context.Context, request ListRequest) (response
 
 func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRequest) (response ListResponse[O],
 	err error) {
+	// Calculate the filter:
+	var filter string
+	if request.Filter != "" {
+		filter, err = d.filterTranslator.Translate(ctx, request.Filter)
+		if err != nil {
+			return
+		}
+	}
+
 	// Calculate the order cluase:
 	var order string
 	if d.defaultOrder != "" {
-		order = fmt.Sprintf("order by %s", d.defaultOrder)
+		order = d.defaultOrder
 	}
 
 	// Calculate the offset:
@@ -231,6 +253,14 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 
 	// Count the total number of results, disregarding the offset and the limit:
 	totalQuery := fmt.Sprintf("select count(*) from %s", d.table)
+	if filter != "" {
+		totalQuery += fmt.Sprintf(" where %s", filter)
+	}
+	d.logger.DebugContext(
+		ctx,
+		"Running SQL query",
+		slog.String("sql", totalQuery),
+	)
 	totalRow := tx.QueryRow(ctx, totalQuery)
 	var total int
 	err = totalRow.Scan(&total)
@@ -248,11 +278,20 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 			data
 		from
 			%s
-		%s
-		offset $1
-		limit $2
 		`,
-		d.table, order,
+		d.table,
+	)
+	if filter != "" {
+		itemsQuery += fmt.Sprintf(" where %s", filter)
+	}
+	if order != "" {
+		itemsQuery += fmt.Sprintf(" order by %s", order)
+	}
+	itemsQuery += " offset $1 limit $2"
+	d.logger.DebugContext(
+		ctx,
+		"Running SQL query",
+		slog.String("sql", itemsQuery),
 	)
 	itemsRows, err := tx.Query(ctx, itemsQuery, offset, limit)
 	if err != nil {
@@ -603,7 +642,7 @@ func (d *GenericDAO[O]) newId() string {
 }
 
 func (d *GenericDAO[O]) newObject() O {
-	return reflect.New(d.objectType).Interface().(O)
+	return proto.Clone(d.objectTemplate).(O)
 }
 
 func (d *GenericDAO[O]) cloneObject(object O) O {

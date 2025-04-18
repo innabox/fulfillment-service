@@ -38,7 +38,8 @@ var _ = BeforeSuite(func() {
 	var err error
 
 	logger, err = logging.NewLogger().
-		SetOut(GinkgoWriter).
+		SetLevel(slog.LevelDebug.String()).
+		SetWriter(GinkgoWriter).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 
