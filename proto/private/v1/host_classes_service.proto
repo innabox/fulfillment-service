@@ -16,6 +16,7 @@ syntax = "proto3";
 package private.v1;
 
 import "private/v1/host_class_type.proto";
+import "google/protobuf/field_mask.proto";
 
 message HostClassesListRequest {
   optional int32 offset = 1;
@@ -48,6 +49,7 @@ message HostClassesCreateResponse {
 
 message HostClassesUpdateRequest {
   HostClass object = 1;
+  google.protobuf.FieldMask update_mask = 2;
 }
 
 message HostClassesUpdateResponse {

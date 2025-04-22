@@ -16,6 +16,7 @@ syntax = "proto3";
 package private.v1;
 
 import "private/v1/hub_type.proto";
+import "google/protobuf/field_mask.proto";
 
 message HubsListRequest {
   optional int32 offset = 1;
@@ -53,6 +54,7 @@ message HubsDeleteResponse {}
 
 message HubsUpdateRequest {
   Hub object = 1;
+  google.protobuf.FieldMask update_mask = 2;
 }
 
 message HubsUpdateResponse {

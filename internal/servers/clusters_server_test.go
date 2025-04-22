@@ -24,6 +24,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
@@ -940,6 +941,60 @@ var _ = Describe("Clusters server", func() {
 			object, err = dao.Get(ctx, object.GetId())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.GetStatus().GetApiUrl()).To(Equal("https://my.api"))
+		})
+
+		It("Update object with mask", func() {
+			// Create the object:
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Update the object using the field mask:
+			updateResponse, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "your_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								Size: 4,
+							}.Build(),
+							"gpu": ffv1.ClusterNodeSet_builder{
+								Size: 2,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{
+						"spec.node_sets.compute.size",
+					},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = updateResponse.GetObject()
+			verify := func(object *ffv1.Cluster) {
+				Expect(object.GetSpec().GetTemplate()).To(Equal("my_template"))
+				computeNodeSet := object.GetSpec().GetNodeSets()["compute"]
+				Expect(computeNodeSet.GetSize()).To(BeNumerically("==", 4))
+				gpuNodeSet := object.GetSpec().GetNodeSets()["gpu"]
+				Expect(gpuNodeSet.GetSize()).To(BeNumerically("==", 1))
+			}
+			verify(object)
+
+			// Get and verify:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			verify(object)
 		})
 	})
 })

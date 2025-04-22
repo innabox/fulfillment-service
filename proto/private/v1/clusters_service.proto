@@ -16,6 +16,7 @@ syntax = "proto3";
 package private.v1;
 
 import "private/v1/cluster_type.proto";
+import "google/protobuf/field_mask.proto";
 
 message ClustersListRequest {
   optional int32 offset = 1;
@@ -53,6 +54,7 @@ message ClustersDeleteResponse {}
 
 message ClustersUpdateRequest {
   Cluster object = 1;
+  google.protobuf.FieldMask update_mask = 2;
 }
 
 message ClustersUpdateResponse {

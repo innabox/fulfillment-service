@@ -38,10 +38,18 @@ message Object {
   repeated Object my_repeated = 12;
   map<string, Object> my_map = 13;
   string ignore = 14;
+  repeated string my_string_list = 15;
+  repeated bool my_bool_list = 16;
+  repeated int32 my_int32_list = 17;
+  repeated int64 my_int64_list = 18;
+  map<string, string> my_string_map = 19;
+  map<string, bool> my_bool_map = 20;
+  map<string, int32> my_int32_map = 21;
+  map<string, int64> my_int64_map = 22;
 
   // Spec and status:
-  Spec spec = 15;
-  Status status = 16;
+  Spec spec = 23;
+  Status status = 24;
 }
 
 message Metadata {
@@ -60,6 +68,9 @@ message Spec {
   bytes spec_bytes = 7;
   google.protobuf.Timestamp spec_timestamp = 8;
   string ignore = 9;
+  Object spec_msg = 10;
+  repeated Object spec_list = 11;
+  map<string, Object> spec_map = 12;
 }
 
 message Status {

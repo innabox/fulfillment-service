@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"sync"
 
 	"github.com/google/uuid"
 	grpccodes "google.golang.org/grpc/codes"
@@ -26,10 +27,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
+	"github.com/innabox/fulfillment-service/internal/masks"
 )
 
 // GenericServerBuilder contains the data and logic needed to create new generic servers.
@@ -59,6 +62,9 @@ type GenericServer[O dao.Object] struct {
 	deleteRequest  proto.Message
 	deleteResponse proto.Message
 	notifier       *database.Notifier
+	pathCompiler   *masks.PathCompiler[O]
+	pathCache      map[string]*masks.Path[O]
+	pathCacheLock  *sync.Mutex
 }
 
 // NewGenericServer creates a builder that can then be used to configure and create a new generic server.
@@ -122,11 +128,23 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 		return
 	}
 
+	// Create the path compiler:
+	pathCompiler, err := masks.NewPathCompiler[O]().
+		SetLogger(b.logger).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create path compiler: %w", err)
+		return
+	}
+
 	// Create the object early so that we can use its methods as callbacks:
 	s := &GenericServer[O]{
-		logger:   b.logger,
-		service:  b.service,
-		notifier: b.notifier,
+		logger:        b.logger,
+		service:       b.service,
+		notifier:      b.notifier,
+		pathCompiler:  pathCompiler,
+		pathCache:     map[string]*masks.Path[O]{},
+		pathCacheLock: &sync.Mutex{},
 	}
 
 	// Create the DAO:
@@ -330,28 +348,110 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 func (s *GenericServer[O]) Update(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetObject() O
+		GetUpdateMask() *fieldmaskpb.FieldMask
 	}
 	type responseIface interface {
 		SetObject(O)
 	}
 	requestMsg := request.(requestIface)
-	object := requestMsg.GetObject()
-	if s.isNil(object) {
+	input := requestMsg.GetObject()
+	if s.isNil(input) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	object, err := s.dao.Update(ctx, object)
+	id := input.GetId()
+	if id == "" {
+		return grpcstatus.Errorf(grpccodes.Internal, "object identifier is mandatory")
+	}
+
+	// Fetch the current representation of the object:
+	object, err := s.dao.Get(ctx, id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to update",
+			"Failed to get object",
+			slog.String("id", id),
 			slog.Any("error", err),
 		)
-		return grpcstatus.Errorf(grpccodes.Internal, "failed to update object")
+		return grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to get object with identifier '%s'",
+			id,
+		)
 	}
+	if s.isNil(object) {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"object with identifier '%s' doesn't exist",
+			id,
+		)
+	}
+
+	// Update the fields indicated in the mask, or all the fields if there is no mask:
+	mask := requestMsg.GetUpdateMask()
+	if mask != nil {
+		fieldPaths, err := s.compilePaths(mask.GetPaths())
+		if err != nil {
+			return err
+		}
+		for _, fieldPath := range fieldPaths {
+			value, ok := fieldPath.Get(input)
+			if ok {
+				fieldPath.Set(object, value)
+			} else {
+				fieldPath.Clear(object)
+			}
+		}
+	} else {
+		object = input
+	}
+
+	// Save the result:
+	object, err = s.dao.Update(ctx, object)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to update object",
+			slog.String("id", id),
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to update object with identifier '%s'",
+			id,
+		)
+	}
+
 	responseMsg := proto.Clone(s.updateResponse).(responseIface)
 	responseMsg.SetObject(object)
 	s.setPointer(response, responseMsg)
 	return nil
+}
+
+func (s *GenericServer[O]) compilePaths(paths []string) (result []*masks.Path[O], err error) {
+	fieldPaths := make([]*masks.Path[O], len(paths))
+	for i, path := range paths {
+		fieldPaths[i], err = s.compilePath(path)
+		if err != nil {
+			return
+		}
+	}
+	result = fieldPaths
+	return
+}
+
+func (s *GenericServer[O]) compilePath(path string) (result *masks.Path[O], err error) {
+	s.pathCacheLock.Lock()
+	defer s.pathCacheLock.Unlock()
+	result, ok := s.pathCache[path]
+	if ok {
+		return
+	}
+	result, err = s.pathCompiler.Compile(path)
+	if err != nil {
+		return
+	}
+	s.pathCache[path] = result
+	return
 }
 
 func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any) error {
