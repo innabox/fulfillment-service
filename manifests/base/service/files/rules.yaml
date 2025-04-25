@@ -34,6 +34,8 @@
       '/fulfillment.v1.Clusters/GetKubeconfigViaHttp',
       '/fulfillment.v1.Clusters/List',
       '/fulfillment.v1.Clusters/Update',
+      '/fulfillment.v1.HostClasses/Get',
+      '/fulfillment.v1.HostClasses/List',
     ]
 
 - name: Allow everything to admin and controller

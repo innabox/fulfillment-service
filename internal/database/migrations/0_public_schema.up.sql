@@ -32,9 +32,19 @@ create table clusters (
 );
 
 --
--- Public cluser orders.
+-- Public cluster orders.
 --
 create table cluster_orders (
+  id text not null primary key,
+  creation_timestamp timestamp with time zone not null default now(),
+  deletion_timestamp timestamp with time zone not null default 'epoch',
+  data jsonb not null
+);
+
+--
+-- Public host classes.
+--
+create table host_classes (
   id text not null primary key,
   creation_timestamp timestamp with time zone not null default now(),
   deletion_timestamp timestamp with time zone not null default 'epoch',

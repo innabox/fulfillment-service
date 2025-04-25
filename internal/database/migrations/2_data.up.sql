@@ -46,3 +46,20 @@ insert into cluster_templates (id, data) values
     ]
   }'
 );
+
+insert into host_classes (id, data) values
+(
+  'acme_1tb',
+  '{
+    "title": "ACME 1 TiB",
+    "description": "ACME server with 1 TiB of RAM and no GPU."
+  }'
+),
+(
+  'ibm_mi300x',
+  '{
+    "title": "IBM MI300X",
+    "description": "IBM server with one AMD MI300X GPU."
+  }'
+)
+;

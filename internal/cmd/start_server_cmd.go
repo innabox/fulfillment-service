@@ -32,7 +32,7 @@ import (
 
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
-	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -274,7 +274,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to create cluster templates server")
 	}
-	fulfillmentv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
+	ffv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
 
 	// Create the cluster orders server:
 	c.logger.InfoContext(ctx, "Creating cluster orders server")
@@ -284,7 +284,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to create cluster orders server")
 	}
-	fulfillmentv1.RegisterClusterOrdersServer(grpcServer, clusterOrdersServer)
+	ffv1.RegisterClusterOrdersServer(grpcServer, clusterOrdersServer)
 
 	// Create the clusters server:
 	c.logger.InfoContext(ctx, "Creating clusters server")
@@ -294,7 +294,17 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return errors.Wrapf(err, "failed to create clusters server")
 	}
-	fulfillmentv1.RegisterClustersServer(grpcServer, clustersServer)
+	ffv1.RegisterClustersServer(grpcServer, clustersServer)
+
+	// Create the host classes server:
+	c.logger.InfoContext(ctx, "Creating host classes server")
+	hostClassesServer, err := servers.NewHostClassesServer().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create host classes server")
+	}
+	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
 
 	// Create the private cluster orders server:
 	c.logger.InfoContext(ctx, "Creating private cluster orders server")
