@@ -30,6 +30,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal"
 	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
+	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
 	"github.com/innabox/fulfillment-service/internal/controllers/clusterorder"
 	"github.com/innabox/fulfillment-service/internal/network"
 )
@@ -80,11 +81,22 @@ func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
+	// Create the hub cache:
+	c.logger.InfoContext(ctx, "Creating hub cache")
+	hubCache, err := controllers.NewHubCache().
+		SetLogger(c.logger).
+		SetConnection(client).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create hub cache: %w", err)
+	}
+
 	// Create the cluster order reconciler:
 	c.logger.InfoContext(ctx, "Creating cluster order reconciler")
 	clusterOrderReconcilerFunction, err := clusterorder.NewFunction().
 		SetLogger(c.logger).
-		SetClient(client).
+		SetConnection(client).
+		SetHubCache(hubCache).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster order reconciler function: %w", err)
@@ -108,6 +120,40 @@ func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 			c.logger.InfoContext(
 				ctx,
 				"Cluster order reconciler failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	// Create the cluster reconciler:
+	c.logger.InfoContext(ctx, "Creating cluster reconciler")
+	clusterReconcilerFunction, err := cluster.NewFunction().
+		SetLogger(c.logger).
+		SetConnection(client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create cluster reconciler function: %w", err)
+	}
+	clusterReconciler, err := controllers.NewReconciler[*fulfillmentv1.Cluster]().
+		SetLogger(c.logger).
+		SetClient(client).
+		SetFunction(clusterReconcilerFunction).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create cluster reconciler: %w", err)
+	}
+
+	// Start the cluster reconciler:
+	c.logger.InfoContext(ctx, "Starting cluster reconciler")
+	go func() {
+		err := clusterReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			c.logger.InfoContext(ctx, "Cluster reconciler finished")
+		} else {
+			c.logger.InfoContext(
+				ctx,
+				"Cluster reconciler failed",
 				slog.Any("error", err),
 			)
 		}

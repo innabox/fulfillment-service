@@ -297,6 +297,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 	if err != nil {
 		return
 	}
+	defer itemsRows.Close()
 	var items []O
 	for itemsRows.Next() {
 		var (
