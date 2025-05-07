@@ -26,11 +26,21 @@ spec:
         app: fulfillment-controller
     spec:
       serviceAccountName: controller
+
+      volumes:
+
+      - name: controller-token
+        secret:
+          secretName: controller-token
+
       containers:
 
       - name: controller
         image: fulfillment-service
         imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: controller-token
+          mountPath: /run/secrets/token
         env:
         - name: NAMESPACE
           valueFrom:
@@ -47,6 +57,6 @@ spec:
           --log-bodies="true" \
           --grpc-server-network="tcp" \
           --grpc-server-address="fulfillment-api.${NAMESPACE}.svc:8000" \
-          --grpc-ca-file="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt" \
-          --grpc-ca-file="/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt" \
-          --grpc-token-file="/var/run/secrets/kubernetes.io/serviceaccount/token"
+          --grpc-ca-file="/run/secrets/token/ca.crt" \
+          --grpc-ca-file="/run/secrets/token/service-ca.crt" \
+          --grpc-token-file="/run/secrets/token/token"
