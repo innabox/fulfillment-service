@@ -285,28 +285,44 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	}
 
 	// Set the authentication options:
-	token := b.token
-	if token == "" && b.tokenFile != "" {
-		var data []byte
-		data, err = os.ReadFile(b.tokenFile)
-		if err != nil {
-			err = fmt.Errorf("failed to read token from file '%s': %w", b.tokenFile, err)
-			return
+	haveToken := b.token != ""
+	haveTokenFile := b.tokenFile != ""
+	if haveToken || haveTokenFile {
+		var tokenSource oauth2.TokenSource
+		if haveToken {
+			tokenSource = oauth2.StaticTokenSource(&oauth2.Token{
+				AccessToken: b.token,
+			})
+		} else if haveTokenFile {
+			tokenSource = &grpcClientTokenFileSource{
+				tokenFile: b.tokenFile,
+			}
 		}
-		token = strings.TrimSpace(string(data))
-	}
-	if token != "" {
-		oauthToken := &oauth2.Token{
-			AccessToken: token,
-		}
-		oauthSource := oauth.TokenSource{
-			TokenSource: oauth2.StaticTokenSource(oauthToken),
-		}
-		options = append(options, grpc.WithPerRPCCredentials(oauthSource))
+		options = append(options, grpc.WithPerRPCCredentials(oauth.TokenSource{
+			TokenSource: tokenSource,
+		}))
 	}
 
 	// Create the client:
 	result, err = grpc.NewClient(endpoint, options...)
+	return
+}
+
+// grpcClientTokenFileSource is a token source that reads the token from a file whenever it is needed.
+type grpcClientTokenFileSource struct {
+	tokenFile string
+}
+
+func (s *grpcClientTokenFileSource) Token() (token *oauth2.Token, err error) {
+	var data []byte
+	data, err = os.ReadFile(s.tokenFile)
+	if err != nil {
+		err = fmt.Errorf("failed to read token from file '%s': %w", s.tokenFile, err)
+		return
+	}
+	token = &oauth2.Token{
+		AccessToken: strings.TrimSpace(string(data)),
+	}
 	return
 }
 
