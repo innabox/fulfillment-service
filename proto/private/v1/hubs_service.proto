@@ -20,6 +20,7 @@ import "private/v1/hub_type.proto";
 message HubsListRequest {
   optional int32 offset = 1;
   optional int32 limit = 2;
+  optional string filter = 3;
 }
 
 message HubsListResponse {
