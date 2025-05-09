@@ -20,6 +20,7 @@ import "private/v1/cluster_type.proto";
 message ClustersListRequest {
   optional int32 offset = 1;
   optional int32 limit = 2;
+  optional string filter = 3;
 }
 
 message ClustersListResponse {

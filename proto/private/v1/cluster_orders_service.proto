@@ -20,6 +20,7 @@ import "private/v1/cluster_order_type.proto";
 message ClusterOrdersListRequest {
   optional int32 offset = 1;
   optional int32 limit = 2;
+  optional string filter = 3;
 }
 
 message ClusterOrdersListResponse {
