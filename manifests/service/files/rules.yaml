@@ -42,4 +42,5 @@
     subject.name in [
       'system:serviceaccount:innabox:admin',
       'system:serviceaccount:innabox:controller',
+      'system:serviceaccount:cloudkit-operator-system:cloudkit-operator-controller-manager',
     ]
