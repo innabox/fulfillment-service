@@ -287,7 +287,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	}
 	logger = logger.With(
 		slog.String("co_namespace", order.GetNamespace()),
-		slog.String("co_name", order.GetNamespace()),
+		slog.String("co_name", order.GetName()),
 	)
 	logger.DebugContext(ctx, "Got cluster order from hub")
 

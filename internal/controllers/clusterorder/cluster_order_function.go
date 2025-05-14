@@ -169,6 +169,9 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	// Save the selected hub in the private data of the order:
+	t.private.SetHubId(t.hubId)
+
 	// Prepare the template parameters:
 	templateParameters, err := t.prepareTemplateParameters()
 	if err != nil {
