@@ -26,27 +26,25 @@ spec:
         app: fulfillment-controller
     spec:
       serviceAccountName: controller
+      volumes:
+      - name: service-tls
+        secret:
+          secretName: fulfillment-service-tls
       containers:
-
       - name: controller
         image: fulfillment-service
         imagePullPolicy: IfNotPresent
-        env:
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: service-tls
+          mountPath: /etc/fulfillment-service/tls
         command:
-        - /bin/sh
-        - -c
-        - |
-          exec /usr/local/bin/fulfillment-service \
-          start controller \
-          --log-level="debug" \
-          --log-headers="true" \
-          --log-bodies="true" \
-          --grpc-server-network="tcp" \
-          --grpc-server-address="fulfillment-api.${NAMESPACE}.svc:8000" \
-          --grpc-ca-file="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt" \
-          --grpc-ca-file="/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt" \
-          --grpc-token-file="/var/run/secrets/kubernetes.io/serviceaccount/token"
+        - /usr/local/bin/fulfillment-service
+        - start
+        - controller
+        - --log-level=debug
+        - --log-headers=true
+        - --log-bodies=true
+        - --grpc-server-network=tcp
+        - --grpc-server-address=fulfillment-api:8000
+        - --grpc-token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+        - --grpc-ca-file=/etc/fulfillment-service/tls/ca.crt
