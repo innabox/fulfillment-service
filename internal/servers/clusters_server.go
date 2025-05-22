@@ -339,7 +339,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
-			"Failed to get location of kubeconfig secret hub",
+			"Failed to get location of kubeconfig secret from hub",
 			slog.Any("error", err),
 		)
 		err = internalErr
@@ -384,6 +384,237 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		slog.Int("kc_bytes", len(kcBytes)),
 	)
 	result = kcBytes
+	return
+}
+
+func (s *ClustersServer) GetPassword(ctx context.Context,
+	request *ffv1.ClustersGetPasswordRequest) (response *ffv1.ClustersGetPasswordResponse, err error) {
+	password, err := s.getPassword(ctx, request.Id)
+	if err != nil {
+		return
+	}
+	response = &ffv1.ClustersGetPasswordResponse{
+		Password: password,
+	}
+	return
+}
+
+func (s *ClustersServer) GetPasswordViaHttp(ctx context.Context,
+	request *ffv1.ClustersGetPasswordViaHttpRequest) (response *httpbody.HttpBody, err error) {
+	password, err := s.getPassword(ctx, request.Id)
+	if err != nil {
+		return
+	}
+	response = &httpbody.HttpBody{
+		ContentType: "text/plain",
+		Data:        []byte(password),
+	}
+	return
+}
+
+func (s *ClustersServer) getPassword(ctx context.Context, clusterId string) (result string, err error) {
+	// Validate the request:
+	if clusterId == "" {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "cluster identifier is mandatory")
+		return
+	}
+
+	// Prepare a logger with additional information about the cluster:
+	logger := s.logger.With(
+		slog.String("cluster_id", clusterId),
+	)
+
+	// Prepare the error to return to the client if some internal error happens:
+	internalErr := grpcstatus.Errorf(
+		grpccodes.Internal,
+		"failed to get password for cluster with identifier '%s'",
+		clusterId,
+	)
+
+	// Check that the cluster exists:
+	exists, err := s.clustersDao.Exists(ctx, clusterId)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get cluster",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	if !exists {
+		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with identifier '%s' not found", clusterId)
+		return
+	}
+
+	// Get the private data of the cluster:
+	cluster, err := s.privateClustersDao.Get(ctx, clusterId)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get private cluster data",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	if cluster == nil || cluster.HubId == "" {
+		err = grpcstatus.Errorf(
+			grpccodes.NotFound,
+			"password for cluster cluster with identifier '%s' isn't available yet",
+			clusterId,
+		)
+		return
+	}
+	logger = logger.With(
+		slog.String("hub_id", cluster.HubId),
+		slog.String("order_id", cluster.OrderId),
+	)
+
+	// Get the data of the hub:
+	hub, err := s.privateHubsDao.Get(ctx, cluster.HubId)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get private hub data",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	if hub == nil {
+		logger.ErrorContext(ctx, "Hub doesn't exist")
+		err = internalErr
+		return
+	}
+	logger = logger.With(
+		slog.String("hub_ns", hub.Namespace),
+	)
+	logger.DebugContext(ctx, "Got hub")
+
+	// Create a hubClient for the hub:
+	hubClient, err := s.getKubeClient(ctx, hub)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get hub client",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	logger.DebugContext(ctx, "Got hub client")
+
+	// Get the cluster order from the hub:
+	order, err := s.getKubeClusterOrder(ctx, hubClient, hub.Namespace, cluster.OrderId)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get cluster order from hub",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	logger = logger.With(
+		slog.String("co_namespace", order.GetNamespace()),
+		slog.String("co_name", order.GetName()),
+	)
+	logger.DebugContext(ctx, "Got cluster order from hub")
+
+	// Extract the location of the hosted cluster:
+	hcKey := clnt.ObjectKey{}
+	err = s.jqTool.Evaluate(
+		`.status.clusterReference | {
+			Namespace: .namespace,
+			Name: .hostedClusterName
+		}`,
+		order.Object, &hcKey,
+	)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get location of hosted cluster from hub",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	logger = logger.With(
+		slog.String("hc_ns", hcKey.Namespace),
+		slog.String("hc_name", hcKey.Name),
+	)
+	logger.DebugContext(ctx, "Got location of hosted cluster from hub")
+
+	// Get the hosted cluster from the hub:
+	hc, err := s.getKubeHostedCluster(ctx, hubClient, hcKey)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get hosted cluster from hub",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	logger.DebugContext(ctx, "Got hosted cluster from hub")
+
+	// Extract the name of the password secret from the hosted cluster:
+	passwordKey := clnt.ObjectKey{
+		Namespace: hc.GetNamespace(),
+	}
+	err = s.jqTool.Evaluate(
+		`.status.kubeadminPassword.name`,
+		hc.Object, &passwordKey.Name,
+	)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get location of password secret from hub",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	logger = logger.With(
+		slog.String("kc_ns", passwordKey.Namespace),
+		slog.String("kc_name", passwordKey.Name),
+	)
+	logger.DebugContext(ctx, "Got location of password secret from hub")
+
+	// Get the secret from the hub:
+	passwordSecret, err := s.getKubeSecret(ctx, hubClient, passwordKey)
+	if err != nil {
+		logger.ErrorContext(
+			ctx,
+			"Failed to get password secret from hub",
+			slog.Any("error", err),
+		)
+		err = internalErr
+		return
+	}
+	logger.DebugContext(ctx, "Got password secret from hub")
+
+	// Check that the secret has the expected entry, and that it isn't empty:
+	passwordBytes, ok := passwordSecret.Data["password"]
+	if !ok {
+		logger.ErrorContext(ctx, "Password secret entry doesn't exist")
+		err = internalErr
+		return
+	}
+	if len(passwordBytes) == 0 {
+		logger.ErrorContext(ctx, "Password secret entry is empty")
+		err = internalErr
+		return
+	}
+
+	// Done:
+	logger.DebugContext(
+		ctx,
+		"Returning password",
+		slog.Int("password_bytes", len(passwordBytes)),
+	)
+	result = string(passwordBytes)
 	return
 }
 
