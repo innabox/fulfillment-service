@@ -37,6 +37,8 @@ const (
 	Clusters_Get_FullMethodName                  = "/fulfillment.v1.Clusters/Get"
 	Clusters_GetKubeconfig_FullMethodName        = "/fulfillment.v1.Clusters/GetKubeconfig"
 	Clusters_GetKubeconfigViaHttp_FullMethodName = "/fulfillment.v1.Clusters/GetKubeconfigViaHttp"
+	Clusters_GetPassword_FullMethodName          = "/fulfillment.v1.Clusters/GetPassword"
+	Clusters_GetPasswordViaHttp_FullMethodName   = "/fulfillment.v1.Clusters/GetPasswordViaHttp"
 	Clusters_Create_FullMethodName               = "/fulfillment.v1.Clusters/Create"
 	Clusters_Update_FullMethodName               = "/fulfillment.v1.Clusters/Update"
 	Clusters_Delete_FullMethodName               = "/fulfillment.v1.Clusters/Delete"
@@ -61,7 +63,21 @@ type ClustersClient interface {
 	// `application/yaml`.
 	//
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetKubeconfigViaHttp(ctx context.Context, in *ClustersGetKubeconfigViaHttpRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error)
+	// Returns the admin password of the cluster.
+	//
+	// This intended for use with the gRPC protocol, and it isn't mapped to an HTTP endpoint. To retrieve the password
+	// via HTTP see the `ClustersGetPasswordViaHttp` method below.
+	GetPassword(ctx context.Context, in *ClustersGetPasswordRequest, opts ...grpc.CallOption) (*ClustersGetPasswordResponse, error)
+	// Returns the admin password of the cluster.
+	//
+	// This is intended for use with HTTP and returns the YAML text of the password directly using the content type
+	// `text/plain`.
+	//
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetPasswordViaHttp(ctx context.Context, in *ClustersGetPasswordViaHttpRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error)
 	// Creates a new cluster.
 	//
 	// Note that this operation is not allowed for regular users, only for the server. Regular users create clusters
@@ -143,6 +159,26 @@ func (c *clustersClient) GetKubeconfigViaHttp(ctx context.Context, in *ClustersG
 	return out, nil
 }
 
+func (c *clustersClient) GetPassword(ctx context.Context, in *ClustersGetPasswordRequest, opts ...grpc.CallOption) (*ClustersGetPasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClustersGetPasswordResponse)
+	err := c.cc.Invoke(ctx, Clusters_GetPassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clustersClient) GetPasswordViaHttp(ctx context.Context, in *ClustersGetPasswordViaHttpRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(httpbody.HttpBody)
+	err := c.cc.Invoke(ctx, Clusters_GetPasswordViaHttp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *clustersClient) Create(ctx context.Context, in *ClustersCreateRequest, opts ...grpc.CallOption) (*ClustersCreateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ClustersCreateResponse)
@@ -192,7 +228,21 @@ type ClustersServer interface {
 	// `application/yaml`.
 	//
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	GetKubeconfigViaHttp(context.Context, *ClustersGetKubeconfigViaHttpRequest) (*httpbody.HttpBody, error)
+	// Returns the admin password of the cluster.
+	//
+	// This intended for use with the gRPC protocol, and it isn't mapped to an HTTP endpoint. To retrieve the password
+	// via HTTP see the `ClustersGetPasswordViaHttp` method below.
+	GetPassword(context.Context, *ClustersGetPasswordRequest) (*ClustersGetPasswordResponse, error)
+	// Returns the admin password of the cluster.
+	//
+	// This is intended for use with HTTP and returns the YAML text of the password directly using the content type
+	// `text/plain`.
+	//
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	GetPasswordViaHttp(context.Context, *ClustersGetPasswordViaHttpRequest) (*httpbody.HttpBody, error)
 	// Creates a new cluster.
 	//
 	// Note that this operation is not allowed for regular users, only for the server. Regular users create clusters
@@ -245,6 +295,12 @@ func (UnimplementedClustersServer) GetKubeconfig(context.Context, *ClustersGetKu
 }
 func (UnimplementedClustersServer) GetKubeconfigViaHttp(context.Context, *ClustersGetKubeconfigViaHttpRequest) (*httpbody.HttpBody, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubeconfigViaHttp not implemented")
+}
+func (UnimplementedClustersServer) GetPassword(context.Context, *ClustersGetPasswordRequest) (*ClustersGetPasswordResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPassword not implemented")
+}
+func (UnimplementedClustersServer) GetPasswordViaHttp(context.Context, *ClustersGetPasswordViaHttpRequest) (*httpbody.HttpBody, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPasswordViaHttp not implemented")
 }
 func (UnimplementedClustersServer) Create(context.Context, *ClustersCreateRequest) (*ClustersCreateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
@@ -348,6 +404,42 @@ func _Clusters_GetKubeconfigViaHttp_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Clusters_GetPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersGetPasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).GetPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_GetPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).GetPassword(ctx, req.(*ClustersGetPasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Clusters_GetPasswordViaHttp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClustersGetPasswordViaHttpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClustersServer).GetPasswordViaHttp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Clusters_GetPasswordViaHttp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClustersServer).GetPasswordViaHttp(ctx, req.(*ClustersGetPasswordViaHttpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Clusters_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ClustersCreateRequest)
 	if err := dec(in); err != nil {
@@ -424,6 +516,14 @@ var Clusters_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKubeconfigViaHttp",
 			Handler:    _Clusters_GetKubeconfigViaHttp_Handler,
+		},
+		{
+			MethodName: "GetPassword",
+			Handler:    _Clusters_GetPassword_Handler,
+		},
+		{
+			MethodName: "GetPasswordViaHttp",
+			Handler:    _Clusters_GetPasswordViaHttp_Handler,
 		},
 		{
 			MethodName: "Create",
