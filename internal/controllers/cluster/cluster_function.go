@@ -155,28 +155,21 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Prepare the changes to the spec:
-	nodeRequests := []any{}
-	for _, nodeSet := range t.public.GetSpec().GetNodeSets() {
-		nodeRequests = append(nodeRequests, map[string]any{
-			"resourceClass": nodeSet.GetHostClass(),
-			"numberOfNodes": int64(nodeSet.GetSize()),
-		})
-	}
-	spec := map[string]any{
-		"nodeRequests": nodeRequests,
-	}
-
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
 	if err != nil {
 		return err
 	}
+
+	// Prepare the changes to the spec:
 	update := object.DeepCopy()
-	err = unstructured.SetNestedField(update.Object, spec, "spec")
+	nodeRequests := t.prepareNodeRequests()
+	err = unstructured.SetNestedField(update.Object, nodeRequests, "spec", "nodeRequests")
 	if err != nil {
 		return err
 	}
+
+	// Send the patch:
 	err = t.hubClient.Patch(ctx, update, clnt.MergeFrom(object))
 	if err != nil {
 		return err
@@ -189,6 +182,22 @@ func (t *task) update(ctx context.Context) error {
 	)
 
 	return err
+}
+
+func (t *task) prepareNodeRequests() any {
+	var nodeRequests []any
+	for _, nodeSet := range t.public.GetSpec().GetNodeSets() {
+		nodeRequest := t.prepareNodeRequest(nodeSet)
+		nodeRequests = append(nodeRequests, nodeRequest)
+	}
+	return nodeRequests
+}
+
+func (t *task) prepareNodeRequest(nodeSet *ffv1.ClusterNodeSet) any {
+	return map[string]any{
+		"resourceClass": nodeSet.GetHostClass(),
+		"numberOfNodes": int64(nodeSet.GetSize()),
+	}
 }
 
 func (t *task) delete(ctx context.Context) error {
