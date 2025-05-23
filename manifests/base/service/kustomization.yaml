@@ -6,8 +6,8 @@ labels:
     component: service
 
 resources:
+- certificate.yaml
 - deployment.yaml
-- route.yaml
 - service.yaml
 
 configMapGenerator:

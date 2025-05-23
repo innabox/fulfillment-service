@@ -243,32 +243,12 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 		if b.serverInsecure {
 			tlsConfig.InsecureSkipVerify = true
 		}
-		if len(b.caFiles) > 0 {
-			var caPool *x509.CertPool
-			caPool, err = x509.SystemCertPool()
-			if err != nil {
-				return
-			}
-			caPool = caPool.Clone()
-			for _, caFile := range b.caFiles {
-				var data []byte
-				data, err = os.ReadFile(caFile)
-				if err != nil {
-					err = fmt.Errorf("failed to read CA file '%s': %w", caFile, err)
-					return
-				}
-				ok := caPool.AppendCertsFromPEM(data)
-				if !ok {
-					err = fmt.Errorf("file '%s' doesn't contain any CA certificate", caFile)
-					return
-				}
-				b.logger.Debug(
-					"Loaded CA file",
-					slog.String("file", caFile),
-				)
-			}
-			tlsConfig.RootCAs = caPool
+		var caPool *x509.CertPool
+		caPool, err = b.loadCaFiles()
+		if err != nil {
+			return
 		}
+		tlsConfig.RootCAs = caPool
 
 		// TODO: This should have been the non-experimental package, but we need to use this one because
 		// currently the OpenShift router doesn't seem to support ALPN, and the regular credentials package
@@ -308,6 +288,66 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	return
 }
 
+func (b *GrpcClientBuilder) loadCaFiles() (result *x509.CertPool, err error) {
+	caPool, err := x509.SystemCertPool()
+	if err != nil {
+		return
+	}
+	err = b.loadWellKnownCaFiles(caPool)
+	if err != nil {
+		return
+	}
+	err = b.loadConfiguredCaFiles(caPool)
+	if err != nil {
+		return
+	}
+	result = caPool
+	return
+}
+
+func (b *GrpcClientBuilder) loadWellKnownCaFiles(caPool *x509.CertPool) error {
+	for _, caFile := range grpcClientWellKnownCaFiles {
+		err := b.loadCaFile(caPool, caFile)
+		if errors.Is(err, os.ErrNotExist) {
+			b.logger.Info(
+				"Well known CA file doesn't exist",
+				slog.String("file", caFile),
+			)
+			err = nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *GrpcClientBuilder) loadConfiguredCaFiles(caPool *x509.CertPool) error {
+	for _, caFile := range b.caFiles {
+		err := b.loadCaFile(caPool, caFile)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *GrpcClientBuilder) loadCaFile(caPool *x509.CertPool, caFile string) error {
+	data, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("failed to read CA file '%s': %w", caFile, err)
+	}
+	ok := caPool.AppendCertsFromPEM(data)
+	if !ok {
+		return fmt.Errorf("file exists, but it '%s' doesn't contain any CA certificate", caFile)
+	}
+	b.logger.Info(
+		"Loaded CA file",
+		slog.String("file", caFile),
+	)
+	return nil
+}
+
 // grpcClientTokenFileSource is a token source that reads the token from a file whenever it is needed.
 type grpcClientTokenFileSource struct {
 	tokenFile string
@@ -324,6 +364,15 @@ func (s *grpcClientTokenFileSource) Token() (token *oauth2.Token, err error) {
 		AccessToken: strings.TrimSpace(string(data)),
 	}
 	return
+}
+
+// grpcClientWellKnownCaFiles is a list of well known CA files that will be automatically loaded if they exist.
+var grpcClientWellKnownCaFiles = []string{
+	// This is the CA used for Kubernets to sign the certificates of service accounts.
+	"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+
+	// This is the CA used by OpenShift to sign the certificates generated for services.
+	"/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
 }
 
 // Common client names:

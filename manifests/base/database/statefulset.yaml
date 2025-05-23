@@ -23,7 +23,7 @@ spec:
       - name: server-cert
         secret:
           secretName: fulfillment-database-server-cert
-          defaultMode: 0400
+          defaultMode: 0440
       - name: server-config
         configMap:
           name: fulfillment-database-server

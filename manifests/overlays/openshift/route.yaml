@@ -22,4 +22,4 @@ spec:
   port:
     targetPort: api
   tls:
-    termination: reencrypt
+    termination: passthrough
