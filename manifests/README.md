@@ -50,6 +50,7 @@ To create the Kind cluster create a `kind.yaml` file with the following content:
 ```yaml
 apiVersion: kind.x-k8s.io/v1alpha4
 kind: Cluster
+name: innabox
 nodes:
 - role: control-plane
   extraPortMappings:

@@ -19,5 +19,6 @@ spec:
   issuerRef:
     name: issuer
   dnsNames:
+  - localhost
   - fulfillment-api
   secretName: fulfillment-service-tls

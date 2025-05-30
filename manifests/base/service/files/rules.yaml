@@ -11,9 +11,9 @@
 # specific language governing permissions and limitations under the License.
 #
 
-- name: Allow reflection to everyone
+- name: Allow reflection and health to everyone
   action: allow
-  condition: method.startsWith('/grpc.reflection.')
+  condition: method.startsWith('/grpc.reflection.') || method.startsWith('/grpc.health.')
 
 - name: Allow specific methods to client
   action: allow

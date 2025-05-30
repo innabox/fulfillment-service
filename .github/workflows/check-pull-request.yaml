@@ -34,9 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version: '1.22.9'
+    - uses: ./.github/actions/setup-go
     - run: |
         gofmt -s -l -w .
         git diff --exit-code
@@ -59,25 +57,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version: '1.22.9'
+    - uses: ./.github/actions/setup-go
     - run: |
-        module="github.com/onsi/ginkgo/v2"
-        version=$(go list -f '{{ .Version }}' -m "${module}")
-        go install "${module}/ginkgo@${version}"
-        ginkgo run -r
-
-  build-binary:
-    name: Build binary
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version: '1.22.9'
-    - run: |
-        go build
+        ginkgo run -r internal
 
   build-image:
     name: Build image
@@ -85,4 +67,25 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - run: |
-        podman build .
+        image="ghcr.io/innabox/fulfillment-service:latest"
+        podman build --tag "${image}" .
+        podman save --output image.tar "${image}"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: image
+        path: image.tar
+
+  run-integration-tests:
+    name: Run integration tests
+    runs-on: ubuntu-latest
+    needs:
+    - build-image
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup-go
+    - uses: actions/download-artifact@v4
+      with:
+        name: image
+        path: .
+    - run: |
+        ginkgo run -v it

@@ -117,7 +117,7 @@ func (b *LoggerBuilder) SetFile(value string) *LoggerBuilder {
 	return b
 }
 
-// Set redact sets the flag that indicates if security sensitive data should be removed from the log. These fields are
+// SetRedact sets the flag that indicates if security sensitive data should be removed from the log. These fields are
 // indicated by adding an exlamation mark in front of the field name. For example, to write a message with a `public`
 // field that isn't sensitive and another `private` field that is:
 //

@@ -24,6 +24,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 	"k8s.io/klog/v2"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -259,6 +261,11 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(ctx, "Registering gRPC reflection server")
 	reflection.RegisterV1(grpcServer)
 
+	// Register the health server:
+	c.logger.InfoContext(ctx, "Registering gRPC health server")
+	healthServer := health.NewServer()
+	healthv1.RegisterHealthServer(grpcServer, healthServer)
+
 	// Create the cluster templates server:
 	c.logger.InfoContext(ctx, "Creating cluster templates server")
 	clusterTemplatesServer, err := servers.NewClusterTemplatesServer().
@@ -356,6 +363,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	return grpcServer.Serve(listener)
 }
 
-// publicMethodRegex is regular expression for the methods that are considered public, including the reflection methods.
-// These will skip authentication and authorization.
-const publicMethodRegex = `^/grpc\.reflection\.v1\..*$`
+// publicMethodRegex is regular expression for the methods that are considered public, including the reflection and
+// health methods. These will skip authentication and authorization.
+const publicMethodRegex = `^/grpc\.(reflection|health)\..*$`
