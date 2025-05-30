@@ -46,22 +46,20 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger                *slog.Logger
-	publicOrdersClient    fulfillmentv1.ClusterOrdersClient
-	privateOrdersClient   privatev1.ClusterOrdersClient
-	publicTemplatesClient fulfillmentv1.ClusterTemplatesClient
-	hubsClient            privatev1.HubsClient
-	hubCache              *controllers.HubCache
+	logger          *slog.Logger
+	ordersClient    privatev1.ClusterOrdersClient
+	templatesClient privatev1.ClusterTemplatesClient
+	hubsClient      privatev1.HubsClient
+	hubCache        *controllers.HubCache
 }
 
 type task struct {
-	r              *function
-	publicOrder    *fulfillmentv1.ClusterOrder
-	privateOrder   *privatev1.ClusterOrder
-	publicTemplate *fulfillmentv1.ClusterTemplate
-	hubId          string
-	hubNamespace   string
-	hubClient      clnt.Client
+	r            *function
+	order        *privatev1.ClusterOrder
+	template     *privatev1.ClusterTemplate
+	hubId        string
+	hubNamespace string
+	hubClient    clnt.Client
 }
 
 // NewFunction creates a new builder that can then be used to create a new cluster order reconciler function.
@@ -105,33 +103,31 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*fulfil
 
 	// Create and populate the object:
 	object := &function{
-		logger:                b.logger,
-		publicOrdersClient:    fulfillmentv1.NewClusterOrdersClient(b.connection),
-		privateOrdersClient:   privatev1.NewClusterOrdersClient(b.connection),
-		publicTemplatesClient: fulfillmentv1.NewClusterTemplatesClient(b.connection),
-		hubsClient:            privatev1.NewHubsClient(b.connection),
-		hubCache:              b.hubCache,
+		logger:          b.logger,
+		ordersClient:    privatev1.NewClusterOrdersClient(b.connection),
+		templatesClient: privatev1.NewClusterTemplatesClient(b.connection),
+		hubsClient:      privatev1.NewHubsClient(b.connection),
+		hubCache:        b.hubCache,
 	}
 	result = object.run
 	return
 }
 
-func (r *function) run(ctx context.Context, publicOrder *fulfillmentv1.ClusterOrder) error {
-	privateOrder, err := r.fetchOrder(ctx, publicOrder.GetId())
+func (r *function) run(ctx context.Context, object *fulfillmentv1.ClusterOrder) error {
+	order, err := r.fetchOrder(ctx, object.GetId())
 	if err != nil {
 		return err
 	}
-	publicTemplate, err := r.fetchTemplate(ctx, publicOrder.GetSpec().GetTemplateId())
+	template, err := r.fetchTemplate(ctx, object.GetSpec().GetTemplateId())
+	if err != nil {
+		return err
+	}
 	t := task{
-		r:              r,
-		publicOrder:    publicOrder,
-		privateOrder:   privateOrder,
-		publicTemplate: publicTemplate,
+		r:        r,
+		order:    order,
+		template: template,
 	}
-	if err != nil {
-		return err
-	}
-	if publicOrder.Metadata.DeletionTimestamp != nil {
+	if object.Metadata.DeletionTimestamp != nil {
 		err = t.delete(ctx)
 	} else {
 		err = t.update(ctx)
@@ -139,37 +135,34 @@ func (r *function) run(ctx context.Context, publicOrder *fulfillmentv1.ClusterOr
 	if err != nil {
 		return err
 	}
-	_, err = r.privateOrdersClient.Update(ctx, privatev1.ClusterOrdersUpdateRequest_builder{
-		Object: privateOrder,
+	_, err = r.ordersClient.Update(ctx, privatev1.ClusterOrdersUpdateRequest_builder{
+		Object: order,
 	}.Build())
 	if err != nil {
 		return err
 	}
-	_, err = r.publicOrdersClient.Update(ctx, fulfillmentv1.ClusterOrdersUpdateRequest_builder{
-		Object: publicOrder,
-	}.Build())
 	return err
 }
 
-func (r *function) fetchOrder(ctx context.Context, id string) (private *privatev1.ClusterOrder, err error) {
-	privateResponse, err := r.privateOrdersClient.Get(ctx, privatev1.ClusterOrdersGetRequest_builder{
+func (r *function) fetchOrder(ctx context.Context, id string) (result *privatev1.ClusterOrder, err error) {
+	response, err := r.ordersClient.Get(ctx, privatev1.ClusterOrdersGetRequest_builder{
 		Id: id,
 	}.Build())
 	if err != nil {
 		return
 	}
-	private = privateResponse.Object
+	result = response.Object
 	return
 }
 
-func (r *function) fetchTemplate(ctx context.Context, id string) (public *fulfillmentv1.ClusterTemplate, err error) {
-	publicResponse, err := r.publicTemplatesClient.Get(ctx, fulfillmentv1.ClusterTemplatesGetRequest_builder{
+func (r *function) fetchTemplate(ctx context.Context, id string) (result *privatev1.ClusterTemplate, err error) {
+	response, err := r.templatesClient.Get(ctx, privatev1.ClusterTemplatesGetRequest_builder{
 		Id: id,
 	}.Build())
 	if err != nil {
 		return
 	}
-	public = publicResponse.Object
+	result = response.Object
 	return
 }
 
@@ -178,7 +171,7 @@ func (t *task) update(ctx context.Context) error {
 	t.setDefaults()
 
 	// Do nothing if the order isn't progressing:
-	if t.publicOrder.Status.State != fulfillmentv1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING {
+	if t.order.GetStatus().GetState() != privatev1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING {
 		return nil
 	}
 
@@ -189,7 +182,7 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Save the selected hub in the private data of the order:
-	t.privateOrder.SetHubId(t.hubId)
+	t.order.SetHubId(t.hubId)
 
 	// Prepare the node requests:
 	nodeRequests, err := t.prepareNodeRequests()
@@ -209,7 +202,7 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 	spec := map[string]any{
-		"templateID":         t.publicOrder.Spec.TemplateId,
+		"templateID":         t.order.Spec.TemplateId,
 		"templateParameters": templateParameters,
 		"nodeRequests":       nodeRequests,
 	}
@@ -219,7 +212,7 @@ func (t *task) update(ctx context.Context) error {
 		object.SetNamespace(t.hubNamespace)
 		object.SetGenerateName(objectPrefix)
 		object.SetLabels(map[string]string{
-			labels.ClusterOrderUuid: t.publicOrder.Id,
+			labels.ClusterOrderUuid: t.order.Id,
 		})
 		err = unstructured.SetNestedField(object.Object, spec, "spec")
 		if err != nil {
@@ -272,7 +265,7 @@ func (t *task) delete(ctx context.Context) error {
 		t.r.logger.DebugContext(
 			ctx,
 			"Cluster order doesn't exist",
-			slog.String("id", t.publicOrder.GetId()),
+			slog.String("id", t.order.GetId()),
 		)
 		return nil
 	}
@@ -297,7 +290,7 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 		ctx, list,
 		clnt.InNamespace(t.hubNamespace),
 		clnt.MatchingLabels{
-			labels.ClusterOrderUuid: t.publicOrder.Id,
+			labels.ClusterOrderUuid: t.order.Id,
 		},
 	)
 	if err != nil {
@@ -309,7 +302,7 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 	}
 	if len(items) > 1 {
 		err = fmt.Errorf(
-			"expected at most one cluster order with identifier '%s' but found %d", t.publicOrder.Id,
+			"expected at most one cluster order with identifier '%s' but found %d", t.order.Id,
 			len(items),
 		)
 		return
@@ -319,37 +312,39 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 }
 
 func (t *task) setDefaults() {
-	if t.publicOrder.Status == nil {
-		t.publicOrder.Status = &fulfillmentv1.ClusterOrderStatus{}
+	if !t.order.HasStatus() {
+		t.order.SetStatus(&privatev1.ClusterOrderStatus{})
 	}
-	if t.publicOrder.Status.State == fulfillmentv1.ClusterOrderState_CLUSTER_ORDER_STATE_UNSPECIFIED {
-		t.publicOrder.Status.State = fulfillmentv1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING
+	if t.order.GetStatus().GetState() == privatev1.ClusterOrderState_CLUSTER_ORDER_STATE_UNSPECIFIED {
+		t.order.GetStatus().SetState(privatev1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING)
 	}
 	for value := range fulfillmentv1.ClusterOrderConditionType_name {
 		if value != 0 {
-			t.setConditionDefaults(fulfillmentv1.ClusterOrderConditionType(value))
+			t.setConditionDefaults(privatev1.ClusterOrderConditionType(value))
 		}
 	}
 }
 
-func (t *task) setConditionDefaults(value fulfillmentv1.ClusterOrderConditionType) {
+func (t *task) setConditionDefaults(value privatev1.ClusterOrderConditionType) {
 	exists := false
-	for _, current := range t.publicOrder.Status.Conditions {
-		if current.Type == value {
+	for _, current := range t.order.GetStatus().GetConditions() {
+		if current.GetType() == value {
 			exists = true
 			break
 		}
 	}
 	if !exists {
-		t.publicOrder.Status.Conditions = append(t.publicOrder.Status.Conditions, &fulfillmentv1.ClusterOrderCondition{
+		conditions := t.order.GetStatus().GetConditions()
+		conditions = append(conditions, privatev1.ClusterOrderCondition_builder{
 			Type:   value,
 			Status: sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
-		})
+		}.Build())
+		t.order.GetStatus().SetConditions(conditions)
 	}
 }
 
 func (t *task) selectHub(ctx context.Context) error {
-	t.hubId = t.privateOrder.GetHubId()
+	t.hubId = t.order.GetHubId()
 	if t.hubId == "" {
 		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 		if err != nil {
@@ -379,7 +374,7 @@ func (t *task) prepareTemplateParameters() (result string, err error) {
 	// buffers `Any` objects, but the Kubernetes controller expects a JSON object where the fields are the names
 	// of the parameters and the values are the JSON representations of the values, so we need to do the conversion.
 	paramsJson := map[string]any{}
-	for paramName, paramAny := range t.publicOrder.Spec.TemplateParameters {
+	for paramName, paramAny := range t.order.Spec.TemplateParameters {
 		var paramJson any
 		paramJson, err = t.convertTemplateParam(paramAny)
 		if err != nil {
@@ -416,7 +411,7 @@ func (t *task) convertTemplateParam(paramAny *anypb.Any) (result any,
 
 func (t *task) prepareNodeRequests() (result any, err error) {
 	var nodeRequests []any
-	for _, nodeSet := range t.publicTemplate.GetNodeSets() {
+	for _, nodeSet := range t.template.GetNodeSets() {
 		var nodeRequest any
 		nodeRequest, err = t.prepareNodeRequest(nodeSet)
 		if err != nil {
@@ -428,7 +423,7 @@ func (t *task) prepareNodeRequests() (result any, err error) {
 	return
 }
 
-func (t *task) prepareNodeRequest(nodeSet *fulfillmentv1.ClusterTemplateNodeSet) (result any, err error) {
+func (t *task) prepareNodeRequest(nodeSet *privatev1.ClusterTemplateNodeSet) (result any, err error) {
 	result = map[string]any{
 		"resourceClass": nodeSet.GetHostClass(),
 		"numberOfNodes": int64(nodeSet.GetSize()),

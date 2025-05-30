@@ -1,0 +1,68 @@
+//
+// Copyright (c) 2025 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+
+syntax = "proto3";
+
+package private.v1;
+
+import "private/v1/cluster_template_type.proto";
+
+message ClusterTemplatesListRequest {
+  optional int32 offset = 1;
+  optional int32 limit = 2;
+  optional string filter = 3;
+}
+
+message ClusterTemplatesListResponse {
+  optional int32 size = 1;
+  optional int32 total = 2;
+  repeated ClusterTemplate items = 3;
+}
+
+message ClusterTemplatesGetRequest {
+  string id = 1;
+}
+
+message ClusterTemplatesGetResponse {
+  ClusterTemplate object = 1;
+}
+
+message ClusterTemplatesCreateRequest {
+  ClusterTemplate object = 1;
+}
+
+message ClusterTemplatesCreateResponse {
+  ClusterTemplate object = 1;
+}
+
+message ClusterTemplatesDeleteRequest {
+  string id = 1;
+}
+
+message ClusterTemplatesDeleteResponse {}
+
+message ClusterTemplatesUpdateRequest {
+  ClusterTemplate object = 1;
+}
+
+message ClusterTemplatesUpdateResponse {
+  ClusterTemplate object = 1;
+}
+
+service ClusterTemplates {
+  rpc List(ClusterTemplatesListRequest) returns (ClusterTemplatesListResponse) {}
+  rpc Get(ClusterTemplatesGetRequest) returns (ClusterTemplatesGetResponse) {}
+  rpc Create(ClusterTemplatesCreateRequest) returns (ClusterTemplatesCreateResponse) {}
+  rpc Delete(ClusterTemplatesDeleteRequest) returns (ClusterTemplatesDeleteResponse) {}
+  rpc Update(ClusterTemplatesUpdateRequest) returns (ClusterTemplatesUpdateResponse) {}
+}

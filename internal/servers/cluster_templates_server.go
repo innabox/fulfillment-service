@@ -19,6 +19,7 @@ import (
 	"log/slog"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
 
 type ClusterTemplatesServerBuilder struct {
@@ -31,7 +32,7 @@ type ClusterTemplatesServer struct {
 	ffv1.UnimplementedClusterTemplatesServer
 
 	logger  *slog.Logger
-	generic *GenericServer[*ffv1.ClusterTemplate]
+	generic *GenericServer[*ffv1.ClusterTemplate, *privatev1.ClusterTemplate]
 }
 
 func NewClusterTemplatesServer() *ClusterTemplatesServerBuilder {
@@ -51,7 +52,7 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*ffv1.ClusterTemplate]().
+	generic, err := NewGenericServer[*ffv1.ClusterTemplate, *privatev1.ClusterTemplate]().
 		SetLogger(b.logger).
 		SetService(ffv1.ClusterTemplates_ServiceDesc.ServiceName).
 		SetTable("cluster_templates").

@@ -30,7 +30,7 @@ var _ privatev1.ClusterOrdersServer = (*PrivateClusterOrdersServer)(nil)
 type PrivateClusterOrdersServer struct {
 	privatev1.UnimplementedClusterOrdersServer
 	logger  *slog.Logger
-	generic *GenericServer[*privatev1.ClusterOrder]
+	generic *GenericServer[*privatev1.ClusterOrder, *privatev1.ClusterOrder]
 }
 
 func NewPrivateClusterOrdersServer() *PrivateClusterOrdersServerBuilder {
@@ -50,7 +50,7 @@ func (b *PrivateClusterOrdersServerBuilder) Build() (result *PrivateClusterOrder
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*privatev1.ClusterOrder]().
+	generic, err := NewGenericServer[*privatev1.ClusterOrder, *privatev1.ClusterOrder]().
 		SetLogger(b.logger).
 		SetService(privatev1.ClusterOrders_ServiceDesc.ServiceName).
 		SetTable("private.cluster_orders").

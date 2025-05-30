@@ -38,16 +38,14 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger        *slog.Logger
-	hubCache      *controllers.HubCache
-	publicClient  ffv1.ClustersClient
-	privateClient privatev1.ClustersClient
+	logger         *slog.Logger
+	hubCache       *controllers.HubCache
+	clustersClient privatev1.ClustersClient
 }
 
 type task struct {
 	r            *function
-	public       *ffv1.Cluster
-	private      *privatev1.Cluster
+	cluster      *privatev1.Cluster
 	hubId        string
 	hubNamespace string
 	hubClient    clnt.Client
@@ -94,26 +92,24 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*ffv1.C
 
 	// Create and populate the object:
 	object := &function{
-		logger:        b.logger,
-		publicClient:  ffv1.NewClustersClient(b.connection),
-		privateClient: privatev1.NewClustersClient(b.connection),
-		hubCache:      b.hubCache,
+		logger:         b.logger,
+		clustersClient: privatev1.NewClustersClient(b.connection),
+		hubCache:       b.hubCache,
 	}
 	result = object.run
 	return
 }
 
-func (r *function) run(ctx context.Context, public *ffv1.Cluster) error {
-	private, err := r.fetchPrivate(ctx, public.Id)
+func (r *function) run(ctx context.Context, object *ffv1.Cluster) error {
+	cluster, err := r.fetchCluster(ctx, object.Id)
 	if err != nil {
 		return err
 	}
 	t := task{
 		r:       r,
-		public:  public,
-		private: private,
+		cluster: cluster,
 	}
-	if public.Metadata.DeletionTimestamp != nil {
+	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
 		err = t.update(ctx)
@@ -121,20 +117,14 @@ func (r *function) run(ctx context.Context, public *ffv1.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.privateClient.Update(ctx, &privatev1.ClustersUpdateRequest{
-		Object: private,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = r.publicClient.Update(ctx, &ffv1.ClustersUpdateRequest{
-		Object: public,
-	})
+	_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+		Object: cluster,
+	}.Build())
 	return err
 }
 
-func (r *function) fetchPrivate(ctx context.Context, id string) (result *privatev1.Cluster, err error) {
-	request, err := r.privateClient.Get(ctx, &privatev1.ClustersGetRequest{
+func (r *function) fetchCluster(ctx context.Context, id string) (result *privatev1.Cluster, err error) {
+	request, err := r.clustersClient.Get(ctx, &privatev1.ClustersGetRequest{
 		Id: id,
 	})
 	if err != nil {
@@ -146,7 +136,7 @@ func (r *function) fetchPrivate(ctx context.Context, id string) (result *private
 
 func (t *task) update(ctx context.Context) error {
 	// Do nothing if we don't know the hub yet:
-	t.hubId = t.private.GetHubId()
+	t.hubId = t.cluster.GetHubId()
 	if t.hubId == "" {
 		return nil
 	}
@@ -186,14 +176,14 @@ func (t *task) update(ctx context.Context) error {
 
 func (t *task) prepareNodeRequests() any {
 	var nodeRequests []any
-	for _, nodeSet := range t.public.GetSpec().GetNodeSets() {
+	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
 		nodeRequest := t.prepareNodeRequest(nodeSet)
 		nodeRequests = append(nodeRequests, nodeRequest)
 	}
 	return nodeRequests
 }
 
-func (t *task) prepareNodeRequest(nodeSet *ffv1.ClusterNodeSet) any {
+func (t *task) prepareNodeRequest(nodeSet *privatev1.ClusterNodeSet) any {
 	return map[string]any{
 		"resourceClass": nodeSet.GetHostClass(),
 		"numberOfNodes": int64(nodeSet.GetSize()),
@@ -202,7 +192,7 @@ func (t *task) prepareNodeRequest(nodeSet *ffv1.ClusterNodeSet) any {
 
 func (t *task) delete(ctx context.Context) error {
 	// Do nothing if we don't know the hub yet:
-	t.hubId = t.private.GetHubId()
+	t.hubId = t.cluster.GetHubId()
 	if t.hubId == "" {
 		return nil
 	}
@@ -220,7 +210,7 @@ func (t *task) delete(ctx context.Context) error {
 		t.r.logger.DebugContext(
 			ctx,
 			"Cluster order doesn't exist",
-			slog.String("id", t.public.Id),
+			slog.String("id", t.cluster.GetId()),
 		)
 		return nil
 	}
@@ -239,7 +229,7 @@ func (t *task) delete(ctx context.Context) error {
 }
 
 func (t *task) getHub(ctx context.Context) error {
-	t.hubId = t.private.GetHubId()
+	t.hubId = t.cluster.GetHubId()
 	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
 	if err != nil {
 		return err
@@ -256,7 +246,7 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 		ctx, list,
 		clnt.InNamespace(t.hubNamespace),
 		clnt.MatchingLabels{
-			labels.ClusterOrderUuid: t.private.GetOrderId(),
+			labels.ClusterOrderUuid: t.cluster.GetOrderId(),
 		},
 	)
 	if err != nil {
@@ -266,7 +256,7 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 	if len(items) != 1 {
 		err = fmt.Errorf(
 			"expected exactly one cluster order with identifer '%s' but found %d",
-			t.private.GetOrderId(), len(items),
+			t.cluster.GetOrderId(), len(items),
 		)
 		return
 	}

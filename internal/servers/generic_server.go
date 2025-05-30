@@ -34,7 +34,7 @@ import (
 )
 
 // GenericServerBuilder contains the data and logic neede to create new generic servers.
-type GenericServerBuilder[O dao.Object] struct {
+type GenericServerBuilder[Public, Private dao.Object] struct {
 	logger  *slog.Logger
 	service string
 	table   string
@@ -42,10 +42,12 @@ type GenericServerBuilder[O dao.Object] struct {
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
 // any object that has identifier and metadata fields.
-type GenericServer[O dao.Object] struct {
+type GenericServer[Public, Private dao.Object] struct {
 	logger         *slog.Logger
 	service        string
-	dao            *dao.GenericDAO[O]
+	dao            *dao.GenericDAO[Private]
+	inMapper       *GenericMapper[Public, Private]
+	outMapper      *GenericMapper[Private, Public]
 	listRequest    proto.Message
 	listResponse   proto.Message
 	getRequest     proto.Message
@@ -60,30 +62,30 @@ type GenericServer[O dao.Object] struct {
 }
 
 // NewGeneric server creates a builder that can then be used to configure and create a new generic server.
-func NewGenericServer[O dao.Object]() *GenericServerBuilder[O] {
-	return &GenericServerBuilder[O]{}
+func NewGenericServer[Public, Private dao.Object]() *GenericServerBuilder[Public, Private] {
+	return &GenericServerBuilder[Public, Private]{}
 }
 
 // SetLogger sets the logger. This is mandatory.
-func (b *GenericServerBuilder[O]) SetLogger(value *slog.Logger) *GenericServerBuilder[O] {
+func (b *GenericServerBuilder[Public, Private]) SetLogger(value *slog.Logger) *GenericServerBuilder[Public, Private] {
 	b.logger = value
 	return b
 }
 
 // SetService sets the service description. This is mandatory.
-func (b *GenericServerBuilder[O]) SetService(value string) *GenericServerBuilder[O] {
+func (b *GenericServerBuilder[Public, Private]) SetService(value string) *GenericServerBuilder[Public, Private] {
 	b.service = value
 	return b
 }
 
 // SetTable sets the name of the table where the objects will be stored. This is mandatory.
-func (b *GenericServerBuilder[O]) SetTable(value string) *GenericServerBuilder[O] {
+func (b *GenericServerBuilder[Public, Private]) SetTable(value string) *GenericServerBuilder[Public, Private] {
 	b.table = value
 	return b
 }
 
 // Build uses the configuration stored in the builder to create and configure a new generic server.
-func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) {
+func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[Public, Private], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -99,19 +101,37 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	}
 
 	// Create the object early so that we can use its methods as callbacks:
-	s := &GenericServer[O]{
+	s := &GenericServer[Public, Private]{
 		logger:  b.logger,
 		service: b.service,
 	}
 
 	// Create the DAO:
-	s.dao, err = dao.NewGenericDAO[O]().
+	s.dao, err = dao.NewGenericDAO[Private]().
 		SetLogger(b.logger).
 		SetTable(b.table).
 		AddEventCallback(s.notifyEvent).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create DAO: %w", err)
+		return
+	}
+
+	// Create the mappers:
+	s.inMapper, err = NewGenericMapper[Public, Private]().
+		SetLogger(b.logger).
+		SetStrict(true).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create in mapper: %w", err)
+		return
+	}
+	s.outMapper, err = NewGenericMapper[Private, Public]().
+		SetLogger(b.logger).
+		SetStrict(false).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create out mapper: %w", err)
 		return
 	}
 
@@ -158,7 +178,7 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	return
 }
 
-func (b *GenericServerBuilder[O]) findService() (result protoreflect.ServiceDescriptor, err error) {
+func (b *GenericServerBuilder[Public, Private]) findService() (result protoreflect.ServiceDescriptor, err error) {
 	serviceName := protoreflect.FullName(b.service)
 	packageName := serviceName.Parent()
 	protoregistry.GlobalFiles.RangeFilesByPackage(packageName, func(fileDesc protoreflect.FileDescriptor) bool {
@@ -179,7 +199,7 @@ func (b *GenericServerBuilder[O]) findService() (result protoreflect.ServiceDesc
 	return
 }
 
-func (b *GenericServerBuilder[O]) findRequestAndResponse(serviceDesc protoreflect.ServiceDescriptor,
+func (b *GenericServerBuilder[Public, Private]) findRequestAndResponse(serviceDesc protoreflect.ServiceDescriptor,
 	methodName string) (request, response proto.Message, err error) {
 	methodDesc := serviceDesc.Methods().ByName(protoreflect.Name(methodName))
 	if methodDesc == nil {
@@ -211,16 +231,16 @@ func (b *GenericServerBuilder[O]) findRequestAndResponse(serviceDesc protoreflec
 	return
 }
 
-func (s *GenericServer[O]) List(ctx context.Context, request any, response any) error {
+func (s *GenericServer[Public, Private]) List(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetOffset() int32
 		GetLimit() int32
 		GetFilter() string
 	}
-	type responseIface[O dao.Object] interface {
+	type responseIface interface {
 		SetSize(int32)
 		SetTotal(int32)
-		SetItems([]O)
+		SetItems([]Public)
 	}
 	requestMsg := request.(requestIface)
 	daoRequest := dao.ListRequest{}
@@ -236,27 +256,39 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to list")
 	}
-	responseMsg := proto.Clone(s.listResponse).(responseIface[O])
+	responseMsg := proto.Clone(s.listResponse).(responseIface)
 	responseMsg.SetSize(daoResponse.Size)
 	responseMsg.SetTotal(daoResponse.Total)
-	responseMsg.SetItems(daoResponse.Items)
+	publicItems := make([]Public, len(daoResponse.Items))
+	for i, privateItem := range daoResponse.Items {
+		publicItems[i], err = s.outMapper.Map(ctx, privateItem)
+		if err != nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to map item",
+				slog.Any("error", err),
+			)
+			return grpcstatus.Errorf(grpccodes.Internal, "failed to list")
+		}
+	}
+	responseMsg.SetItems(publicItems)
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) error {
+func (s *GenericServer[Public, Private]) Get(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetId() string
 	}
-	type responseIface[O dao.Object] interface {
-		SetObject(O)
+	type responseIface interface {
+		SetObject(Public)
 	}
 	requestMsg := request.(requestIface)
 	id := requestMsg.GetId()
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "identifier is mandatory")
 	}
-	object, err := s.dao.Get(ctx, id)
+	private, err := s.dao.Get(ctx, id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -266,28 +298,47 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to get object with identifier '%s'", id)
 	}
-	if s.isNil(object) {
+	if s.isNil(private) {
 		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' doesn't exist", id)
 	}
-	responseMsg := proto.Clone(s.getResponse).(responseIface[O])
-	responseMsg.SetObject(object)
+	public, err := s.outMapper.Map(ctx, private)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map",
+			slog.String("id", id),
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(grpccodes.Internal, "failed to get object with identifier '%s'", id)
+	}
+	responseMsg := proto.Clone(s.getResponse).(responseIface)
+	responseMsg.SetObject(public)
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[O]) Create(ctx context.Context, request any, response any) error {
-	type requestIface[O dao.Object] interface {
-		GetObject() O
+func (s *GenericServer[Public, Private]) Create(ctx context.Context, request any, response any) error {
+	type requestIface interface {
+		GetObject() Public
 	}
-	type responseIface[O dao.Object] interface {
-		SetObject(O)
+	type responseIface interface {
+		SetObject(Public)
 	}
-	requestMsg := request.(requestIface[O])
-	object := requestMsg.GetObject()
-	if s.isNil(object) {
+	requestMsg := request.(requestIface)
+	public := requestMsg.GetObject()
+	if s.isNil(public) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	created, err := s.dao.Create(ctx, object)
+	private, err := s.inMapper.Map(ctx, public)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map",
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
+	}
+	private, err = s.dao.Create(ctx, private)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -296,50 +347,72 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
 	}
-	responseMsg := proto.Clone(s.createResponse).(responseIface[O])
-	responseMsg.SetObject(created)
+	public, err = s.outMapper.Map(ctx, private)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map",
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
+	}
+	responseMsg := proto.Clone(s.createResponse).(responseIface)
+	responseMsg.SetObject(public)
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[O]) Update(ctx context.Context, request any, response any) error {
+func (s *GenericServer[Public, Private]) Update(ctx context.Context, request any, response any) error {
 	type requestIface interface {
-		GetObject() O
+		GetObject() Public
 	}
 	type responseIface interface {
-		SetObject(O)
+		SetObject(Public)
 	}
 	requestMsg := request.(requestIface)
-	object := requestMsg.GetObject()
-	if s.isNil(object) {
+	public := requestMsg.GetObject()
+	if s.isNil(public) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	id := object.GetId()
+	id := public.GetId()
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.Internal, "object identifier is mandatory")
 	}
-	exists, err := s.dao.Exists(ctx, id)
+	private, err := s.dao.Get(ctx, id)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to get check if object exists",
+			"Failed to get object",
 			slog.String("id", id),
 			slog.Any("error", err),
 		)
 		return grpcstatus.Errorf(
 			grpccodes.Internal,
-			"failed to get check if object with identifier '%s' exists",
+			"failed to get object with identifier '%s'",
 			id,
 		)
 	}
-	if !exists {
+	if s.isNil(private) {
 		return grpcstatus.Errorf(
 			grpccodes.InvalidArgument,
 			"object with identifier '%s' doesn't exist",
 			id,
 		)
 	}
-	updated, err := s.dao.Update(ctx, object)
+	err = s.inMapper.Merge(ctx, public, private)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map",
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to update object with identifier '%s'",
+			id,
+		)
+	}
+	private, err = s.dao.Update(ctx, private)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -353,13 +426,26 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 			id,
 		)
 	}
+	public, err = s.outMapper.Map(ctx, private)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map",
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to update object with identifier '%s'",
+			id,
+		)
+	}
 	responseMsg := proto.Clone(s.updateResponse).(responseIface)
-	responseMsg.SetObject(updated)
+	responseMsg.SetObject(public)
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any) error {
+func (s *GenericServer[Public, Private]) Delete(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetId() string
 	}
@@ -386,7 +472,7 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 }
 
 // notifyEvent converts the DAO event into an API event and publishes it using the PostgreSQL NOTIFY command.
-func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) (err error) {
+func (s *GenericServer[Public, Private]) notifyEvent(ctx context.Context, e dao.Event) (err error) {
 	// TODO: This is the only part of the generic server that depends on specific object types. Is there a way
 	// to avoid that?
 	event := &eventsv1.Event{}
@@ -420,11 +506,11 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) (err er
 	return s.notifier.Notify(ctx, event)
 }
 
-func (s *GenericServer[O]) isNil(object O) bool {
+func (s *GenericServer[Public, Private]) isNil(object proto.Message) bool {
 	return reflect.ValueOf(object).IsNil()
 }
 
-func (s *GenericServer[O]) setPointer(pointer any, value any) {
+func (s *GenericServer[Public, Private]) setPointer(pointer any, value any) {
 	reflect.ValueOf(pointer).Elem().Set(reflect.ValueOf(value))
 }
 
