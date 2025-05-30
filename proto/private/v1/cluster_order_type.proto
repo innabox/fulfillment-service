@@ -15,15 +15,54 @@ syntax = "proto3";
 
 package private.v1;
 
-import "shared/v1/metadata_type.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "private/v1/metadata_type.proto";
+import "shared/v1/condition_status_type.proto";
 
-// Contains the details about order that are available only for the system.
 message ClusterOrder {
-  // Unique identifier of the order.
+  // Public data.
   string id = 1;
-
-  shared.v1.Metadata metadata = 2;
+  Metadata metadata = 2;
+  ClusterOrderSpec spec = 3;
+  ClusterOrderStatus status = 4;
 
   // Identifier of the hub that was selected for this order.
-  string hub_id = 3;
+  string hub_id = 5;
+}
+
+
+message ClusterOrderSpec {
+  string template_id = 1;
+  map<string, google.protobuf.Any> template_parameters = 2;
+}
+
+message ClusterOrderStatus {
+  ClusterOrderState state = 1;
+  repeated ClusterOrderCondition conditions = 2;
+  string cluster_id = 3;
+}
+
+enum ClusterOrderState {
+  CLUSTER_ORDER_STATE_UNSPECIFIED = 0;
+  CLUSTER_ORDER_STATE_PROGRESSING = 1;
+  CLUSTER_ORDER_STATE_FULFILLED = 2;
+  CLUSTER_ORDER_STATE_FAILED = 3;
+}
+
+message ClusterOrderCondition {
+  ClusterOrderConditionType type = 1;
+  shared.v1.ConditionStatus status = 2;
+  google.protobuf.Timestamp last_transition_time = 3;
+  optional string reason = 4;
+  optional string message = 5;
+}
+
+enum ClusterOrderConditionType {
+  CLUSTER_ORDER_CONDITION_TYPE_UNSPECIFIED = 0;
+  CLUSTER_ORDER_CONDITION_TYPE_ACCEPTED = 1;
+  CLUSTER_ORDER_CONDITION_TYPE_REJECTED = 2;
+  CLUSTER_ORDER_CONDITION_TYPE_CANCELED = 3;
+  CLUSTER_ORDER_CONDITION_TYPE_FULFILLED = 4;
+  CLUSTER_ORDER_CONDITION_TYPE_FAILED = 5;
 }

@@ -46,14 +46,13 @@ var _ ffv1.ClustersServer = (*ClustersServer)(nil)
 type ClustersServer struct {
 	ffv1.UnimplementedClustersServer
 
-	logger             *slog.Logger
-	jqTool             *jq.Tool
-	clustersDao        *dao.GenericDAO[*ffv1.Cluster]
-	privateClustersDao *dao.GenericDAO[*privatev1.Cluster]
-	privateHubsDao     *dao.GenericDAO[*privatev1.Hub]
-	generic            *GenericServer[*ffv1.Cluster]
-	kubeClients        map[string]clnt.Client
-	kubeClientsLock    *sync.Mutex
+	logger          *slog.Logger
+	jqTool          *jq.Tool
+	clustersDao     *dao.GenericDAO[*privatev1.Cluster]
+	hubsDao         *dao.GenericDAO[*privatev1.Hub]
+	generic         *GenericServer[*ffv1.Cluster, *privatev1.Cluster]
+	kubeClients     map[string]clnt.Client
+	kubeClientsLock *sync.Mutex
 }
 
 func NewClustersServer() *ClustersServerBuilder {
@@ -81,30 +80,23 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	}
 
 	// Create the DAOs:
-	clustersDao, err := dao.NewGenericDAO[*ffv1.Cluster]().
+	clustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetTable("clusters").
 		Build()
 	if err != nil {
 		return
 	}
-	privateClustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
+	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
-		SetTable("private.clusters").
-		Build()
-	if err != nil {
-		return
-	}
-	privateHubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
-		SetLogger(b.logger).
-		SetTable("private.hubs").
+		SetTable("hubs").
 		Build()
 	if err != nil {
 		return
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*ffv1.Cluster]().
+	generic, err := NewGenericServer[*ffv1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetService(ffv1.Clusters_ServiceDesc.ServiceName).
 		SetTable("clusters").
@@ -115,14 +107,13 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 
 	// Create and populate the object:
 	result = &ClustersServer{
-		logger:             b.logger,
-		jqTool:             jqTool,
-		clustersDao:        clustersDao,
-		privateClustersDao: privateClustersDao,
-		privateHubsDao:     privateHubsDao,
-		generic:            generic,
-		kubeClients:        map[string]clnt.Client{},
-		kubeClientsLock:    &sync.Mutex{},
+		logger:          b.logger,
+		jqTool:          jqTool,
+		clustersDao:     clustersDao,
+		hubsDao:         hubsDao,
+		generic:         generic,
+		kubeClients:     map[string]clnt.Client{},
+		kubeClientsLock: &sync.Mutex{},
 	}
 	return
 }
@@ -333,20 +324,14 @@ func (s *ClustersServer) getPassword(ctx context.Context, clusterId string) (res
 
 func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId string,
 	secretField string) (result *corev1.Secret, err error) {
-	// Check that the cluster exists:
-	exists, err := s.clustersDao.Exists(ctx, clusterId)
-	if err != nil || !exists {
-		return
-	}
-
-	// Get the private data of the cluster:
-	cluster, err := s.privateClustersDao.Get(ctx, clusterId)
+	// Get the data of the cluster:
+	cluster, err := s.clustersDao.Get(ctx, clusterId)
 	if err != nil || cluster == nil || cluster.HubId == "" {
 		return
 	}
 
 	// Get the data of the hub:
-	hub, err := s.privateHubsDao.Get(ctx, cluster.HubId)
+	hub, err := s.hubsDao.Get(ctx, cluster.HubId)
 	if err != nil || hub == nil {
 		return
 	}

@@ -22,6 +22,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
@@ -35,7 +36,7 @@ type ClusterOrdersServer struct {
 	ffv1.UnimplementedClusterOrdersServer
 	logger              *slog.Logger
 	clusterTemplatesDao *dao.GenericDAO[*ffv1.ClusterTemplate]
-	genericServer       *GenericServer[*ffv1.ClusterOrder]
+	genericServer       *GenericServer[*ffv1.ClusterOrder, *privatev1.ClusterOrder]
 }
 
 func NewClusterOrdersServer() *ClusterOrdersServerBuilder {
@@ -64,7 +65,7 @@ func (b *ClusterOrdersServerBuilder) Build() (result *ClusterOrdersServer, err e
 	}
 
 	// Create the genericServer server:
-	genericServer, err := NewGenericServer[*ffv1.ClusterOrder]().
+	genericServer, err := NewGenericServer[*ffv1.ClusterOrder, *privatev1.ClusterOrder]().
 		SetLogger(b.logger).
 		SetService(ffv1.ClusterOrders_ServiceDesc.ServiceName).
 		SetTable("cluster_orders").
