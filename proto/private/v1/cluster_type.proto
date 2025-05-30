@@ -15,23 +15,65 @@ syntax = "proto3";
 
 package private.v1;
 
-import "shared/v1/metadata_type.proto";
+import "google/protobuf/timestamp.proto";
+import "private/v1/metadata_type.proto";
+import "shared/v1/condition_status_type.proto";
 
 // Contains the details about the cluster that are available only for the system.
 message Cluster {
-  // Unique identifier of the cluster.
+  // Public data.
   string id = 1;
-
-  // Metadata of the object.
-  shared.v1.Metadata metadata = 2;
+  Metadata metadata = 2;
+  ClusterSpec spec = 3;
+  ClusterStatus status = 4;
 
   // Identifier of the hub that was selected for this cluster.
-  string hub_id = 3;
+  string hub_id = 5;
 
   // Identifier of the cluster order that was originally used to create this cluster.
   //
   // This is needed because the way to find the Kubernetes `ClusterOrder` object corresponding to this cluster is to
   // use the `.../clusterorder-uuid` label that was set when it was created, and that contains the identifier of the
   // cluster order because at that point there is no cluster yet.
-  string order_id = 4;
+  string order_id = 6;
+}
+
+message ClusterSpec {
+  map<string, ClusterNodeSet> node_sets = 1;
+}
+
+message ClusterStatus {
+  ClusterState state = 1;
+  repeated ClusterCondition conditions = 2;
+  string api_url = 3;
+  string console_url = 4;
+  map<string, ClusterNodeSet> node_sets = 5;
+}
+
+enum ClusterState {
+  CLUSTER_STATE_UNSPECIFIED = 0;
+  CLUSTER_STATE_PROGRESSING = 1;
+  CLUSTER_STATE_READY = 2;
+  CLUSTER_STATE_FAILED = 3;
+}
+
+message ClusterCondition {
+  ClusterConditionType type = 1;
+  shared.v1.ConditionStatus status = 2;
+  google.protobuf.Timestamp last_transition_time = 3;
+  optional string reason = 4;
+  optional string message = 5;
+}
+
+enum ClusterConditionType {
+  CLUSTER_CONDITION_TYPE_UNSPECIFIED = 0;
+  CLUSTER_CONDITION_TYPE_PROGRESSING = 1;
+  CLUSTER_CONDITION_TYPE_READY = 2;
+  CLUSTER_CONDITION_TYPE_FAILED = 3;
+  CLUSTER_CONDITION_TYPE_DEGRADED = 4;
+}
+
+message ClusterNodeSet {
+  string host_class = 1;
+  int32 size = 2;
 }

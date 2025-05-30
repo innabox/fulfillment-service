@@ -65,9 +65,7 @@ var _ = Describe("Private clusters server", func() {
 		_, err = tx.Exec(
 			ctx,
 			`
-			create schema private;
-
-			create table private.clusters (
+			create table clusters (
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
