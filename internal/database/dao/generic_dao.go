@@ -72,6 +72,14 @@ type GenericDAO[O Object] struct {
 	filterTranslator *FilterTranslator[O]
 }
 
+type metadataIface interface {
+	proto.Message
+	GetCreationTimestamp() *timestamppb.Timestamp
+	SetCreationTimestamp(*timestamppb.Timestamp)
+	GetDeletionTimestamp() *timestamppb.Timestamp
+	SetDeletionTimestamp(*timestamppb.Timestamp)
+}
+
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
 func NewGenericDAO[O Object]() *GenericDAOBuilder[O] {
 	return &GenericDAOBuilder[O]{
@@ -534,10 +542,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	}
 
 	// Do nothing if there are no changes:
-	updated := d.cloneObject(object)
-	d.setMetadata(updated, nil)
-	d.setMetadata(current, nil)
-	if proto.Equal(updated, current) {
+	if d.equivalent(current, object) {
 		return
 	}
 
@@ -570,9 +575,10 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
+	updated := d.cloneObject(object)
+	metadata := d.makeMetadata(creationTs, deletionTs)
 	updated.SetId(id)
-	d.setMetadata(updated, md)
+	d.setMetadata(updated, metadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
@@ -689,12 +695,7 @@ func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
 	return d.unmarshalOptions.Unmarshal(data, object)
 }
 
-func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) proto.Message {
-	type metadataIface interface {
-		proto.Message
-		SetCreationTimestamp(*timestamppb.Timestamp)
-		SetDeletionTimestamp(*timestamppb.Timestamp)
-	}
+func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) metadataIface {
 	result := d.metadataTemplate.New().Interface().(metadataIface)
 	if creationTimestamp.Unix() != 0 {
 		result.SetCreationTimestamp(timestamppb.New(creationTimestamp))
@@ -705,15 +706,15 @@ func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.T
 	return result
 }
 
-func (d *GenericDAO[O]) getMetadata(object O) proto.Message {
+func (d *GenericDAO[O]) getMetadata(object O) metadataIface {
 	objectReflect := object.ProtoReflect()
 	if !objectReflect.Has(d.metadataField) {
 		return nil
 	}
-	return objectReflect.Get(d.metadataField).Message().Interface()
+	return objectReflect.Get(d.metadataField).Message().Interface().(metadataIface)
 }
 
-func (d *GenericDAO[O]) setMetadata(object O, metadata proto.Message) {
+func (d *GenericDAO[O]) setMetadata(object O, metadata metadataIface) {
 	objectReflect := object.ProtoReflect()
 	if metadata != nil {
 		metadataReflect := metadata.ProtoReflect()
@@ -728,7 +729,68 @@ func (d *GenericDAO[O]) clearMetadata(object O) {
 	objectReflect.Clear(d.metadataField)
 }
 
+// equivalent checks if two objects are equivalent. That means that they are equal excepty maybe in the creation and
+// deletion timestamps.
+func (d *GenericDAO[O]) equivalent(x, y O) bool {
+	return d.equivalentMessages(x.ProtoReflect(), y.ProtoReflect())
+}
+
+func (d *GenericDAO[O]) equivalentMessages(x, y protoreflect.Message) (result bool) {
+	if x.IsValid() != y.IsValid() {
+		return
+	}
+	result = true
+	x.Range(func(field protoreflect.FieldDescriptor, xv protoreflect.Value) bool {
+		if !y.Has(field) {
+			result = false
+			return false
+		}
+		yv := y.Get(field)
+		switch field.Name() {
+		case metadataFieldName:
+			if !d.equivalentMetadata(xv.Message(), yv.Message()) {
+				result = false
+				return false
+			}
+		default:
+			if !xv.Equal(yv) {
+				result = false
+				return false
+			}
+		}
+		return true
+	})
+	return
+}
+
+func (d *GenericDAO[O]) equivalentMetadata(x, y protoreflect.Message) (result bool) {
+	if x.IsValid() != y.IsValid() {
+		return
+	}
+	result = true
+	x.Range(func(field protoreflect.FieldDescriptor, xv protoreflect.Value) bool {
+		if !y.Has(field) {
+			result = false
+			return false
+		}
+		switch field.Name() {
+		case creationTimestampFieldName, deletionTimestampFieldName:
+			return true
+		default:
+			yv := y.Get(field)
+			if !xv.Equal(yv) {
+				result = false
+				return false
+			}
+		}
+		return true
+	})
+	return
+}
+
 // Names of well known fields:
 var (
-	metadataFieldName = protoreflect.Name("metadata")
+	metadataFieldName          = protoreflect.Name("metadata")
+	creationTimestampFieldName = protoreflect.Name("creation_timestamp")
+	deletionTimestampFieldName = protoreflect.Name("deletion_timestamp")
 )
