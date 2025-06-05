@@ -30,7 +30,7 @@ var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
 type PrivateClustersServer struct {
 	privatev1.UnimplementedClustersServer
 	logger  *slog.Logger
-	generic *GenericServer[*privatev1.Cluster]
+	generic *GenericServer[*privatev1.Cluster, *privatev1.Cluster]
 }
 
 func NewPrivateClustersServer() *PrivateClustersServerBuilder {
@@ -50,10 +50,10 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*privatev1.Cluster]().
+	generic, err := NewGenericServer[*privatev1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetService(privatev1.Clusters_ServiceDesc.ServiceName).
-		SetTable("private.clusters").
+		SetTable("clusters").
 		Build()
 	if err != nil {
 		return

@@ -23,7 +23,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Clusters server", func() {
@@ -261,6 +263,35 @@ var _ = Describe("Clusters server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+		})
+
+		It("Preserves private data during update of public data", func() {
+			// Use the DAO directly to create an object with private data:
+			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
+				SetLogger(logger).
+				SetTable("clusters").
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			object, err := dao.Create(ctx, privatev1.Cluster_builder{
+				HubId: "123",
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Update the object using the server:
+			_, err = server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: object.GetId(),
+					Status: ffv1.ClusterStatus_builder{
+						ApiUrl: "https://yourapi.com",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Get and object agan and verify that the private data hasn't changed:
+			object, err = dao.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetHubId()).To(Equal("123"))
 		})
 	})
 })
