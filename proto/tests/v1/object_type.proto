@@ -38,10 +38,11 @@ message Object {
   Object my_msg = 11;
   repeated Object my_repeated = 12;
   map<string, Object> my_map = 13;
+  string ignore = 14;
 
   // Spec and status:
-  Spec spec = 14;
-  Status status = 15;
+  Spec spec = 15;
+  Status status = 16;
 }
 
 message Spec {
@@ -53,6 +54,7 @@ message Spec {
   double spec_double = 6;
   bytes spec_bytes = 7;
   google.protobuf.Timestamp spec_timestamp = 8;
+  string ignore = 9;
 }
 
 message Status {
