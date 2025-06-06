@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/json"
 )
 
 // Object is the interface that should be satisfied by objects to be managed by the generic DAO.
@@ -63,10 +64,12 @@ type GenericDAO[O Object] struct {
 	defaultOrder     string
 	defaultLimit     int32
 	maxLimit         int32
+	timestampDesc    protoreflect.MessageDescriptor
 	eventCallbacks   []EventCallback
 	objectTemplate   protoreflect.Message
 	metadataField    protoreflect.FieldDescriptor
 	metadataTemplate protoreflect.Message
+	jsonEncoder      *json.Encoder
 	marshalOptions   protojson.MarshalOptions
 	unmarshalOptions protojson.UnmarshalOptions
 	filterTranslator *FilterTranslator[O]
@@ -159,6 +162,10 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		return
 	}
 
+	// Get descriptors of well known types:
+	var timestamp *timestamppb.Timestamp
+	timestampDesc := timestamp.ProtoReflect().Descriptor()
+
 	// Create the template that we will clone when we need to create a new object:
 	var object O
 	objectTemplate := object.ProtoReflect()
@@ -166,6 +173,14 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	// Get the field descriptors:
 	objectDesc := objectTemplate.Descriptor()
 	objectFields := objectDesc.Fields()
+	idField := objectFields.ByName(idFieldName)
+	if idField == nil {
+		err = fmt.Errorf(
+			"object of type '%s' doesn't have a '%s' field",
+			objectDesc.FullName(), idFieldName,
+		)
+		return
+	}
 	metadataField := objectFields.ByName(metadataFieldName)
 	if metadataField == nil {
 		err = fmt.Errorf(
@@ -177,6 +192,21 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 
 	// Create the template that we will clone when we need to create a new metadata object:
 	metadataTemplate := objectTemplate.NewField(metadataField).Message()
+
+	// Create the JSON encoder. We need this special encoder in order to ignore the 'id' and 'metadata' fields
+	// because we save those in separate database columns and not in the JSON document where we save everything
+	// else.
+	jsonEncoder, err := json.NewEncoder().
+		SetLogger(b.logger).
+		AddIgnoredFields(
+			idField.FullName(),
+			metadataField.FullName(),
+		).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create JSON encoder: %w", err)
+		return
+	}
 
 	// Prepare the JSON marshalling options:
 	marshalOptions := protojson.MarshalOptions{
@@ -202,10 +232,12 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		defaultOrder:     b.defaultOrder,
 		defaultLimit:     b.defaultLimit,
 		maxLimit:         b.maxLimit,
+		timestampDesc:    timestampDesc,
 		eventCallbacks:   slices.Clone(b.eventCallbacks),
 		objectTemplate:   objectTemplate,
 		metadataField:    metadataField,
 		metadataTemplate: metadataTemplate,
+		jsonEncoder:      jsonEncoder,
 		marshalOptions:   marshalOptions,
 		unmarshalOptions: unmarshalOptions,
 		filterTranslator: filterTranslator,
@@ -679,15 +711,7 @@ func (d *GenericDAO[O]) cloneObject(object O) O {
 }
 
 func (d *GenericDAO[O]) marshalData(object O) (result []byte, err error) {
-	// We need to marshal the object without the identifier and the metadata because those are stored in separate
-	// columns.
-	id := object.GetId()
-	md := d.getMetadata(object)
-	object.SetId("")
-	d.clearMetadata(object)
-	result, err = d.marshalOptions.Marshal(object)
-	object.SetId(id)
-	d.setMetadata(object, md)
+	result, err = d.jsonEncoder.Marshal(object)
 	return
 }
 
@@ -722,11 +746,6 @@ func (d *GenericDAO[O]) setMetadata(object O, metadata metadataIface) {
 	} else {
 		objectReflect.Clear(d.metadataField)
 	}
-}
-
-func (d *GenericDAO[O]) clearMetadata(object O) {
-	objectReflect := object.ProtoReflect()
-	objectReflect.Clear(d.metadataField)
 }
 
 // equivalent checks if two objects are equivalent. That means that they are equal excepty maybe in the creation and
@@ -790,7 +809,8 @@ func (d *GenericDAO[O]) equivalentMetadata(x, y protoreflect.Message) (result bo
 
 // Names of well known fields:
 var (
-	metadataFieldName          = protoreflect.Name("metadata")
 	creationTimestampFieldName = protoreflect.Name("creation_timestamp")
 	deletionTimestampFieldName = protoreflect.Name("deletion_timestamp")
+	idFieldName                = protoreflect.Name("id")
+	metadataFieldName          = protoreflect.Name("metadata")
 )

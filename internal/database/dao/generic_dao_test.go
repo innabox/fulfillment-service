@@ -15,6 +15,7 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -267,6 +268,35 @@ var _ = Describe("Generic DAO", func() {
 			for _, item := range request.Items {
 				Expect(item).ToNot(BeNil())
 			}
+		})
+
+		It("Doesn't save the creation identifier in the 'data' column", func() {
+			// Create an object:
+			object, err := generic.Create(ctx, &testsv1.Object{})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that the database isn't stored in the 'data' column:
+			row := tx.QueryRow(ctx, "select data from objects where id = $1", object.GetId())
+			var data []byte
+			err = row.Scan(&data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(data)).ToNot(ContainSubstring(object.GetId()))
+		})
+
+		It("Doesn't save the creation timestamp in the 'data' column", func() {
+			// Create an object:
+			object, err := generic.Create(ctx, &testsv1.Object{})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that the database isn't stored in the 'data' column:
+			row := tx.QueryRow(ctx, "select data from objects where id = $1", object.GetId())
+			var data []byte
+			err = row.Scan(&data)
+			Expect(err).ToNot(HaveOccurred())
+			var value map[string]any
+			err = json.Unmarshal(data, &value)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(value).ToNot(HaveKey("creation_timestamp"))
 		})
 
 		Describe("Paging", func() {
