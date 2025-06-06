@@ -25,10 +25,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/json"
 )
 
 // Object is the interface that should be satisfied by objects to be managed by the generic DAO.
@@ -36,8 +37,6 @@ type Object interface {
 	proto.Message
 	GetId() string
 	SetId(string)
-	GetMetadata() *sharedv1.Metadata
-	SetMetadata(*sharedv1.Metadata)
 }
 
 // GenericDAOBuilder is a builder for creating generic data access objects.
@@ -65,10 +64,23 @@ type GenericDAO[O Object] struct {
 	defaultOrder     string
 	defaultLimit     int32
 	maxLimit         int32
+	timestampDesc    protoreflect.MessageDescriptor
 	eventCallbacks   []EventCallback
-	objectTemplate   O
+	objectTemplate   protoreflect.Message
+	metadataField    protoreflect.FieldDescriptor
+	metadataTemplate protoreflect.Message
+	jsonEncoder      *json.Encoder
 	marshalOptions   protojson.MarshalOptions
+	unmarshalOptions protojson.UnmarshalOptions
 	filterTranslator *FilterTranslator[O]
+}
+
+type metadataIface interface {
+	proto.Message
+	GetCreationTimestamp() *timestamppb.Timestamp
+	SetCreationTimestamp(*timestamppb.Timestamp)
+	GetDeletionTimestamp() *timestamppb.Timestamp
+	SetDeletionTimestamp(*timestamppb.Timestamp)
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
@@ -150,13 +162,58 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		return
 	}
 
+	// Get descriptors of well known types:
+	var timestamp *timestamppb.Timestamp
+	timestampDesc := timestamp.ProtoReflect().Descriptor()
+
 	// Create the template that we will clone when we need to create a new object:
 	var object O
-	objectTemplate := object.ProtoReflect().New().Interface().(O)
+	objectTemplate := object.ProtoReflect()
+
+	// Get the field descriptors:
+	objectDesc := objectTemplate.Descriptor()
+	objectFields := objectDesc.Fields()
+	idField := objectFields.ByName(idFieldName)
+	if idField == nil {
+		err = fmt.Errorf(
+			"object of type '%s' doesn't have a '%s' field",
+			objectDesc.FullName(), idFieldName,
+		)
+		return
+	}
+	metadataField := objectFields.ByName(metadataFieldName)
+	if metadataField == nil {
+		err = fmt.Errorf(
+			"object of type '%s' doesn't have a '%s' field",
+			objectDesc.FullName(), metadataFieldName,
+		)
+		return
+	}
+
+	// Create the template that we will clone when we need to create a new metadata object:
+	metadataTemplate := objectTemplate.NewField(metadataField).Message()
+
+	// Create the JSON encoder. We need this special encoder in order to ignore the 'id' and 'metadata' fields
+	// because we save those in separate database columns and not in the JSON document where we save everything
+	// else.
+	jsonEncoder, err := json.NewEncoder().
+		SetLogger(b.logger).
+		AddIgnoredFields(
+			idField.FullName(),
+			metadataField.FullName(),
+		).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create JSON encoder: %w", err)
+		return
+	}
 
 	// Prepare the JSON marshalling options:
 	marshalOptions := protojson.MarshalOptions{
 		UseProtoNames: true,
+	}
+	unmarshalOptions := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
 	}
 
 	// Create the filter translator:
@@ -175,9 +232,14 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		defaultOrder:     b.defaultOrder,
 		defaultLimit:     b.defaultLimit,
 		maxLimit:         b.maxLimit,
+		timestampDesc:    timestampDesc,
 		eventCallbacks:   slices.Clone(b.eventCallbacks),
 		objectTemplate:   objectTemplate,
+		metadataField:    metadataField,
+		metadataTemplate: metadataTemplate,
+		jsonEncoder:      jsonEncoder,
 		marshalOptions:   marshalOptions,
+		unmarshalOptions: unmarshalOptions,
 		filterTranslator: filterTranslator,
 	}
 	return
@@ -322,7 +384,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		}
 		md := d.makeMetadata(creationTs, deletionTs)
 		item.SetId(id)
-		item.SetMetadata(md)
+		d.setMetadata(item, md)
 		items = append(items, item)
 	}
 	err = itemsRows.Err()
@@ -387,7 +449,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 	}
 	md := d.makeMetadata(creationTs, deletionTs)
 	gotten.SetId(id)
-	gotten.SetMetadata(md)
+	d.setMetadata(gotten, md)
 	result = gotten
 	return
 }
@@ -473,7 +535,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	created := d.cloneObject(object)
 	md := d.makeMetadata(creationTs, deletionTs)
 	created.SetId(id)
-	created.SetMetadata(md)
+	d.setMetadata(created, md)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
@@ -512,10 +574,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	}
 
 	// Do nothing if there are no changes:
-	updated := d.cloneObject(object)
-	updated.SetMetadata(nil)
-	current.SetMetadata(nil)
-	if proto.Equal(updated, current) {
+	if d.equivalent(current, object) {
 		return
 	}
 
@@ -548,9 +607,10 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
+	updated := d.cloneObject(object)
+	metadata := d.makeMetadata(creationTs, deletionTs)
 	updated.SetId(id)
-	updated.SetMetadata(md)
+	d.setMetadata(updated, metadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
@@ -616,7 +676,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	}
 	md := d.makeMetadata(creationTs, deletionTs)
 	deleted.SetId(id)
-	deleted.SetMetadata(md)
+	d.setMetadata(deleted, md)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
@@ -643,7 +703,7 @@ func (d *GenericDAO[O]) newId() string {
 }
 
 func (d *GenericDAO[O]) newObject() O {
-	return proto.Clone(d.objectTemplate).(O)
+	return d.objectTemplate.New().Interface().(O)
 }
 
 func (d *GenericDAO[O]) cloneObject(object O) O {
@@ -651,24 +711,16 @@ func (d *GenericDAO[O]) cloneObject(object O) O {
 }
 
 func (d *GenericDAO[O]) marshalData(object O) (result []byte, err error) {
-	// We need to marshal the object without the identifier and the metadata because those are stored in separate
-	// columns.
-	id := object.GetId()
-	md := object.GetMetadata()
-	object.SetId("")
-	object.SetMetadata(nil)
-	result, err = d.marshalOptions.Marshal(object)
-	object.SetId(id)
-	object.SetMetadata(md)
+	result, err = d.jsonEncoder.Marshal(object)
 	return
 }
 
 func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
-	return protojson.Unmarshal(data, object)
+	return d.unmarshalOptions.Unmarshal(data, object)
 }
 
-func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) *sharedv1.Metadata {
-	result := &sharedv1.Metadata{}
+func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) metadataIface {
+	result := d.metadataTemplate.New().Interface().(metadataIface)
 	if creationTimestamp.Unix() != 0 {
 		result.SetCreationTimestamp(timestamppb.New(creationTimestamp))
 	}
@@ -677,3 +729,88 @@ func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.T
 	}
 	return result
 }
+
+func (d *GenericDAO[O]) getMetadata(object O) metadataIface {
+	objectReflect := object.ProtoReflect()
+	if !objectReflect.Has(d.metadataField) {
+		return nil
+	}
+	return objectReflect.Get(d.metadataField).Message().Interface().(metadataIface)
+}
+
+func (d *GenericDAO[O]) setMetadata(object O, metadata metadataIface) {
+	objectReflect := object.ProtoReflect()
+	if metadata != nil {
+		metadataReflect := metadata.ProtoReflect()
+		objectReflect.Set(d.metadataField, protoreflect.ValueOfMessage(metadataReflect))
+	} else {
+		objectReflect.Clear(d.metadataField)
+	}
+}
+
+// equivalent checks if two objects are equivalent. That means that they are equal excepty maybe in the creation and
+// deletion timestamps.
+func (d *GenericDAO[O]) equivalent(x, y O) bool {
+	return d.equivalentMessages(x.ProtoReflect(), y.ProtoReflect())
+}
+
+func (d *GenericDAO[O]) equivalentMessages(x, y protoreflect.Message) (result bool) {
+	if x.IsValid() != y.IsValid() {
+		return
+	}
+	result = true
+	x.Range(func(field protoreflect.FieldDescriptor, xv protoreflect.Value) bool {
+		if !y.Has(field) {
+			result = false
+			return false
+		}
+		yv := y.Get(field)
+		switch field.Name() {
+		case metadataFieldName:
+			if !d.equivalentMetadata(xv.Message(), yv.Message()) {
+				result = false
+				return false
+			}
+		default:
+			if !xv.Equal(yv) {
+				result = false
+				return false
+			}
+		}
+		return true
+	})
+	return
+}
+
+func (d *GenericDAO[O]) equivalentMetadata(x, y protoreflect.Message) (result bool) {
+	if x.IsValid() != y.IsValid() {
+		return
+	}
+	result = true
+	x.Range(func(field protoreflect.FieldDescriptor, xv protoreflect.Value) bool {
+		if !y.Has(field) {
+			result = false
+			return false
+		}
+		switch field.Name() {
+		case creationTimestampFieldName, deletionTimestampFieldName:
+			return true
+		default:
+			yv := y.Get(field)
+			if !xv.Equal(yv) {
+				result = false
+				return false
+			}
+		}
+		return true
+	})
+	return
+}
+
+// Names of well known fields:
+var (
+	creationTimestampFieldName = protoreflect.Name("creation_timestamp")
+	deletionTimestampFieldName = protoreflect.Name("deletion_timestamp")
+	idFieldName                = protoreflect.Name("id")
+	metadataFieldName          = protoreflect.Name("metadata")
+)
