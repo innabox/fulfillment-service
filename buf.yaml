@@ -26,6 +26,7 @@ breaking:
 
 modules:
 - path: proto
+  name: buf.build/innabox/private-api
 
 deps:
 - buf.build/googleapis/googleapis
