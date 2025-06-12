@@ -114,50 +114,56 @@ func (m *GenericMapper[From, To]) Merge(ctx context.Context, from From, to To) e
 	return m.copyMessage(fromReflect, toReflect)
 }
 
-func (m *GenericMapper[From, To]) copyMessage(from, to protoreflect.Message) (err error) {
+func (m *GenericMapper[From, To]) copyMessage(from, to protoreflect.Message) error {
+	fromFields := from.Descriptor().Fields()
 	toFields := to.Descriptor().Fields()
-	from.Range(func(fromField protoreflect.FieldDescriptor, fromValue protoreflect.Value) bool {
+	for i := range fromFields.Len() {
+		fromField := fromFields.Get(i)
 		toField := toFields.ByName(fromField.Name())
 		if toField == nil {
 			if m.strict {
-				err = fmt.Errorf(
+				return fmt.Errorf(
 					"type '%s' doesn't have a '%s' field",
 					to.Descriptor().FullName(),
 					fromField.Name(),
 				)
 			}
-			return false
+			continue
 		}
+		if !from.Has(fromField) {
+			to.Clear(toField)
+			continue
+		}
+		fromValue := from.Get(fromField)
 		switch {
 		case fromField.IsList():
 			fromList := fromValue.List()
 			toList := to.Mutable(toField).List()
-			err = m.copyList(fromList, toList, fromField)
+			err := m.copyList(fromList, toList, fromField)
 			if err != nil {
-				return false
+				return err
 			}
 		case fromField.IsMap():
 			fromMap := fromValue.Map()
 			toMap := to.Mutable(toField).Map()
-			err = m.copyMap(fromMap, toMap, fromField.MapValue())
+			err := m.copyMap(fromMap, toMap, fromField.MapValue())
 			if err != nil {
-				return false
+				return err
 			}
 		case fromField.Message() != nil:
 			fromMessage := fromValue.Message()
 			toMessage := to.Mutable(toField).Message()
-			err = m.copyMessage(fromMessage, toMessage)
+			err := m.copyMessage(fromMessage, toMessage)
 			if err != nil {
-				return false
+				return err
 			}
 		case fromField.Kind() == protoreflect.BytesKind:
 			to.Set(toField, m.cloneBytes(fromValue))
 		default:
 			to.Set(toField, fromValue)
 		}
-		return true
-	})
-	return
+	}
+	return nil
 }
 
 func (m *GenericMapper[From, To]) copyList(to, from protoreflect.List, field protoreflect.FieldDescriptor) error {

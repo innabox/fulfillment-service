@@ -65,12 +65,19 @@ var _ = Describe("Private cluster orders server", func() {
 		_, err = tx.Exec(
 			ctx,
 			`
-			create schema private;
-
-			create table private.cluster_orders (
+			create table cluster_orders (
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default '{}',
+				data jsonb not null
+			);
+
+			create table archived_cluster_orders (
+				id text not null,
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
 				data jsonb not null
 			);
 			`,
@@ -255,6 +262,9 @@ var _ = Describe("Private cluster orders server", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClusterOrdersCreateRequest_builder{
 				Object: privatev1.ClusterOrder_builder{
+					Metadata: privatev1.Metadata_builder{
+						Finalizers: []string{"a"},
+					}.Build(),
 					HubId: "my_hub",
 				}.Build(),
 			}.Build())

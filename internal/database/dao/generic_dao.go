@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,6 +82,8 @@ type metadataIface interface {
 	SetCreationTimestamp(*timestamppb.Timestamp)
 	GetDeletionTimestamp() *timestamppb.Timestamp
 	SetDeletionTimestamp(*timestamppb.Timestamp)
+	GetFinalizers() []string
+	SetFinalizers([]string)
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
@@ -337,6 +340,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 			id,
 			creation_timestamp,
 			deletion_timestamp,
+			finalizers,
 			data
 		from
 			%s
@@ -366,12 +370,14 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 			id         string
 			creationTs time.Time
 			deletionTs time.Time
+			finalizers []string
 			data       []byte
 		)
 		err = itemsRows.Scan(
 			&id,
 			&creationTs,
 			&deletionTs,
+			&finalizers,
 			&data,
 		)
 		if err != nil {
@@ -382,7 +388,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		if err != nil {
 			return
 		}
-		md := d.makeMetadata(creationTs, deletionTs)
+		md := d.makeMetadata(creationTs, deletionTs, finalizers)
 		item.SetId(id)
 		d.setMetadata(item, md)
 		items = append(items, item)
@@ -414,11 +420,12 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		err = errors.New("object identifier is mandatory")
 		return
 	}
-	query := fmt.Sprintf(
+	sql := fmt.Sprintf(
 		`
 		select
 			creation_timestamp,
 			deletion_timestamp,
+			finalizers,
 			data
 		from
 			%s
@@ -427,30 +434,32 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, query, id)
+	row := tx.QueryRow(ctx, sql, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
+		finalizers []string
 		data       []byte
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
+		&finalizers,
 		&data,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 		return
 	}
-	gotten := d.newObject()
-	err = d.unmarshalData(data, gotten)
+	object := d.newObject()
+	err = d.unmarshalData(data, object)
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
-	gotten.SetId(id)
-	d.setMetadata(gotten, md)
-	result = gotten
+	metadata := d.makeMetadata(creationTs, deletionTs, finalizers)
+	object.SetId(id)
+	d.setMetadata(object, metadata)
+	result = object
 	return
 }
 
@@ -500,6 +509,10 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		id = d.newId()
 	}
 
+	// Get the metadata:
+	metadata := d.getMetadata(object)
+	finalizers := d.getFinalizers(metadata)
+
 	// Save the object:
 	data, err := d.marshalData(object)
 	if err != nil {
@@ -509,10 +522,12 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		`
 		insert into %s (
 			id,
+			finalizers,
 			data
 		) values (
 		 	$1,
-			$2
+		 	$2,
+			$3
 		)
 		returning
 			creation_timestamp,
@@ -520,7 +535,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, id, data)
+	row := tx.QueryRow(ctx, sql, id, finalizers, data)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -533,9 +548,9 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 	created := d.cloneObject(object)
-	md := d.makeMetadata(creationTs, deletionTs)
+	metadata = d.makeMetadata(creationTs, deletionTs, finalizers)
 	created.SetId(id)
-	d.setMetadata(created, md)
+	d.setMetadata(created, metadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
@@ -578,6 +593,10 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 
+	// Get the metadata:
+	metadata := d.getMetadata(object)
+	finalizers := d.getFinalizers(metadata)
+
 	// Save the object:
 	data, err := d.marshalData(object)
 	if err != nil {
@@ -586,16 +605,17 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	sql := fmt.Sprintf(
 		`
 		update %s set
-			data = $1
+			finalizers = $1,
+			data = $2
 		where
-			id = $2
+			id = $3
 		returning
 			creation_timestamp,
 			deletion_timestamp
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, data, id)
+	row := tx.QueryRow(ctx, sql, finalizers, data, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -607,18 +627,30 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	if err != nil {
 		return
 	}
-	updated := d.cloneObject(object)
-	metadata := d.makeMetadata(creationTs, deletionTs)
-	updated.SetId(id)
-	d.setMetadata(updated, metadata)
+	object = d.cloneObject(object)
+	metadata = d.makeMetadata(creationTs, deletionTs, finalizers)
+	object.SetId(id)
+	d.setMetadata(object, metadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
 		Type:   EventTypeUpdated,
-		Object: updated,
+		Object: object,
 	})
+	if err != nil {
+		return
+	}
 
-	result = updated
+	// If the object has been deleted and there are no finalizers we can now archive the object and delete the row:
+	if deletionTs.Unix() != 0 && len(finalizers) == 0 {
+		err = d.archive(ctx, tx, id, creationTs, deletionTs, data)
+		if err != nil {
+			return
+		}
+	}
+
+	// Return the updated object:
+	result = object
 	return
 }
 
@@ -651,6 +683,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 		returning
 			creation_timestamp,
 			deletion_timestamp,
+			finalizers,
 			data
 		`,
 		d.table,
@@ -659,32 +692,72 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	var (
 		creationTs time.Time
 		deletionTs time.Time
+		finalizers []string
 		data       []byte
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
+		&finalizers,
 		&data,
 	)
 	if err != nil {
 		return
 	}
-	deleted := d.newObject()
-	err = d.unmarshalData(data, deleted)
+	object := d.newObject()
+	err = d.unmarshalData(data, object)
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
-	deleted.SetId(id)
-	d.setMetadata(deleted, md)
+	metadata := d.makeMetadata(creationTs, deletionTs, finalizers)
+	object.SetId(id)
+	d.setMetadata(object, metadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
 		Type:   EventTypeDeleted,
-		Object: deleted,
+		Object: object,
 	})
+	if err != nil {
+		return err
+	}
+
+	// If there are no finalizers we can now archive the object and delete the row:
+	if len(finalizers) == 0 {
+		err = d.archive(ctx, tx, id, creationTs, deletionTs, data)
+		if err != nil {
+			return
+		}
+	}
 
 	return
+}
+
+func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, creationTs, deletionTs time.Time,
+	data []byte) error {
+	sql := fmt.Sprintf(
+		`
+		insert into archived_%s (
+			id,
+			creation_timestamp,
+			deletion_timestamp,
+			data
+		) values (
+		 	$1,
+			$2,
+			$3,
+			$4
+		)
+		`,
+		d.table,
+	)
+	_, err := tx.Exec(ctx, sql, id, creationTs, deletionTs, data)
+	if err != nil {
+		return err
+	}
+	sql = fmt.Sprintf(`delete from %s where id = $1`, d.table)
+	_, err = tx.Exec(ctx, sql, id)
+	return err
 }
 
 func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {
@@ -719,14 +792,15 @@ func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
 	return d.unmarshalOptions.Unmarshal(data, object)
 }
 
-func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) metadataIface {
+func (d *GenericDAO[O]) makeMetadata(creationTs, deletionTs time.Time, finalizers []string) metadataIface {
 	result := d.metadataTemplate.New().Interface().(metadataIface)
-	if creationTimestamp.Unix() != 0 {
-		result.SetCreationTimestamp(timestamppb.New(creationTimestamp))
+	if creationTs.Unix() != 0 {
+		result.SetCreationTimestamp(timestamppb.New(creationTs))
 	}
-	if deletionTimestamp.Unix() != 0 {
-		result.SetDeletionTimestamp(timestamppb.New(deletionTimestamp))
+	if deletionTs.Unix() != 0 {
+		result.SetDeletionTimestamp(timestamppb.New(deletionTs))
 	}
+	result.SetFinalizers(finalizers)
 	return result
 }
 
@@ -748,63 +822,70 @@ func (d *GenericDAO[O]) setMetadata(object O, metadata metadataIface) {
 	}
 }
 
+func (d *GenericDAO[O]) getFinalizers(metadata metadataIface) []string {
+	if metadata == nil {
+		return []string{}
+	}
+	list := metadata.GetFinalizers()
+	set := make(map[string]struct{}, len(list))
+	for _, item := range list {
+		set[item] = struct{}{}
+	}
+	list = make([]string, len(set))
+	i := 0
+	for item := range set {
+		list[i] = item
+		i++
+	}
+	sort.Strings(list)
+	return list
+}
+
 // equivalent checks if two objects are equivalent. That means that they are equal excepty maybe in the creation and
 // deletion timestamps.
 func (d *GenericDAO[O]) equivalent(x, y O) bool {
 	return d.equivalentMessages(x.ProtoReflect(), y.ProtoReflect())
 }
 
-func (d *GenericDAO[O]) equivalentMessages(x, y protoreflect.Message) (result bool) {
+func (d *GenericDAO[O]) equivalentMessages(x, y protoreflect.Message) bool {
 	if x.IsValid() != y.IsValid() {
-		return
+		return false
 	}
-	result = true
-	x.Range(func(field protoreflect.FieldDescriptor, xv protoreflect.Value) bool {
-		if !y.Has(field) {
-			result = false
-			return false
-		}
+	fields := x.Descriptor().Fields()
+	for i := range fields.Len() {
+		field := fields.Get(i)
+		xv := x.Get(field)
 		yv := y.Get(field)
-		switch field.Name() {
-		case metadataFieldName:
+		if field == d.metadataField {
 			if !d.equivalentMetadata(xv.Message(), yv.Message()) {
-				result = false
 				return false
 			}
-		default:
+		} else {
 			if !xv.Equal(yv) {
-				result = false
 				return false
 			}
 		}
-		return true
-	})
-	return
+	}
+	return true
 }
 
-func (d *GenericDAO[O]) equivalentMetadata(x, y protoreflect.Message) (result bool) {
+func (d *GenericDAO[O]) equivalentMetadata(x, y protoreflect.Message) bool {
 	if x.IsValid() != y.IsValid() {
-		return
+		return false
 	}
-	result = true
-	x.Range(func(field protoreflect.FieldDescriptor, xv protoreflect.Value) bool {
-		if !y.Has(field) {
-			result = false
+	fields := x.Descriptor().Fields()
+	for i := range fields.Len() {
+		field := fields.Get(i)
+		if field.Name() == creationTimestampFieldName || field.Name() == deletionTimestampFieldName {
+			continue
+		}
+		xv := x.Get(field)
+		yv := y.Get(field)
+		if !xv.Equal(yv) {
 			return false
 		}
-		switch field.Name() {
-		case creationTimestampFieldName, deletionTimestampFieldName:
-			return true
-		default:
-			yv := y.Get(field)
-			if !xv.Equal(yv) {
-				result = false
-				return false
-			}
-		}
-		return true
-	})
-	return
+	}
+	return true
 }
 
 // Names of well known fields:

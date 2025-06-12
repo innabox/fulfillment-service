@@ -69,6 +69,15 @@ var _ = Describe("Private clusters server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default '{}',
+				data jsonb not null
+			);
+
+			create table archived_clusters (
+				id text not null,
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
 				data jsonb not null
 			);
 			`,
@@ -263,6 +272,9 @@ var _ = Describe("Private clusters server", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
+					Metadata: privatev1.Metadata_builder{
+						Finalizers: []string{"a"},
+					}.Build(),
 					OrderId: "my_order",
 					HubId:   "my_hub",
 				}.Build(),

@@ -21,7 +21,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
 )
 
@@ -173,7 +172,7 @@ var _ = Describe("Encoder", func() {
 				"Ignore one field",
 				Case{
 					Input: testsv1.Object_builder{
-						Metadata: sharedv1.Metadata_builder{
+						Metadata: testsv1.Metadata_builder{
 							CreationTimestamp: timestamppb.Now(),
 						}.Build(),
 					}.Build(),
@@ -188,7 +187,7 @@ var _ = Describe("Encoder", func() {
 				Case{
 					Input: testsv1.Object_builder{
 						Id: "123",
-						Metadata: sharedv1.Metadata_builder{
+						Metadata: testsv1.Metadata_builder{
 							CreationTimestamp: timestamppb.Now(),
 						}.Build(),
 					}.Build(),

@@ -69,8 +69,17 @@ var _ = Describe("Cluster orders server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default '{}',
 				data jsonb not null
-			)
+			);
+
+			create table archived_cluster_templates (
+				id text not null,
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
+				data jsonb not null
+			);
 			`,
 		)
 		Expect(err).ToNot(HaveOccurred())
@@ -94,8 +103,17 @@ var _ = Describe("Cluster orders server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default array ['default'],
 				data jsonb not null
-			)
+			);
+
+			create table archived_cluster_orders (
+				id text not null,
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
+				data jsonb not null
+			);
 			`,
 		)
 		Expect(err).ToNot(HaveOccurred())
@@ -302,6 +320,16 @@ var _ = Describe("Cluster orders server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			object := createResponse.GetObject()
 
+			// Add a finalizer, as otherwise the object will be immediatelly deleted and archived and it
+			// won't be possible to verify the deletion timestamp. This can't be done using the server
+			// because this is a public object, and public objects don't have the finalizers field.
+			_, err = tx.Exec(
+				ctx,
+				`update cluster_orders set finalizers = '{"a"}' where id = $1`,
+				object.GetId(),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
 			// Delete the object:
 			_, err = server.Delete(ctx, ffv1.ClusterOrdersDeleteRequest_builder{
 				Id: object.GetId(),
@@ -313,7 +341,8 @@ var _ = Describe("Cluster orders server", func() {
 				Id: object.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+			object = getResponse.GetObject()
+			Expect(object.GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
 		})
 	})
 })

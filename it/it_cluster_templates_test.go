@@ -22,6 +22,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 var _ = Describe("Cluster templates", func() {
@@ -162,16 +164,24 @@ var _ = Describe("Cluster templates", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(deleteResponse).ToNot(BeNil())
 
-		// Verify that the template has the deletion timestamp set:
+		// Trying to get the deleted object should either fail if the object has been completely deleted and
+		// archived, or return an object that has the deletion timestamp set.
 		getResponse, err := client.Get(ctx, ffv1.ClusterTemplatesGetRequest_builder{
 			Id: id,
 		}.Build())
-		Expect(err).ToNot(HaveOccurred())
-		Expect(getResponse).ToNot(BeNil())
-		object := getResponse.GetObject()
-		Expect(object).ToNot(BeNil())
-		metadata := object.GetMetadata()
-		Expect(metadata).ToNot(BeNil())
-		Expect(metadata.HasDeletionTimestamp()).To(BeTrue())
+		if err != nil {
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status).ToNot(BeNil())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			Expect(status.Message()).To(ContainSubstring(id))
+		} else {
+			Expect(getResponse).ToNot(BeNil())
+			object := getResponse.GetObject()
+			Expect(object).ToNot(BeNil())
+			metadata := object.GetMetadata()
+			Expect(metadata).ToNot(BeNil())
+			Expect(metadata.HasDeletionTimestamp()).To(BeTrue())
+		}
 	})
 })

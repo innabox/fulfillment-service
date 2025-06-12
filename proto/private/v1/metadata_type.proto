@@ -24,4 +24,8 @@ message Metadata {
 
   // Time of deletion of the object.
   google.protobuf.Timestamp deletion_timestamp = 2;
+
+  // Finalizers indicate tasks that need to be completed before the object can be completely deleted. When the object
+  // has been deleted and this list is empty the system will automatically archive the object.
+  repeated string finalizers = 3;
 }

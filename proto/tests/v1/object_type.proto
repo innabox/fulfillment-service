@@ -16,7 +16,6 @@ syntax = "proto3";
 package tests.v1;
 
 import "google/protobuf/timestamp.proto";
-import "shared/v1/metadata_type.proto";
 
 // This is an object type used in unit tests.
 message Object {
@@ -24,7 +23,7 @@ message Object {
   string id = 1;
 
   // Metadata of the object.
-  shared.v1.Metadata metadata = 2;
+  Metadata metadata = 2;
 
   // Miscellanea fields used in tests.
   bool my_bool = 3;
@@ -43,6 +42,12 @@ message Object {
   // Spec and status:
   Spec spec = 15;
   Status status = 16;
+}
+
+message Metadata {
+  google.protobuf.Timestamp creation_timestamp = 1;
+  google.protobuf.Timestamp deletion_timestamp = 2;
+  repeated string finalizers = 3;
 }
 
 message Spec {

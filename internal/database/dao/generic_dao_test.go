@@ -172,8 +172,17 @@ var _ = Describe("Generic DAO", func() {
 					id text not null primary key,
 					creation_timestamp timestamp with time zone not null default now(),
 					deletion_timestamp timestamp with time zone not null default 'epoch',
+					finalizers text[] not null default '{}',
 					data jsonb not null
-				)
+				);
+
+				create table archived_objects (
+					id text not null,
+					creation_timestamp timestamp with time zone not null,
+					deletion_timestamp timestamp with time zone not null,
+					archival_timestamp timestamp with time zone not null default now(),
+					data jsonb not null
+				);
 				`,
 			)
 			Expect(err).ToNot(HaveOccurred())
@@ -297,6 +306,267 @@ var _ = Describe("Generic DAO", func() {
 			err = json.Unmarshal(data, &value)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(value).ToNot(HaveKey("creation_timestamp"))
+		})
+
+		It("Archives object if it has no finalizers when it is deleted", func() {
+			// Create an object without finalizers:
+			object, err := generic.Create(ctx, testsv1.Object_builder{
+				MyString: "my value",
+				MyBool:   true,
+				MyInt32:  123,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Delete the object:
+			err = generic.Delete(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that the object has been deleted and the data copied to the archive table:
+			row := tx.QueryRow(ctx, `select count(*) from objects where id = $1`, object.GetId())
+			var count int
+			err = row.Scan(&count)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(count).To(BeZero())
+			row = tx.QueryRow(
+				ctx,
+				`
+				select
+					creation_timestamp,
+					deletion_timestamp,
+					archival_timestamp,
+					data
+				from
+					archived_objects
+				where
+					id = $1
+				`,
+				object.GetId(),
+			)
+			var (
+				creationTs time.Time
+				deletionTs time.Time
+				archivalTs time.Time
+				data       []byte
+			)
+			err = row.Scan(
+				&creationTs,
+				&deletionTs,
+				&archivalTs,
+				&data,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			metadata := object.GetMetadata()
+			now := time.Now()
+			Expect(creationTs).To(BeTemporally("==", metadata.GetCreationTimestamp().AsTime()))
+			Expect(deletionTs).To(BeTemporally("~", now, time.Second))
+			Expect(archivalTs).To(BeTemporally("~", now, time.Second))
+			Expect(data).To(MatchJSON(`{
+				"my_string": "my value",
+				"my_bool": true,
+				"my_int32": 123
+			}`))
+		})
+
+		It("Archives object when it is updated removing the finalizers", func() {
+			// Create an object with finalizers:
+			object, err := generic.Create(ctx, testsv1.Object_builder{
+				Metadata: testsv1.Metadata_builder{
+					Finalizers: []string{"a"},
+				}.Build(),
+				MyString: "my value",
+				MyBool:   true,
+				MyInt32:  123,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Delete the object:
+			err = generic.Delete(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that it hasn't been archived:
+			row := tx.QueryRow(ctx, `select count(*) from archived_objects where id = $1`, object.GetId())
+			var count int
+			err = row.Scan(&count)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(count).To(BeZero())
+
+			// Update the object removing the finalizers:
+			object, err = generic.Update(ctx, testsv1.Object_builder{
+				Id: object.GetId(),
+				Metadata: testsv1.Metadata_builder{
+					Finalizers: []string{},
+				}.Build(),
+				MyString: "your value",
+				MyBool:   false,
+				MyInt32:  456,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that it has been removed and copied to the archive table:
+			row = tx.QueryRow(
+				ctx,
+				`
+				select
+					creation_timestamp,
+					deletion_timestamp,
+					archival_timestamp,
+					data
+				from
+					archived_objects
+				where
+					id = $1
+				`,
+				object.GetId(),
+			)
+			var (
+				creationTs time.Time
+				deletionTs time.Time
+				archivalTs time.Time
+				data       []byte
+			)
+			err = row.Scan(
+				&creationTs,
+				&deletionTs,
+				&archivalTs,
+				&data,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			metadata := object.GetMetadata()
+			now := time.Now()
+			Expect(creationTs).To(BeTemporally("==", metadata.GetCreationTimestamp().AsTime()))
+			Expect(deletionTs).To(BeTemporally("~", metadata.GetDeletionTimestamp().AsTime()))
+			Expect(archivalTs).To(BeTemporally("~", now, time.Second))
+			Expect(data).To(MatchJSON(`{
+				"my_string": "your value",
+				"my_int32": 456
+			}`))
+		})
+
+		Describe("Finalizers", func() {
+			checkDatabase := func(object *testsv1.Object, expected ...string) {
+				row := tx.QueryRow(ctx, "select finalizers from objects where id = $1", object.GetId())
+				var actual []string
+				err := row.Scan(&actual)
+				Expect(err).ToNot(HaveOccurred())
+				values := make([]any, len(expected))
+				for i, value := range expected {
+					values[i] = value
+				}
+				Expect(actual).To(ConsistOf(values))
+			}
+
+			It("Gets finalizers", func() {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Finalizers: []string{"a", "b"},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				object, err = generic.Get(ctx, object.GetId())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
+			})
+
+			It("Lists finalizers", func() {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Finalizers: []string{"a", "b"},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				response, err := generic.List(ctx, ListRequest{
+					Filter: fmt.Sprintf("this.id == '%s'", object.GetId()),
+				})
+				Expect(err).ToNot(HaveOccurred())
+				objects := response.Items
+				Expect(objects).To(HaveLen(1))
+				object = objects[0]
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
+			})
+
+			It("Creates object without finalizers", func() {
+				object, err := generic.Create(ctx, &testsv1.Object{})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(BeEmpty())
+				checkDatabase(object)
+			})
+
+			It("Creates object with one finalizer", func() {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Finalizers: []string{"a"},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
+				checkDatabase(object, "a")
+			})
+
+			It("Creates object with two finalizers", func() {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Finalizers: []string{"a", "b"},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
+				checkDatabase(object, "a", "b")
+			})
+
+			It("Eliminates duplicated finalizers when object is created", func() {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Finalizers: []string{"a", "a"},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
+				checkDatabase(object, "a")
+			})
+
+			It("Adds one finalizer when object is updated", func() {
+				object, err := generic.Create(ctx, &testsv1.Object{})
+				Expect(err).ToNot(HaveOccurred())
+				object.GetMetadata().SetFinalizers([]string{"a"})
+				object, err = generic.Update(ctx, object)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
+				checkDatabase(object, "a")
+			})
+
+			It("Adds two finalizers when object is updated", func() {
+				object, err := generic.Create(ctx, &testsv1.Object{})
+				Expect(err).ToNot(HaveOccurred())
+				object.GetMetadata().SetFinalizers([]string{"a", "b"})
+				object, err = generic.Update(ctx, object)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
+				checkDatabase(object, "a", "b")
+			})
+
+			It("Replaces finalizers when object is updated", func() {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Finalizers: []string{"a", "b"},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				object.GetMetadata().SetFinalizers([]string{"a", "c"})
+				object, err = generic.Update(ctx, object)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "c"))
+				checkDatabase(object, "a", "c")
+			})
+
+			It("Eliminates duplicated finalizers when object is updated", func() {
+				object, err := generic.Create(ctx, &testsv1.Object{})
+				Expect(err).ToNot(HaveOccurred())
+				object.GetMetadata().SetFinalizers([]string{"a", "a"})
+				object, err = generic.Update(ctx, object)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
+				checkDatabase(object, "a")
+			})
 		})
 
 		Describe("Paging", func() {
@@ -593,6 +863,9 @@ var _ = Describe("Generic DAO", func() {
 					ctx,
 					testsv1.Object_builder{
 						Id: "0",
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
 					}.Build(),
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -612,6 +885,9 @@ var _ = Describe("Generic DAO", func() {
 					ctx,
 					testsv1.Object_builder{
 						Id: "0",
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
 					}.Build(),
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -741,6 +1017,9 @@ var _ = Describe("Generic DAO", func() {
 					ctx,
 					testsv1.Object_builder{
 						Id: "good",
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
 					}.Build(),
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -748,6 +1027,9 @@ var _ = Describe("Generic DAO", func() {
 					ctx,
 					testsv1.Object_builder{
 						Id: "bad",
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
 					}.Build(),
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -768,6 +1050,9 @@ var _ = Describe("Generic DAO", func() {
 					ctx,
 					testsv1.Object_builder{
 						Id: "good",
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
 					}.Build(),
 				)
 				Expect(err).ToNot(HaveOccurred())
@@ -775,6 +1060,9 @@ var _ = Describe("Generic DAO", func() {
 					ctx,
 					testsv1.Object_builder{
 						Id: "bad",
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
 					}.Build(),
 				)
 				Expect(err).ToNot(HaveOccurred())

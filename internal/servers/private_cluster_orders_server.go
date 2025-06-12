@@ -53,7 +53,7 @@ func (b *PrivateClusterOrdersServerBuilder) Build() (result *PrivateClusterOrder
 	generic, err := NewGenericServer[*privatev1.ClusterOrder, *privatev1.ClusterOrder]().
 		SetLogger(b.logger).
 		SetService(privatev1.ClusterOrders_ServiceDesc.ServiceName).
-		SetTable("private.cluster_orders").
+		SetTable("cluster_orders").
 		Build()
 	if err != nil {
 		return
