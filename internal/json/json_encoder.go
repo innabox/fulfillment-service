@@ -20,11 +20,12 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -39,6 +40,7 @@ type Encoder struct {
 	logger                *slog.Logger
 	ignoredFieldNames     map[protoreflect.Name]bool
 	ignoredFieldFullNames map[protoreflect.FullName]bool
+	anyDesc               protoreflect.MessageDescriptor
 	timestampDesc         protoreflect.MessageDescriptor
 	jsonApi               jsoniter.API
 }
@@ -78,8 +80,12 @@ func (b *EncoderBuilder) Build() (result *Encoder, err error) {
 	}
 
 	// Get descriptors of well known types:
-	var timestamp *timestamppb.Timestamp
-	timestampDesc := timestamp.ProtoReflect().Descriptor()
+	var (
+		anyValue       *anypb.Any
+		timestampValue *timestamppb.Timestamp
+	)
+	anyDesc := anyValue.ProtoReflect().Descriptor()
+	timestampDesc := timestampValue.ProtoReflect().Descriptor()
 
 	// Create the JSON API:
 	jsonApi := jsoniter.Config{}.Froze()
@@ -114,6 +120,7 @@ func (b *EncoderBuilder) Build() (result *Encoder, err error) {
 		logger:                b.logger,
 		ignoredFieldNames:     ignoredFieldNames,
 		ignoredFieldFullNames: ignoredFieldFullNames,
+		anyDesc:               anyDesc,
 		timestampDesc:         timestampDesc,
 		jsonApi:               jsonApi,
 	}
@@ -141,9 +148,8 @@ func (e *Encoder) Marshal(object proto.Message) (result []byte, err error) {
 
 func (e *Encoder) marshalMessage(stream *jsoniter.Stream, message protoreflect.Message) (err error) {
 	descriptor := message.Descriptor()
-	switch {
-	case descriptor == e.timestampDesc:
-		err = e.marshalTimestamp(stream, message.Interface().(*timestamppb.Timestamp))
+	if descriptor == e.anyDesc || descriptor == e.timestampDesc {
+		err = e.marshalWellKnown(stream, message.Interface())
 		return
 	}
 	stream.WriteObjectStart()
@@ -307,8 +313,11 @@ func (e *Encoder) marshalMap(stream *jsoniter.Stream, m protoreflect.Map,
 	return stream.Error
 }
 
-func (e *Encoder) marshalTimestamp(stream *jsoniter.Stream, value *timestamppb.Timestamp) error {
-	text := value.AsTime().UTC().Format(time.RFC3339)
-	stream.WriteString(text)
-	return stream.Error
+func (e *Encoder) marshalWellKnown(stream *jsoniter.Stream, value proto.Message) error {
+	data, err := protojson.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = stream.Write(data)
+	return err
 }
