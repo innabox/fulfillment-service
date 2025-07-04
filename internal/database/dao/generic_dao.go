@@ -451,6 +451,9 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		err = nil
 		return
 	}
+	if err != nil {
+		return
+	}
 	object := d.newObject()
 	err = d.unmarshalData(data, object)
 	if err != nil {

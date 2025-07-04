@@ -20,6 +20,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
@@ -82,6 +84,22 @@ var _ = Describe("Clusters server", func() {
 				archival_timestamp timestamp with time zone not null default now(),
 				data jsonb not null
 			);
+
+			create table cluster_templates (
+				id text not null primary key,
+				creation_timestamp timestamp with time zone not null default now(),
+				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default array ['default'],
+				data jsonb not null
+			);
+
+			create table archived_clusters_templates (
+				id text not null,
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
+				data jsonb not null
+			);
 			`,
 		)
 		Expect(err).ToNot(HaveOccurred())
@@ -115,11 +133,55 @@ var _ = Describe("Clusters server", func() {
 				SetLogger(logger).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
+
+			// Create the templates DAO:
+			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+				SetLogger(logger).
+				SetTable("cluster_templates").
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a usable template:
+			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+				Id:          "my_template",
+				Title:       "My template",
+				Description: "My template",
+				NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
+					"compute": privatev1.ClusterTemplateNodeSet_builder{
+						HostClass: "acme_1tib",
+						Size:      3,
+					}.Build(),
+					"gpu": privatev1.ClusterTemplateNodeSet_builder{
+						HostClass: "acme_gpu",
+						Size:      1,
+					}.Build(),
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a template that has been deleted. Note that we add a finalizer to ensure that it will
+			// not be completely deleted and archived, as we will use it to verify that clusters can't be
+			// created using deleted templates.
+			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+				Id:          "my_deleted_template",
+				Title:       "My deleted template",
+				Description: "My deleted template",
+				Metadata: privatev1.Metadata_builder{
+					Finalizers: []string{"a"},
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			err = templatesDao.Delete(ctx, "my_deleted_template")
+			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("Creates object", func() {
 			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-				Object: ffv1.Cluster_builder{}.Build(),
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
@@ -128,29 +190,223 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetId()).ToNot(BeEmpty())
 		})
 
-		It("Ignores status when object is created", func() {
-			// Create the object:
-			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+		It("Doesn't create object without template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal("template is mandatory"))
+		})
+
+		It("Takes default node sets from template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{
-					Status: ffv1.ClusterStatus_builder{
-						ApiUrl:     "https://my.api.com",
-						ConsoleUrl: "https://my.console.com",
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
 					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			object := createResponse.GetObject()
-			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
-			Expect(object.GetStatus().GetConsoleUrl()).To(BeEmpty())
+			object := response.GetObject()
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			computeNodeSet := nodeSets["compute"]
+			Expect(computeNodeSet.GetHostClass()).To(Equal("acme_1tib"))
+			Expect(computeNodeSet.GetSize()).To(BeNumerically("==", 3))
+			Expect(nodeSets).To(HaveKey("gpu"))
+			gpuNodeSet := nodeSets["gpu"]
+			Expect(gpuNodeSet.GetHostClass()).To(Equal("acme_gpu"))
+			Expect(gpuNodeSet.GetSize()).To(BeNumerically("==", 1))
+		})
 
-			// Get the object and verify that the change to the status hasn't been applied:
-			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
-				Id: object.GetId(),
+		It("Rejects node set that isn't in the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"junk": ffv1.ClusterNodeSet_builder{
+								HostClass: "junk",
+								Size:      1000,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"node set 'junk' doesn't exist, valid values for template 'my_template' are " +
+					"'compute' and 'gpu'",
+			))
+		})
+
+		It("Rejects node set with host class that isn't in the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								HostClass: "junk",
+								Size:      1000,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"host class for node set 'compute' should be empty or 'acme_1tib', like in " +
+					"template 'my_template', but it is 'junk'",
+			))
+		})
+
+		It("Rejects node set with zero size", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								Size: 0,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"size for node set 'compute' should be greater than zero, but it is 0",
+			))
+		})
+
+		It("Rejects node set with negative size", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								Size: -1,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"size for node set 'compute' should be greater than zero, but it is -1",
+			))
+		})
+
+		It("Accepts node set with explicit size", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								Size: 1000,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			object = getResponse.GetObject()
-			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
-			Expect(object.GetStatus().GetConsoleUrl()).To(BeEmpty())
+			object := response.GetObject()
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			nodeSet := nodeSets["compute"]
+			Expect(nodeSet.GetSize()).To(BeNumerically("==", 1000))
+		})
+
+		It("Accepts multiple node sets with explicit size", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								Size: 30,
+							}.Build(),
+							"gpu": ffv1.ClusterNodeSet_builder{
+								Size: 10,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			computeNodeSet := nodeSets["compute"]
+			Expect(computeNodeSet.GetSize()).To(BeNumerically("==", 30))
+			Expect(nodeSets).To(HaveKey("gpu"))
+			gpuNodeSet := nodeSets["gpu"]
+			Expect(gpuNodeSet.GetSize()).To(BeNumerically("==", 10))
+		})
+
+		It("Merges explicit size for one node set with size for another node set from the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								Size: 30,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			computeNodeSet := nodeSets["compute"]
+			Expect(computeNodeSet.GetSize()).To(BeNumerically("==", 30))
+			Expect(nodeSets).To(HaveKey("gpu"))
+			gpuNodeSet := nodeSets["gpu"]
+			Expect(gpuNodeSet.GetSize()).To(BeNumerically("==", 1))
+		})
+
+		It("Rejects template that has been deleted", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_deleted_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"template 'my_deleted_template' has been deleted",
+			))
 		})
 
 		It("List objects", func() {
@@ -158,7 +414,11 @@ var _ = Describe("Clusters server", func() {
 			const count = 10
 			for range count {
 				_, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-					Object: ffv1.Cluster_builder{}.Build(),
+					Object: ffv1.Cluster_builder{
+						Spec: ffv1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 			}
@@ -176,7 +436,11 @@ var _ = Describe("Clusters server", func() {
 			const count = 10
 			for range count {
 				_, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-					Object: ffv1.Cluster_builder{}.Build(),
+					Object: ffv1.Cluster_builder{
+						Spec: ffv1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 			}
@@ -194,7 +458,11 @@ var _ = Describe("Clusters server", func() {
 			const count = 10
 			for range count {
 				_, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-					Object: ffv1.Cluster_builder{}.Build(),
+					Object: ffv1.Cluster_builder{
+						Spec: ffv1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 			}
@@ -213,7 +481,11 @@ var _ = Describe("Clusters server", func() {
 			var objects []*ffv1.Cluster
 			for range count {
 				response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-					Object: ffv1.Cluster_builder{}.Build(),
+					Object: ffv1.Cluster_builder{
+						Spec: ffv1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 				objects = append(objects, response.GetObject())
@@ -233,7 +505,11 @@ var _ = Describe("Clusters server", func() {
 		It("Get object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-				Object: ffv1.Cluster_builder{}.Build(),
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
@@ -250,12 +526,7 @@ var _ = Describe("Clusters server", func() {
 			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{
 					Spec: ffv1.ClusterSpec_builder{
-						NodeSets: map[string]*ffv1.ClusterNodeSet{
-							"compute": ffv1.ClusterNodeSet_builder{
-								HostClass: "acme_1tib",
-								Size:      3,
-							}.Build(),
-						},
+						Template: "my_template",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -296,7 +567,11 @@ var _ = Describe("Clusters server", func() {
 		It("Ignores changes to the status when an object is updated", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-				Object: ffv1.Cluster_builder{}.Build(),
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			object := createResponse.GetObject()
@@ -329,7 +604,11 @@ var _ = Describe("Clusters server", func() {
 		It("Delete object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
-				Object: ffv1.Cluster_builder{}.Build(),
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			object := createResponse.GetObject()
