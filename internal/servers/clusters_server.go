@@ -18,17 +18,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 
+	"golang.org/x/exp/maps"
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/clientcmd"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dustin/go-humanize/english"
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -51,6 +55,7 @@ type ClustersServer struct {
 	logger          *slog.Logger
 	jqTool          *jq.Tool
 	clustersDao     *dao.GenericDAO[*privatev1.Cluster]
+	templatesDao    *dao.GenericDAO[*privatev1.ClusterTemplate]
 	hubsDao         *dao.GenericDAO[*privatev1.Hub]
 	generic         *GenericServer[*ffv1.Cluster, *privatev1.Cluster]
 	kubeClients     map[string]clnt.Client
@@ -94,6 +99,13 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	if err != nil {
 		return
 	}
+	templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+		SetLogger(b.logger).
+		SetTable("cluster_templates").
+		Build()
+	if err != nil {
+		return
+	}
 	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
 		SetTable("hubs").
@@ -130,6 +142,7 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 		logger:          b.logger,
 		jqTool:          jqTool,
 		clustersDao:     clustersDao,
+		templatesDao:    templatesDao,
 		hubsDao:         hubsDao,
 		generic:         generic,
 		kubeClients:     map[string]clnt.Client{},
@@ -152,6 +165,194 @@ func (s *ClustersServer) Get(ctx context.Context,
 
 func (s *ClustersServer) Create(ctx context.Context,
 	request *ffv1.ClustersCreateRequest) (response *ffv1.ClustersCreateResponse, err error) {
+	// Check that the template is specified and that refers to a existing template:
+	cluster := request.GetObject()
+	if cluster == nil {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
+		return
+	}
+	templateId := cluster.GetSpec().GetTemplate()
+	if templateId == "" {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template is mandatory")
+		return
+	}
+	template, err := s.templatesDao.Get(ctx, templateId)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get template",
+			slog.String("template", templateId),
+			slog.Any("error", err),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get template '%s'", templateId)
+		return
+	}
+	if template == nil {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' doesn't exist", templateId)
+		return
+	}
+	if template.GetMetadata().HasDeletionTimestamp() {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' has been deleted", templateId)
+		return
+	}
+
+	// Check that all the node sets given in the cluster correspond to node sets that exist in the template:
+	templateNodeSets := template.GetNodeSets()
+	clusterNodeSets := cluster.GetSpec().GetNodeSets()
+	for clusterNodeSetKey := range clusterNodeSets {
+		templateNodeSet := templateNodeSets[clusterNodeSetKey]
+		if templateNodeSet == nil {
+			templateNodeSetKeys := maps.Keys(templateNodeSets)
+			sort.Strings(templateNodeSetKeys)
+			for i, templateNodeSetKey := range templateNodeSetKeys {
+				templateNodeSetKeys[i] = fmt.Sprintf("'%s'", templateNodeSetKey)
+			}
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"node set '%s' doesn't exist, valid values for template '%s' are %s",
+				clusterNodeSetKey, templateId, english.WordSeries(templateNodeSetKeys, "and"),
+			)
+			return
+		}
+	}
+
+	// Check that all the node sets given in the cluster specify the same host class that is specified in the
+	// template:
+	for clusterNodeSetKey, clusterNodeSet := range clusterNodeSets {
+		templateNodeSet := templateNodeSets[clusterNodeSetKey]
+		clusterHostClass := clusterNodeSet.GetHostClass()
+		if clusterHostClass == "" {
+			continue
+		}
+		templateHostClass := templateNodeSet.GetHostClass()
+		if clusterHostClass != templateHostClass {
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"host class for node set '%s' should be empty or '%s', like in template '%s', "+
+					"but it is '%s'",
+				clusterNodeSetKey, templateHostClass, templateId, clusterHostClass,
+			)
+			return
+		}
+	}
+
+	// Check that all the node sets given in the cluster have a positive size:
+	for clusterNodeSetKey, clusterNodeSet := range clusterNodeSets {
+		clusterNodeSetSize := clusterNodeSet.GetSize()
+		if clusterNodeSetSize <= 0 {
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"size for node set '%s' should be greater than zero, but it is %d",
+				clusterNodeSetKey, clusterNodeSetSize,
+			)
+			return
+		}
+	}
+
+	// Replace the node sets given in the cluster with those from the template, taking only the size from cluster:
+	actualNodeSets := map[string]*ffv1.ClusterNodeSet{}
+	for templateNodeSetKey, templateNodeSet := range templateNodeSets {
+		var actualNodeSetSize int32
+		clusterNodeSet := clusterNodeSets[templateNodeSetKey]
+		if clusterNodeSet != nil {
+			actualNodeSetSize = clusterNodeSet.GetSize()
+		} else {
+			actualNodeSetSize = templateNodeSet.GetSize()
+		}
+		actualNodeSets[templateNodeSetKey] = ffv1.ClusterNodeSet_builder{
+			HostClass: templateNodeSet.GetHostClass(),
+			Size:      actualNodeSetSize,
+		}.Build()
+	}
+	cluster.GetSpec().SetNodeSets(actualNodeSets)
+
+	// Check that all the specified template parameters are in the template:
+	templateParameters := template.GetParameters()
+	clusterParameters := cluster.GetSpec().GetTemplateParameters()
+	for clusterParameterName := range clusterParameters {
+		clusterParameterValid := false
+		for _, templateParameter := range templateParameters {
+			if templateParameter.GetName() == clusterParameterName {
+				clusterParameterValid = true
+				break
+			}
+		}
+		if !clusterParameterValid {
+			templateParameterNames := make([]string, len(templateParameters))
+			for i, templateParameter := range templateParameters {
+				templateParameterNames[i] = templateParameter.GetName()
+			}
+			sort.Strings(templateParameterNames)
+			for i, templateParameterName := range templateParameterNames {
+				templateParameterNames[i] = fmt.Sprintf("'%s'", templateParameterName)
+			}
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"template parameter '%s' doesn't exist, valid values for template '%s' are %s",
+				clusterParameterName, templateId, english.WordSeries(templateParameterNames, "and"),
+			)
+			return
+		}
+	}
+
+	// Check that all the mandatory parameters have a value:
+	for _, templateParameter := range templateParameters {
+		if !templateParameter.GetRequired() {
+			continue
+		}
+		templateParameterName := templateParameter.GetName()
+		clusterParameter := clusterParameters[templateParameterName]
+		if clusterParameter == nil {
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"parameter '%s' of template '%s' is mandatory",
+				templateParameterName, templateId,
+			)
+			return
+		}
+	}
+
+	// Check that the parameter values are compatible with the template:
+	for clusterParameterName, clusterParameter := range clusterParameters {
+		for _, templateParameter := range templateParameters {
+			templateParameterName := templateParameter.GetName()
+			if clusterParameterName != templateParameterName {
+				continue
+			}
+			clusterParameterType := clusterParameter.GetTypeUrl()
+			templateParameterType := templateParameter.GetType()
+			if clusterParameterType != templateParameterType {
+				err = grpcstatus.Errorf(
+					grpccodes.InvalidArgument,
+					"type of parameter '%s' of template '%s' should be '%s', "+
+						"but it is '%s'",
+					clusterParameterName,
+					templateId,
+					templateParameterType,
+					clusterParameterType,
+				)
+				return
+			}
+		}
+	}
+
+	// Set default values for template parameters:
+	actualClusterParameters := make(map[string]*anypb.Any)
+	for _, templateParameter := range templateParameters {
+		templateParameterName := templateParameter.GetName()
+		clusterParameter := clusterParameters[templateParameterName]
+		actualClusterParameter := &anypb.Any{
+			TypeUrl: templateParameter.GetType(),
+		}
+		if clusterParameter != nil {
+			actualClusterParameter.Value = clusterParameter.Value
+		} else {
+			actualClusterParameter.Value = templateParameter.GetDefault().GetValue()
+		}
+		actualClusterParameters[templateParameterName] = actualClusterParameter
+	}
+	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)
+
 	err = s.generic.Create(ctx, request, &response)
 	return
 }
