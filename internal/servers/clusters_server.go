@@ -25,6 +25,7 @@ import (
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -264,6 +265,93 @@ func (s *ClustersServer) Create(ctx context.Context,
 		}.Build()
 	}
 	cluster.GetSpec().SetNodeSets(actualNodeSets)
+
+	// Check that all the specified template parameters are in the template:
+	templateParameters := template.GetParameters()
+	clusterParameters := cluster.GetSpec().GetTemplateParameters()
+	for clusterParameterName := range clusterParameters {
+		clusterParameterValid := false
+		for _, templateParameter := range templateParameters {
+			if templateParameter.GetName() == clusterParameterName {
+				clusterParameterValid = true
+				break
+			}
+		}
+		if !clusterParameterValid {
+			templateParameterNames := make([]string, len(templateParameters))
+			for i, templateParameter := range templateParameters {
+				templateParameterNames[i] = templateParameter.GetName()
+			}
+			sort.Strings(templateParameterNames)
+			for i, templateParameterName := range templateParameterNames {
+				templateParameterNames[i] = fmt.Sprintf("'%s'", templateParameterName)
+			}
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"template parameter '%s' doesn't exist, valid values for template '%s' are %s",
+				clusterParameterName, templateId, english.WordSeries(templateParameterNames, "and"),
+			)
+			return
+		}
+	}
+
+	// Check that all the mandatory parameters have a value:
+	for _, templateParameter := range templateParameters {
+		if !templateParameter.GetRequired() {
+			continue
+		}
+		templateParameterName := templateParameter.GetName()
+		clusterParameter := clusterParameters[templateParameterName]
+		if clusterParameter == nil {
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"parameter '%s' of template '%s' is mandatory",
+				templateParameterName, templateId,
+			)
+			return
+		}
+	}
+
+	// Check that the parameter values are compatible with the template:
+	for clusterParameterName, clusterParameter := range clusterParameters {
+		for _, templateParameter := range templateParameters {
+			templateParameterName := templateParameter.GetName()
+			if clusterParameterName != templateParameterName {
+				continue
+			}
+			clusterParameterType := clusterParameter.GetTypeUrl()
+			templateParameterType := templateParameter.GetType()
+			if clusterParameterType != templateParameterType {
+				err = grpcstatus.Errorf(
+					grpccodes.InvalidArgument,
+					"type of parameter '%s' of template '%s' should be '%s', "+
+						"but it is '%s'",
+					clusterParameterName,
+					templateId,
+					templateParameterType,
+					clusterParameterType,
+				)
+				return
+			}
+		}
+	}
+
+	// Set default values for template parameters:
+	actualClusterParameters := make(map[string]*anypb.Any)
+	for _, templateParameter := range templateParameters {
+		templateParameterName := templateParameter.GetName()
+		clusterParameter := clusterParameters[templateParameterName]
+		actualClusterParameter := &anypb.Any{
+			TypeUrl: templateParameter.GetType(),
+		}
+		if clusterParameter != nil {
+			actualClusterParameter.Value = clusterParameter.Value
+		} else {
+			actualClusterParameter.Value = templateParameter.GetDefault().GetValue()
+		}
+		actualClusterParameters[templateParameterName] = actualClusterParameter
+	}
+	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)
 
 	err = s.generic.Create(ctx, request, &response)
 	return
