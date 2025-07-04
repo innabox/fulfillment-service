@@ -23,6 +23,8 @@ import (
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -125,6 +127,12 @@ var _ = Describe("Clusters server", func() {
 	Describe("Behaviour", func() {
 		var server *ClustersServer
 
+		makeAny := func(m proto.Message) *anypb.Any {
+			a, err := anypb.New(m)
+			Expect(err).ToNot(HaveOccurred())
+			return a
+		}
+
 		BeforeEach(func() {
 			var err error
 
@@ -172,6 +180,31 @@ var _ = Describe("Clusters server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			err = templatesDao.Delete(ctx, "my_deleted_template")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a template with parameters:
+			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+				Id:          "my_with_parameters",
+				Title:       "My with parameters",
+				Description: "My with parameters.",
+				Parameters: []*privatev1.ClusterTemplateParameterDefinition{
+					privatev1.ClusterTemplateParameterDefinition_builder{
+						Name:        "my_required_bool",
+						Title:       "My required bool",
+						Description: "My required bool.",
+						Required:    true,
+						Type:        "type.googleapis.com/google.protobuf.BoolValue",
+					}.Build(),
+					privatev1.ClusterTemplateParameterDefinition_builder{
+						Name:        "my_optional_string",
+						Title:       "My optional string",
+						Description: "My optional string.",
+						Required:    false,
+						Type:        "type.googleapis.com/google.protobuf.StringValue",
+						Default:     makeAny(wrapperspb.String("my value")),
+					}.Build(),
+				},
+			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -407,6 +440,122 @@ var _ = Describe("Clusters server", func() {
 			Expect(status.Message()).To(Equal(
 				"template 'my_deleted_template' has been deleted",
 			))
+		})
+
+		It("Doesn't create object if there are missing required template parameters", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_with_parameters",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"parameter 'my_required_bool' of template 'my_with_parameters' is mandatory",
+			))
+		})
+
+		It("Doesn't create object if parameter doesn't exist in the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_with_parameters",
+						TemplateParameters: map[string]*anypb.Any{
+							"junk": makeAny(wrapperspb.Int32(123)),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"template parameter 'junk' doesn't exist, valid values for template " +
+					"'my_with_parameters' are 'my_optional_string' and 'my_required_bool'",
+			))
+		})
+
+		It("Doesn't create object if parameter type doesn't match the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_with_parameters",
+						TemplateParameters: map[string]*anypb.Any{
+							"my_required_bool": makeAny(wrapperspb.Int32(123)),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"type of parameter 'my_required_bool' of template 'my_with_parameters' should be " +
+					"'type.googleapis.com/google.protobuf.BoolValue', but it is " +
+					"'type.googleapis.com/google.protobuf.Int32Value'",
+			))
+		})
+
+		It("Takes default values of parameters from the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_with_parameters",
+						TemplateParameters: map[string]*anypb.Any{
+							"my_required_bool": makeAny(wrapperspb.Bool(true)),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+			templateParameters := object.GetSpec().GetTemplateParameters()
+
+			parameterValue := templateParameters["my_required_bool"]
+			Expect(parameterValue).ToNot(BeNil())
+			boolValue := &wrapperspb.BoolValue{}
+			err = anypb.UnmarshalTo(parameterValue, boolValue, proto.UnmarshalOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(boolValue.GetValue()).To(BeTrue())
+
+			parameterValue = templateParameters["my_optional_string"]
+			Expect(parameterValue).ToNot(BeNil())
+			stringValue := &wrapperspb.StringValue{}
+			err = anypb.UnmarshalTo(parameterValue, stringValue, proto.UnmarshalOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stringValue.GetValue()).To(Equal("my value"))
+		})
+
+		It("Allows overriding of default values of template parameters", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_with_parameters",
+						TemplateParameters: map[string]*anypb.Any{
+							"my_required_bool":   makeAny(wrapperspb.Bool(false)),
+							"my_optional_string": makeAny(wrapperspb.String("your value")),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+			templateParameters := object.GetSpec().GetTemplateParameters()
+			parameterValue := templateParameters["my_optional_string"]
+			Expect(parameterValue).ToNot(BeNil())
+			stringValue := &wrapperspb.StringValue{}
+			err = anypb.UnmarshalTo(parameterValue, stringValue, proto.UnmarshalOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stringValue.GetValue()).To(Equal("your value"))
 		})
 
 		It("List objects", func() {
