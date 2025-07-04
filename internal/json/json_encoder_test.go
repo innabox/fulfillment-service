@@ -19,7 +19,9 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	_ "google.golang.org/protobuf/types/known/wrapperspb"
 
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
 )
@@ -143,6 +145,71 @@ var _ = Describe("Encoder", func() {
 						"spec": {
 							"spec_int32": 123
 						}
+					}`,
+				},
+			),
+			Entry(
+				"Any false",
+				Case{
+					Input: &anypb.Any{
+						TypeUrl: "type.googleapis.com/google.protobuf.BoolValue",
+						Value:   []byte{},
+					},
+					Expected: `{
+						"@type": "type.googleapis.com/google.protobuf.BoolValue",
+						"value": false
+					}`,
+				},
+			),
+			Entry(
+				"Any true",
+				Case{
+					Input: &anypb.Any{
+						TypeUrl: "type.googleapis.com/google.protobuf.BoolValue",
+						Value:   []byte{8, 1},
+					},
+					Expected: `{
+						"@type": "type.googleapis.com/google.protobuf.BoolValue",
+						"value": true
+					}`,
+				},
+			),
+			Entry(
+				"Any int",
+				Case{
+					Input: &anypb.Any{
+						TypeUrl: "type.googleapis.com/google.protobuf.Int32Value",
+						Value:   []byte{8, 123},
+					},
+					Expected: `{
+						"@type": "type.googleapis.com/google.protobuf.Int32Value",
+						"value": 123
+					}`,
+				},
+			),
+			Entry(
+				"Any string",
+				Case{
+					Input: &anypb.Any{
+						TypeUrl: "type.googleapis.com/google.protobuf.StringValue",
+						Value:   []byte{10, 2, 109, 121},
+					},
+					Expected: `{
+						"@type": "type.googleapis.com/google.protobuf.StringValue",
+						"value": "my"
+					}`,
+				},
+			),
+			Entry(
+				"Timestamp",
+				Case{
+					Input: &anypb.Any{
+						TypeUrl: "type.googleapis.com/google.protobuf.Timestamp",
+						Value:   []byte{8, 227, 246, 159, 195, 6, 16, 160, 248, 160, 50},
+					},
+					Expected: `{
+						"@type": "type.googleapis.com/google.protobuf.Timestamp",
+						"value": "2025-07-04T16:03:47.105397280Z"
 					}`,
 				},
 			),
