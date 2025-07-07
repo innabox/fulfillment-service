@@ -21,11 +21,6 @@
     subject.name == 'system:serviceaccount:innabox:client' &&
     method in [
       '/events.v1/Watch',
-      '/fulfillment.v1.ClusterOrders/Create',
-      '/fulfillment.v1.ClusterOrders/Delete',
-      '/fulfillment.v1.ClusterOrders/Get',
-      '/fulfillment.v1.ClusterOrders/List',
-      '/fulfillment.v1.ClusterOrders/Update',
       '/fulfillment.v1.ClusterTemplates/Get',
       '/fulfillment.v1.ClusterTemplates/List',
       '/fulfillment.v1.Clusters/Delete',
