@@ -128,6 +128,31 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetId()).ToNot(BeEmpty())
 		})
 
+		It("Ignores status when object is created", func() {
+			// Create the object:
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Status: ffv1.ClusterStatus_builder{
+						ApiUrl:     "https://my.api.com",
+						ConsoleUrl: "https://my.console.com",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
+			Expect(object.GetStatus().GetConsoleUrl()).To(BeEmpty())
+
+			// Get the object and verify that the change to the status hasn't been applied:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
+			Expect(object.GetStatus().GetConsoleUrl()).To(BeEmpty())
+		})
+
 		It("List objects", func() {
 			// Create a few objects:
 			const count = 10
@@ -266,6 +291,39 @@ var _ = Describe("Clusters server", func() {
 			nodeSet = object.GetSpec().GetNodeSets()["compute"]
 			Expect(nodeSet.GetHostClass()).To(Equal("acme_1tib"))
 			Expect(nodeSet.GetSize()).To(BeNumerically("==", 4))
+		})
+
+		It("Ignores changes to the status when an object is updated", func() {
+			// Create the object:
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Try to update the status:
+			updateResponse, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: object.GetId(),
+					Status: ffv1.ClusterStatus_builder{
+						ApiUrl:     "https://my.api.com",
+						ConsoleUrl: "https://my.console.com",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = updateResponse.GetObject()
+			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
+			Expect(object.GetStatus().GetConsoleUrl()).To(BeEmpty())
+
+			// Get the response and verify that the status hasn't been updated:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
+			Expect(object.GetStatus().GetConsoleUrl()).To(BeEmpty())
 		})
 
 		It("Delete object", func() {
