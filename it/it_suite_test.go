@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/kelseyhightower/envconfig"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
@@ -45,8 +46,16 @@ import (
 	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
+// Config contains configuration options for the integration tests.
+type Config struct {
+	// KeepKind indicates whether to preserve the kind cluster after tests complete.
+	// By default, the kind cluster is deleted after running the tests.
+	KeepKind bool `json:"keep_kind" envconfig:"keep_kind" default:"false"`
+}
+
 var (
 	logger     *slog.Logger
+	config     *Config
 	kind       *Kind
 	clientConn *grpc.ClientConn
 	adminConn  *grpc.ClientConn
@@ -69,6 +78,15 @@ var _ = BeforeSuite(func() {
 		SetLevel(slog.LevelDebug.String()).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
+
+	// Load configuration from environment variables:
+	config = &Config{}
+	err = envconfig.Process("it", config)
+	Expect(err).ToNot(HaveOccurred())
+	logger.Info(
+		"Configuration",
+		slog.Any("values", config),
+	)
 
 	// Configure the Kubernetes libraries to use our logger:
 	logrLogger := logr.FromSlogHandler(logger.Handler())
@@ -128,10 +146,12 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Remember to stop the kind cluster:
-		DeferCleanup(func() {
-			err := kind.Stop(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
+		if !config.KeepKind {
+			DeferCleanup(func() {
+				err := kind.Stop(ctx)
+				Expect(err).ToNot(HaveOccurred())
+			})
+		}
 	}()
 
 	// In the GitHub actions environment, the image is already built and available in the 'image.tar'

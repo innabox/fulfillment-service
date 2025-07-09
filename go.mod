@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1
 	github.com/json-iterator/go v1.1.12
+	github.com/kelseyhightower/envconfig v1.4.0
 	go.uber.org/mock v0.5.0
 	golang.org/x/oauth2 v0.26.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250204164813-702378808489
