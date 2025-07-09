@@ -83,6 +83,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/itchyny/gojq v0.12.17
 	github.com/jackc/pgx/v5 v5.7.2
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/pkg/errors v0.9.1
