@@ -17,6 +17,7 @@ To work with this project you will need the following tools:
 - [gRPCurl](https://github.com/fullstorydev/grpcurl) - Used to test the gRPC API from the CLI.
 - [curl](https://curl.se) - Used to test the REST API from the CLI.
 - [jq](https://jqlang.org) - Used by some of the commands in this document.
+- [kind](https://kind.sigs.k8s.io) - Used to create Kubernetes clusters for integration tests.
 
 ## Building the binary
 
@@ -211,3 +212,42 @@ gRPC server and the REST gateway are working:
         }
       ]
     }
+
+## Running integration tests
+
+The project includes integration tests that run against a real Kubernetes cluster created using
+[kind](https://kind.sigs.k8s.io). These tests verify the end-to-end functionality of the fulfillment
+service by deploying it to a temporary cluster and exercising the APIs.
+
+To run the integration tests:
+
+```bash
+$ ginkgo run it
+```
+
+The integration tests will automatically:
+1. Create a kind cluster named "it".
+2. Build and load the container image.
+3. Deploy the fulfillment service.
+4. Run all test cases.
+5. Clean up the kind cluster.
+
+### Preserving the test cluster
+
+By default, the kind cluster is deleted after the tests complete. If you want to preserve the cluster
+for debugging or manual inspection, you can set the `IT_KEEP_KIND` environment variable:
+
+```bash
+$ IT_KEEP_KIND=true ginkgo run it
+```
+
+When `IT_KEEP_KIND=true`, the cluster will remain running after the tests finish, allowing you to:
+- Inspect the deployed resources with `kubectl`.
+- Debug test failures manually.
+- Examine logs and cluster state.
+
+To clean up a preserved cluster manually:
+
+```bash
+$ kind delete cluster --name it
+```
