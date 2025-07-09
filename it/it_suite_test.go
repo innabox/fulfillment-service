@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,19 +73,6 @@ var _ = BeforeSuite(func() {
 	crlog.SetLogger(logrLogger)
 	klog.SetLogger(logrLogger)
 
-	// Ensure that the kind cluster is ready:
-	kind, err = NewKind().
-		SetLogger(logger).
-		SetName("it").
-		Build()
-	Expect(err).ToNot(HaveOccurred())
-	err = kind.Start(ctx)
-	Expect(err).ToNot(HaveOccurred())
-	DeferCleanup(func() {
-		err := kind.Stop(ctx)
-		Expect(err).ToNot(HaveOccurred())
-	})
-
 	// Create a temporary directory:
 	tmpDir, err := os.MkdirTemp("", "*.it")
 	Expect(err).ToNot(HaveOccurred())
@@ -117,6 +105,86 @@ var _ = BeforeSuite(func() {
 	_, err = exec.LookPath(kindPath)
 	Expect(err).ToNot(HaveOccurred())
 
+	// We will create the kind cluster and build the container image in parallel, and will use this
+	// to wait for both to complete.
+	var wg sync.WaitGroup
+
+	// Start the kind cluster:
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover()
+
+		// Create the kind cluster, and start it:
+		var err error
+		kind, err = NewKind().
+			SetLogger(logger).
+			SetName("it").
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		err = kind.Start(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Remember to stop the kind cluster:
+		DeferCleanup(func() {
+			err := kind.Stop(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	}()
+
+	// In the GitHub actions environment, the image is already built and available in the 'image.tar'
+	// file in the project directory. If it is not there, we build it and save it to the temporary
+	// directory.
+	imageTar := filepath.Join(projectDir, "image.tar")
+	_, err = os.Stat(imageTar)
+	if err != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer GinkgoRecover()
+
+			// Build the container image:
+			buildCmd, err := NewCommand().
+				SetLogger(logger).
+				SetDir(projectDir).
+				SetName("podman").
+				SetArgs(
+					"build",
+					"--tag", fmt.Sprintf("%s:%s", imageName, imageTag),
+					"--file", "Containerfile",
+				).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			err = buildCmd.Execute(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Save the container image to the tar file:
+			imageTar = filepath.Join(tmpDir, "image.tar")
+			saveCmd, err := NewCommand().
+				SetLogger(logger).
+				SetDir(projectDir).
+				SetName("podman").
+				SetArgs(
+					"save",
+					"--output", imageTar,
+					imageRef,
+				).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			err = saveCmd.Execute(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Clean up the container image tar file:
+			DeferCleanup(func() {
+				err := os.Remove(imageTar)
+				Expect(err).ToNot(HaveOccurred())
+			})
+		}()
+	}
+
+	// Wait for the kind cluster to be started and the container image to be built:
+	wg.Wait()
+
 	// Get the kubeconfig:
 	kcFile := filepath.Join(tmpDir, "kubeconfig")
 	err = os.WriteFile(kcFile, kind.Kubeconfig(), 0400)
@@ -125,44 +193,6 @@ var _ = BeforeSuite(func() {
 	// Get the client:
 	kubeClient := kind.Client()
 	kubeClientSet := kind.ClientSet()
-
-	// In the GitHub actions environment, the image is already built and available in the 'imag.tar' file in the
-	// project directory. If it is not there, we build it and save it to the temporary directory.
-	imageTar := filepath.Join(projectDir, "image.tar")
-	_, err = os.Stat(imageTar)
-	if err != nil {
-		imageTar = filepath.Join(tmpDir, "image.tar")
-		DeferCleanup(func() {
-			err := os.Remove(imageTar)
-			Expect(err).ToNot(HaveOccurred())
-		})
-		buildCmd, err := NewCommand().
-			SetLogger(logger).
-			SetDir(projectDir).
-			SetName("podman").
-			SetArgs(
-				"build",
-				"--tag", fmt.Sprintf("%s:%s", imageName, imageTag),
-				"--file", "Containerfile",
-			).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		err = buildCmd.Execute(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		saveCmd, err := NewCommand().
-			SetLogger(logger).
-			SetDir(projectDir).
-			SetName("podman").
-			SetArgs(
-				"save",
-				"--output", imageTar,
-				imageRef,
-			).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		err = saveCmd.Execute(ctx)
-		Expect(err).ToNot(HaveOccurred())
-	}
 
 	// Load the image:
 	err = kind.LoadArchive(ctx, imageTar)
