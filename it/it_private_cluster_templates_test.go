@@ -21,24 +21,24 @@ import (
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 
-	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 )
 
-var _ = Describe("Cluster templates", func() {
+var _ = Describe("Private cluster templates", func() {
 	var (
 		ctx    context.Context
-		client ffv1.ClusterTemplatesClient
+		client privatev1.ClusterTemplatesClient
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		client = ffv1.NewClusterTemplatesClient(adminConn)
+		client = privatev1.NewClusterTemplatesClient(adminConn)
 	})
 
 	It("Can get the list of templates", func() {
-		listResponse, err := client.List(ctx, ffv1.ClusterTemplatesListRequest_builder{}.Build())
+		listResponse, err := client.List(ctx, privatev1.ClusterTemplatesListRequest_builder{}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResponse).ToNot(BeNil())
 		items := listResponse.GetItems()
@@ -48,8 +48,8 @@ var _ = Describe("Cluster templates", func() {
 	It("Can get a specific template", func() {
 		// Create the template:
 		id := fmt.Sprintf("my_template_%s", uuid.NewString())
-		_, err := client.Create(ctx, ffv1.ClusterTemplatesCreateRequest_builder{
-			Object: ffv1.ClusterTemplate_builder{
+		_, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
 				Title:       "My title",
 				Description: "My description.",
@@ -58,7 +58,7 @@ var _ = Describe("Cluster templates", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Get the template and verify that the returned object is correct:
-		response, err := client.Get(ctx, ffv1.ClusterTemplatesGetRequest_builder{
+		response, err := client.Get(ctx, privatev1.ClusterTemplatesGetRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
@@ -76,8 +76,8 @@ var _ = Describe("Cluster templates", func() {
 
 	It("Can create a template", func() {
 		id := fmt.Sprintf("my_template_%s", uuid.NewString())
-		response, err := client.Create(ctx, ffv1.ClusterTemplatesCreateRequest_builder{
-			Object: ffv1.ClusterTemplate_builder{
+		response, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
 				Title:       "My title",
 				Description: "My description.",
@@ -99,8 +99,8 @@ var _ = Describe("Cluster templates", func() {
 	It("Can update a template", func() {
 		// Create a template::
 		id := fmt.Sprintf("my_template_%s", uuid.NewString())
-		_, err := client.Create(ctx, ffv1.ClusterTemplatesCreateRequest_builder{
-			Object: ffv1.ClusterTemplate_builder{
+		_, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
 				Title:       "My title",
 				Description: "My description.",
@@ -109,8 +109,8 @@ var _ = Describe("Cluster templates", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Update it and verify that the returned object is correct:
-		updateResponse, err := client.Update(ctx, ffv1.ClusterTemplatesUpdateRequest_builder{
-			Object: ffv1.ClusterTemplate_builder{
+		updateResponse, err := client.Update(ctx, privatev1.ClusterTemplatesUpdateRequest_builder{
+			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
 				Title:       "My updated title",
 				Description: "My updated description.",
@@ -129,7 +129,7 @@ var _ = Describe("Cluster templates", func() {
 		Expect(object.GetDescription()).To(Equal("My updated description."))
 
 		// Get the template and verify that the returned object is correct:
-		getResponse, err := client.Get(ctx, ffv1.ClusterTemplatesGetRequest_builder{
+		getResponse, err := client.Get(ctx, privatev1.ClusterTemplatesGetRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
@@ -148,8 +148,8 @@ var _ = Describe("Cluster templates", func() {
 	It("Can delete a template", func() {
 		// Create a template::
 		id := fmt.Sprintf("my_template_%s", uuid.NewString())
-		_, err := client.Create(ctx, ffv1.ClusterTemplatesCreateRequest_builder{
-			Object: ffv1.ClusterTemplate_builder{
+		_, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
 				Title:       "My title",
 				Description: "My description.",
@@ -158,7 +158,7 @@ var _ = Describe("Cluster templates", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Delete it:
-		deleteResponse, err := client.Delete(ctx, ffv1.ClusterTemplatesDeleteRequest_builder{
+		deleteResponse, err := client.Delete(ctx, privatev1.ClusterTemplatesDeleteRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
@@ -166,7 +166,7 @@ var _ = Describe("Cluster templates", func() {
 
 		// Trying to get the deleted object should either fail if the object has been completely deleted and
 		// archived, or return an object that has the deletion timestamp set.
-		getResponse, err := client.Get(ctx, ffv1.ClusterTemplatesGetRequest_builder{
+		getResponse, err := client.Get(ctx, privatev1.ClusterTemplatesGetRequest_builder{
 			Id: id,
 		}.Build())
 		if err != nil {
