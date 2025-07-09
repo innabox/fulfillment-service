@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/kelseyhightower/envconfig"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
@@ -42,8 +43,19 @@ import (
 	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
+// Config contains the settings for the integration tests. These will be loaded from the enviroment using the 'IT_'
+// prefix. For example, the 'KeepKind' setting will be loaded from the 'IT_KEEP_KIND' environment variable.
+type Config struct {
+	// KeepKind indicates if the kind cluster that is created to run the tests should be kept after running the
+	// tests. This is intended for the development environment, where it may be convenient to keep the kind cluster
+	// running in order to check the state after a test failure. By default the kind cluster is stopped after
+	// running the tests.
+	KeepKind bool `json:"keep_kind" envconfig:"keep_kind" default:"false"`
+}
+
 var (
 	logger     *slog.Logger
+	config     *Config
 	kind       *Kind
 	clientConn *grpc.ClientConn
 	adminConn  *grpc.ClientConn
@@ -67,6 +79,16 @@ var _ = BeforeSuite(func() {
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 
+	// Load the configuration:
+	config = &Config{}
+	err = envconfig.Process("it", config)
+	Expect(err).ToNot(HaveOccurred())
+	logger.InfoContext(
+		ctx,
+		"Config",
+		slog.Any("values", config),
+	)
+
 	// Configure the Kubernetes libraries to use our logger:
 	logrLogger := logr.FromSlogHandler(logger.Handler())
 	crlog.SetLogger(logrLogger)
@@ -80,10 +102,12 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	err = kind.Start(ctx)
 	Expect(err).ToNot(HaveOccurred())
-	DeferCleanup(func() {
-		err := kind.Stop(ctx)
-		Expect(err).ToNot(HaveOccurred())
-	})
+	if !config.KeepKind {
+		DeferCleanup(func() {
+			err := kind.Stop(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	}
 
 	// Create a temporary directory:
 	tmpDir, err := os.MkdirTemp("", "*.it")
