@@ -32,11 +32,13 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/logging"
 	"github.com/innabox/fulfillment-service/internal/network"
 	. "github.com/innabox/fulfillment-service/internal/testing"
@@ -249,6 +251,35 @@ var _ = BeforeSuite(func() {
 		time.Minute,
 		5*time.Second,
 	).Should(Succeed())
+
+	// Create the namespace for the hub:
+	hubNamespaceObject := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hubNamespace,
+		},
+	}
+	err = kubeClient.Create(ctx, hubNamespaceObject)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Register the kind cluster as a hub. Note that in order to do this we need to replace the 127.0.0.1 IP
+	// with the internal DNS name of the API server, as otherwise the controller will not be able to connect.
+	hubKubeconfigBytes := kind.Kubeconfig()
+	hubKubeconfigObject, err := clientcmd.Load(hubKubeconfigBytes)
+	Expect(err).ToNot(HaveOccurred())
+	for clusterKey := range hubKubeconfigObject.Clusters {
+		hubKubeconfigObject.Clusters[clusterKey].Server = "https://kubernetes.default.svc"
+	}
+	hubKubeconfigBytes, err = clientcmd.Write(*hubKubeconfigObject)
+	Expect(err).ToNot(HaveOccurred())
+	hubsClient := privatev1.NewHubsClient(adminConn)
+	_, err = hubsClient.Create(ctx, privatev1.HubsCreateRequest_builder{
+		Object: privatev1.Hub_builder{
+			Id:         hubId,
+			Kubeconfig: hubKubeconfigBytes,
+			Namespace:  hubNamespace,
+		}.Build(),
+	}.Build())
+	Expect(err).ToNot(HaveOccurred())
 })
 
 // Names of the command line tools:
@@ -256,6 +287,10 @@ const (
 	kubectlPath = "kubectl"
 	kindPath    = "podman"
 )
+
+// Name and namespace of the hub:
+const hubId = "local"
+const hubNamespace = "cloudkit-operator-system"
 
 // Image details:
 const imageName = "ghcr.io/innabox/fulfillment-service"
