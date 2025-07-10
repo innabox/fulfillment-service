@@ -15,10 +15,10 @@ package database
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -77,7 +77,7 @@ func (b *NotifierBuilder) Build() (result *Notifier, err error) {
 }
 
 // Notify sends a notification with the given payload using the configured channel. The payload is placed into an
-// Any object, then marshalled using protocol buffers and encoded with Base64.
+// Any object, then marshalled using protocol buffers.
 //
 // Note that this method expects to find a transaction in the context.
 func (n *Notifier) Notify(ctx context.Context, payload proto.Message) (err error) {
@@ -103,10 +103,18 @@ func (n *Notifier) Notify(ctx context.Context, payload proto.Message) (err error
 		)
 		return err
 	}
-	encoded := base64.StdEncoding.EncodeToString(data)
+
+	// Generate an identifier:
+	id := uuid.NewString()
+
+	// Save the payload to the database:
+	_, err = tx.Exec(ctx, "insert into notifications (id, payload) values ($1, $2)", id, data)
+	if err != nil {
+		return err
+	}
 
 	// Send the notification:
-	_, err = tx.Exec(ctx, "select pg_notify($1, $2)", n.channel, encoded)
+	_, err = tx.Exec(ctx, "select pg_notify($1, $2)", n.channel, id)
 	if err != nil {
 		return err
 	}
@@ -114,7 +122,22 @@ func (n *Notifier) Notify(ctx context.Context, payload proto.Message) (err error
 		n.logger.DebugContext(
 			ctx,
 			"Sent notification",
+			slog.String("id", id),
 			slog.Any("payload", payload),
+		)
+	}
+
+	// Delete old notifications:
+	tag, err := tx.Exec(ctx, "delete from notifications where creation_timestamp < now() - interval '1 minute'")
+	if err != nil {
+		return err
+	}
+	count := tag.RowsAffected()
+	if count > 0 {
+		n.logger.DebugContext(
+			ctx,
+			"Deleted old notifications",
+			slog.Int64("count", count),
 		)
 	}
 

@@ -26,8 +26,9 @@ var _ = Describe("Notifier", func() {
 	const channel = "my_channel"
 
 	var (
-		ctx context.Context
-		tm  TxManager
+		ctx  context.Context
+		pool *pgxpool.Pool
+		tm   TxManager
 	)
 
 	BeforeEach(func() {
@@ -39,9 +40,22 @@ var _ = Describe("Notifier", func() {
 		// Prepare the database pool:
 		db := dbServer.MakeDatabase()
 		DeferCleanup(db.Close)
-		pool, err := pgxpool.New(ctx, db.MakeURL())
+		pool, err = pgxpool.New(ctx, db.MakeURL())
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(pool.Close)
+
+		// Create the notifications table:
+		_, err = pool.Exec(
+			ctx,
+			`
+				create table notifications (
+					id text not null primary key,
+					creation_timestamp timestamp with time zone default now(),
+					payload bytea
+				);
+				`,
+		)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the transaction manager:
 		tm, err = NewTxManager().
@@ -103,6 +117,40 @@ var _ = Describe("Notifier", func() {
 				err = notifier.Notify(ctx, payload)
 			})
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Deletes old notifications", func() {
+			// Create the notifier:
+			notifier, err := NewNotifier().
+				SetLogger(logger).
+				SetChannel(channel).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Manually create notifications older than one minute:
+			_, err = pool.Exec(
+				ctx,
+				`
+				insert into notifications (id, creation_timestamp, payload) values
+				('123', now() - interval '2 minutes', 'junk'),
+				('456', now() - interval '10 minutes', 'stuff')
+				`,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Send the notification:
+			payload := wrapperspb.Int32(42)
+			runWithTx(func(ctx context.Context) {
+				err = notifier.Notify(ctx, payload)
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Check that the old notifications have been deleted:
+			row := pool.QueryRow(ctx, `select count(*) from notifications where id in ('123', '456')`)
+			var count int
+			err = row.Scan(&count)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(count).To(BeZero())
 		})
 	})
 })

@@ -15,7 +15,6 @@ package database
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -286,22 +285,30 @@ func (l *Listener) wait(ctx context.Context) error {
 }
 
 func (l *Listener) processNotification(ctx context.Context, notification *pgconn.Notification) {
+	// Write the details of the notification to the log:
 	l.logger.DebugContext(
 		ctx,
 		"Received notification",
 		slog.Uint64("pid", uint64(notification.PID)),
-		slog.Any("payload", notification.Payload),
+		slog.String("payload", notification.Payload),
 	)
-	data, err := base64.StdEncoding.DecodeString(notification.Payload)
+
+	// Get the payload from the database:
+	id := notification.Payload
+	row := l.conn.QueryRow(ctx, "select payload from notifications where id = $1", id)
+	var data []byte
+	err := row.Scan(&data)
 	if err != nil {
 		l.logger.ErrorContext(
 			ctx,
-			"Failed to decode payload",
-			slog.String("payload", notification.Payload),
+			"Failed to get payload",
+			slog.String("id", id),
 			slog.Any("error", err),
 		)
 		return
 	}
+
+	// Unwrap the payload:
 	wrapper := &anypb.Any{}
 	err = proto.Unmarshal(data, wrapper)
 	if err != nil {
@@ -343,6 +350,8 @@ func (l *Listener) processNotification(ctx context.Context, notification *pgconn
 			slog.Any("payload", payload),
 		)
 	}
+
+	// Run the callbacks:
 	l.runPayloadCallbacks(ctx, payload)
 }
 

@@ -136,6 +136,19 @@ var _ = Describe("Listener", func() {
 			Expect(err).ToNot(HaveOccurred())
 			DeferCleanup(pool.Close)
 
+			// Create the notifications table:
+			_, err = pool.Exec(
+				ctx,
+				`
+				create table notifications (
+					id text not null primary key,
+					creation_timestamp timestamp with time zone default now(),
+					payload bytea
+				);
+				`,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
 			// Create the payloads channel:
 			payloads = make(chan proto.Message)
 
