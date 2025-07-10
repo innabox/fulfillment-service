@@ -3,5 +3,6 @@
 *.patch
 *.rej
 *.test
+/dev.yaml
 /fulfillment-service
 __debug_bin*

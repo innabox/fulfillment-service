@@ -35,8 +35,9 @@ import (
 // KindBuilder contains the data and logic needed to create an object that helps manage a Kind cluster used for
 // integration tests. Don't create instances of this type directly, use the NewKind function instead.
 type KindBuilder struct {
-	logger *slog.Logger
-	name   string
+	logger   *slog.Logger
+	name     string
+	crdFiles []string
 }
 
 // Kind helps manage a Kind cluster used for integration tests. Don't create instances of this type directly, use the
@@ -44,6 +45,7 @@ type KindBuilder struct {
 type Kind struct {
 	logger          *slog.Logger
 	name            string
+	crdFiles        []string
 	kubeconfigBytes []byte
 	kubeconfigFile  string
 	kubeClient      crclient.WithWatch
@@ -65,6 +67,12 @@ func (b *KindBuilder) SetLogger(value *slog.Logger) *KindBuilder {
 // SetName sets the name of the Kind cluster. This is mandatory.
 func (b *KindBuilder) SetName(name string) *KindBuilder {
 	b.name = name
+	return b
+}
+
+// AddCrdFile adds a file containing custom resource definition to be installed in the cluster.
+func (b *KindBuilder) AddCrdFile(file string) *KindBuilder {
+	b.crdFiles = append(b.crdFiles, file)
 	return b
 }
 
@@ -99,8 +107,9 @@ func (b *KindBuilder) Build() (result *Kind, err error) {
 
 	// Create and populate the object:
 	result = &Kind{
-		logger: logger,
-		name:   b.name,
+		logger:   logger,
+		name:     b.name,
+		crdFiles: slices.Clone(b.crdFiles),
 	}
 	return
 }
@@ -149,6 +158,12 @@ func (k *Kind) Start(ctx context.Context) error {
 		return err
 	}
 	err = k.createKubeClientSet(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Install custom resource definitions:
+	err = k.installCrdFiles(ctx)
 	if err != nil {
 		return err
 	}
@@ -397,6 +412,7 @@ func (k *Kind) createKubeconfig(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get kubeconfig for kind cluster '%s': %w", k.name, err)
 	}
+
 	err = func() error {
 		tmpFile, err := os.CreateTemp("", "*.kubeconfig")
 		if err != nil {
@@ -520,6 +536,31 @@ func (k *Kind) installCertManager(ctx context.Context) (err error) {
 	}
 	k.logger.DebugContext(ctx, "Cert-manager is ready")
 
+	return nil
+}
+
+func (k *Kind) installCrdFiles(ctx context.Context) error {
+	for _, crdFile := range k.crdFiles {
+		logger := k.logger.With(slog.String("file", crdFile))
+		logger.DebugContext(ctx, "Applying CRD")
+		applyCmd, err := NewCommand().
+			SetLogger(k.logger).
+			SetName(kubectlCmd).
+			SetArgs(
+				"apply",
+				"--kubeconfig", k.kubeconfigFile,
+				"--filename", crdFile,
+			).
+			Build()
+		if err != nil {
+			return err
+		}
+		err = applyCmd.Execute(ctx)
+		if err != nil {
+			return err
+		}
+		logger.DebugContext(ctx, "Applied CRD")
+	}
 	return nil
 }
 
