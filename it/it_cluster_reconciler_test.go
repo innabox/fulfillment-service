@@ -153,7 +153,8 @@ var _ = Describe("Cluster reconciler", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ok).To(BeTrue())
 		Expect(templateParameters).To(MatchJSON(`{
-			"my": "my_value"
+			"my": "my_value",
+			"your": "your_default"
 		}`))
 	})
 
