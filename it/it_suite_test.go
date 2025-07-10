@@ -76,6 +76,8 @@ var _ = BeforeSuite(func() {
 	kind, err = NewKind().
 		SetLogger(logger).
 		SetName("it").
+		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
+		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 	err = kind.Start(ctx)
