@@ -27,6 +27,8 @@
       '/fulfillment.v1.Clusters/Get',
       '/fulfillment.v1.Clusters/GetKubeconfig',
       '/fulfillment.v1.Clusters/GetKubeconfigViaHttp',
+      '/fulfillment.v1.Clusters/GetPassword',
+      '/fulfillment.v1.Clusters/GetPasswordViaHttp',
       '/fulfillment.v1.Clusters/List',
       '/fulfillment.v1.Clusters/Update',
       '/fulfillment.v1.HostClasses/Get',
