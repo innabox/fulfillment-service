@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/kelseyhightower/envconfig"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
@@ -32,18 +33,31 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/logging"
 	"github.com/innabox/fulfillment-service/internal/network"
 	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
+// Config contains the settings for the integration tests. These will be loaded from the enviroment using the 'IT_'
+// prefix. For example, the 'KeepKind' setting will be loaded from the 'IT_KEEP_KIND' environment variable.
+type Config struct {
+	// KeepKind indicates if the kind cluster that is created to run the tests should be kept after running the
+	// tests. This is intended for the development environment, where it may be convenient to keep the kind cluster
+	// running in order to check the state after a test failure. By default the kind cluster is stopped after
+	// running the tests.
+	KeepKind bool `json:"keep_kind" envconfig:"keep_kind" default:"false"`
+}
+
 var (
 	logger     *slog.Logger
+	config     *Config
 	kind       *Kind
 	clientConn *grpc.ClientConn
 	adminConn  *grpc.ClientConn
@@ -67,6 +81,16 @@ var _ = BeforeSuite(func() {
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 
+	// Load the configuration:
+	config = &Config{}
+	err = envconfig.Process("it", config)
+	Expect(err).ToNot(HaveOccurred())
+	logger.InfoContext(
+		ctx,
+		"Config",
+		slog.Any("values", config),
+	)
+
 	// Configure the Kubernetes libraries to use our logger:
 	logrLogger := logr.FromSlogHandler(logger.Handler())
 	crlog.SetLogger(logrLogger)
@@ -76,14 +100,18 @@ var _ = BeforeSuite(func() {
 	kind, err = NewKind().
 		SetLogger(logger).
 		SetName("it").
+		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
+		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 	err = kind.Start(ctx)
 	Expect(err).ToNot(HaveOccurred())
-	DeferCleanup(func() {
-		err := kind.Stop(ctx)
-		Expect(err).ToNot(HaveOccurred())
-	})
+	if !config.KeepKind {
+		DeferCleanup(func() {
+			err := kind.Stop(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	}
 
 	// Create a temporary directory:
 	tmpDir, err := os.MkdirTemp("", "*.it")
@@ -249,6 +277,35 @@ var _ = BeforeSuite(func() {
 		time.Minute,
 		5*time.Second,
 	).Should(Succeed())
+
+	// Create the namespace for the hub:
+	hubNamespaceObject := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hubNamespace,
+		},
+	}
+	err = kubeClient.Create(ctx, hubNamespaceObject)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Register the kind cluster as a hub. Note that in order to do this we need to replace the 127.0.0.1 IP
+	// with the internal DNS name of the API server, as otherwise the controller will not be able to connect.
+	hubKubeconfigBytes := kind.Kubeconfig()
+	hubKubeconfigObject, err := clientcmd.Load(hubKubeconfigBytes)
+	Expect(err).ToNot(HaveOccurred())
+	for clusterKey := range hubKubeconfigObject.Clusters {
+		hubKubeconfigObject.Clusters[clusterKey].Server = "https://kubernetes.default.svc"
+	}
+	hubKubeconfigBytes, err = clientcmd.Write(*hubKubeconfigObject)
+	Expect(err).ToNot(HaveOccurred())
+	hubsClient := privatev1.NewHubsClient(adminConn)
+	_, err = hubsClient.Create(ctx, privatev1.HubsCreateRequest_builder{
+		Object: privatev1.Hub_builder{
+			Id:         hubId,
+			Kubeconfig: hubKubeconfigBytes,
+			Namespace:  hubNamespace,
+		}.Build(),
+	}.Build())
+	Expect(err).ToNot(HaveOccurred())
 })
 
 // Names of the command line tools:
@@ -256,6 +313,10 @@ const (
 	kubectlPath = "kubectl"
 	kindPath    = "podman"
 )
+
+// Name and namespace of the hub:
+const hubId = "local"
+const hubNamespace = "cloudkit-operator-system"
 
 // Image details:
 const imageName = "ghcr.io/innabox/fulfillment-service"
