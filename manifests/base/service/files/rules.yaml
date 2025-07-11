@@ -23,6 +23,7 @@
       '/events.v1/Watch',
       '/fulfillment.v1.ClusterTemplates/Get',
       '/fulfillment.v1.ClusterTemplates/List',
+      '/fulfillment.v1.Clusters/Create',
       '/fulfillment.v1.Clusters/Delete',
       '/fulfillment.v1.Clusters/Get',
       '/fulfillment.v1.Clusters/GetKubeconfig',

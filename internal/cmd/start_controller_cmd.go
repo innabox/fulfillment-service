@@ -19,11 +19,13 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/klog/v2"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -32,6 +34,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
 	"github.com/innabox/fulfillment-service/internal/network"
+	"google.golang.org/grpc"
 )
 
 // NewStartControllerCommand creates and returns the `start controllers` command.
@@ -52,57 +55,66 @@ func NewStartControllerCommand() *cobra.Command {
 type startControllerRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
+	client *grpc.ClientConn
 }
 
 // run runs the `start controllers` command.
-func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
+func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
+	var err error
+
 	// Get the context:
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
 	// Get the dependencies from the context:
-	c.logger = internal.LoggerFromContext(ctx)
+	r.logger = internal.LoggerFromContext(ctx)
 
 	// Configure the Kubernetes libraries to use the logger:
-	logrLogger := logr.FromSlogHandler(c.logger.Handler())
+	logrLogger := logr.FromSlogHandler(r.logger.Handler())
 	crlog.SetLogger(logrLogger)
 	klog.SetLogger(logrLogger)
 
 	// Save the flags:
-	c.flags = cmd.Flags()
+	r.flags = cmd.Flags()
 
 	// Create the gRPC client:
-	client, err := network.NewClient().
-		SetLogger(c.logger).
-		SetFlags(c.flags, network.GrpcClientName).
+	r.client, err = network.NewClient().
+		SetLogger(r.logger).
+		SetFlags(r.flags, network.GrpcClientName).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
+	// Wait for the server to be ready:
+	err = r.waitForServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to wait for server: %w", err)
+	}
+
 	// Create the hub cache:
-	c.logger.InfoContext(ctx, "Creating hub cache")
+	r.logger.InfoContext(ctx, "Creating hub cache")
 	hubCache, err := controllers.NewHubCache().
-		SetLogger(c.logger).
-		SetConnection(client).
+		SetLogger(r.logger).
+		SetConnection(r.client).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create hub cache: %w", err)
 	}
 
 	// Create the cluster reconciler:
-	c.logger.InfoContext(ctx, "Creating cluster reconciler")
+	r.logger.InfoContext(ctx, "Creating cluster reconciler")
 	clusterReconcilerFunction, err := cluster.NewFunction().
-		SetLogger(c.logger).
-		SetConnection(client).
+		SetLogger(r.logger).
+		SetConnection(r.client).
 		SetHubCache(hubCache).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler function: %w", err)
 	}
 	clusterReconciler, err := controllers.NewReconciler[*privatev1.Cluster]().
-		SetLogger(c.logger).
-		SetClient(client).
+		SetLogger(r.logger).
+		SetClient(r.client).
 		SetFunction(clusterReconcilerFunction).
 		Build()
 	if err != nil {
@@ -110,13 +122,13 @@ func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 
 	// Start the cluster reconciler:
-	c.logger.InfoContext(ctx, "Starting cluster reconciler")
+	r.logger.InfoContext(ctx, "Starting cluster reconciler")
 	go func() {
 		err := clusterReconciler.Start(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
-			c.logger.InfoContext(ctx, "Cluster reconciler finished")
+			r.logger.InfoContext(ctx, "Cluster reconciler finished")
 		} else {
-			c.logger.InfoContext(
+			r.logger.InfoContext(
 				ctx,
 				"Cluster reconciler failed",
 				slog.Any("error", err),
@@ -125,10 +137,41 @@ func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}()
 
 	// Wait for a signal:
-	c.logger.InfoContext(ctx, "Waiting for signal")
+	r.logger.InfoContext(ctx, "Waiting for signal")
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 	<-stop
-	c.logger.InfoContext(ctx, "Signal received, shutting down")
+	r.logger.InfoContext(ctx, "Signal received, shutting down")
 	return nil
+}
+
+// waitForServer waits for the server to be ready using the health service.
+func (r *startControllerRunner) waitForServer(ctx context.Context) error {
+	r.logger.InfoContext(ctx, "Waiting for server")
+	client := healthv1.NewHealthClient(r.client)
+	request := &healthv1.HealthCheckRequest{}
+	const max = time.Minute
+	const interval = time.Second
+	start := time.Now()
+	for {
+		response, err := client.Check(ctx, request)
+		if err == nil && response.Status == healthv1.HealthCheckResponse_SERVING {
+			r.logger.InfoContext(ctx, "Server is ready")
+			return nil
+		}
+		if time.Since(start) >= max {
+			return fmt.Errorf("server did not become ready after waiting for %s: %w", max, err)
+		}
+		r.logger.InfoContext(
+			ctx,
+			"Server not yet ready",
+			slog.Duration("elapsed", time.Since(start)),
+			slog.Any("error", err),
+		)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
 }
