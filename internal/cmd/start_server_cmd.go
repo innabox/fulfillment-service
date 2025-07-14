@@ -38,6 +38,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/logging"
 	"github.com/innabox/fulfillment-service/internal/network"
+	"github.com/innabox/fulfillment-service/internal/recovery"
 	"github.com/innabox/fulfillment-service/internal/servers"
 )
 
@@ -224,6 +225,15 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return fmt.Errorf("failed to create gRPC authorization interceptor: %w", err)
 	}
 
+	// Prepare the panic interceptor:
+	c.logger.InfoContext(ctx, "Creating panic interceptor")
+	panicInterceptor, err := recovery.NewGrpcPanicInterceptor().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create panic interceptor: %w", err)
+	}
+
 	// Prepare the transactions interceptor:
 	c.logger.InfoContext(ctx, "Creating transactions interceptor")
 	txManager, err := database.NewTxManager().
@@ -245,12 +255,14 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(ctx, "Creating gRPC server")
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			panicInterceptor.UnaryServer,
 			loggingInterceptor.UnaryServer,
 			authnInterceptor.UnaryServer,
 			authzInterceptor.UnaryServer,
 			txInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
+			panicInterceptor.StreamServer,
 			loggingInterceptor.StreamServer,
 			authnInterceptor.StreamServer,
 			authzInterceptor.StreamServer,
