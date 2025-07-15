@@ -54,24 +54,13 @@ func NewStartServerCommand() *cobra.Command {
 	flags := command.Flags()
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	database.AddFlags(flags)
-	auth.AddGrpcJwksAuthnFlags(flags)
-	auth.AddGrpcRulesAuthzFlags(flags)
 	flags.StringVar(
 		&runner.grpcAuthnType,
 		"grpc-authn-type",
 		auth.GrpcGuestAuthnType,
 		fmt.Sprintf(
 			"Type of gRPC authentication. Valid values are \"%s\" and \"%s\"",
-			auth.GrpcGuestAuthnType, auth.GrpcJwksAuthnType,
-		),
-	)
-	flags.StringVar(
-		&runner.grpcAuthzType,
-		"grpc-authz-type",
-		auth.GrpcAllAuthzType,
-		fmt.Sprintf(
-			"Type of gRPC authorization. Valid values are \"%s\" and \"%s\"",
-			auth.GrpcAllAuthzType, auth.GrpcRulesAuthzType,
+			auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
 		),
 	)
 	return command
@@ -82,7 +71,6 @@ type startServerCommandRunner struct {
 	logger        *slog.Logger
 	flags         *pflag.FlagSet
 	grpcAuthnType string
-	grpcAuthzType string
 }
 
 // run runs the `start server` command.
@@ -164,19 +152,19 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		if err != nil {
 			return fmt.Errorf("failed to create gRPC guest authentication function: %w", err)
 		}
-	case auth.GrpcJwksAuthnType:
-		authnFunc, err = auth.NewGrpcJwksAuthnFunc().
+	case auth.GrpcExternalAuthnType:
+		authnFunc, err = auth.NewGrpcExternalAuthnFunc().
 			SetLogger(c.logger).
 			SetFlags(c.flags).
 			AddPublicMethodRegex(publicMethodRegex).
 			Build()
 		if err != nil {
-			return fmt.Errorf("failed to create gRPC JWKS authentication function: %w", err)
+			return fmt.Errorf("failed to create gRPC external authentication function: %w", err)
 		}
 	default:
 		return fmt.Errorf(
 			"unknown gRPC authentication type '%s', valid values are '%s' and '%s'",
-			c.grpcAuthnType, auth.GrpcGuestAuthnType, auth.GrpcJwksAuthnType,
+			c.grpcAuthnType, auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
 		)
 	}
 	authnInterceptor, err := auth.NewGrpcAuthnInterceptor().
@@ -185,44 +173,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		Build()
 	if err != nil {
 		return err
-	}
-
-	// Prepare the authorization interceptor:
-	c.logger.InfoContext(
-		ctx,
-		"Creating authorization interceptor",
-		slog.String("type", c.grpcAuthzType),
-	)
-	var authzFunc auth.GrpcAuthzFunc
-	switch strings.ToLower(c.grpcAuthzType) {
-	case auth.GrpcAllAuthzType:
-		authzFunc, err = auth.NewGrpcAllAuthzFunc().
-			SetLogger(c.logger).
-			SetFlags(c.flags).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create gRPC all authorization function: %w", err)
-		}
-	case auth.GrpcRulesAuthzType:
-		authzFunc, err = auth.NewGrpcRulesAuthzFunc().
-			SetLogger(c.logger).
-			SetFlags(c.flags).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create gRPC rules authorization function: %w", err)
-		}
-	default:
-		return fmt.Errorf(
-			"unknown gRPC authorization type '%s', valid values are '%s' and '%s'",
-			c.grpcAuthzType, auth.GrpcAllAuthzType, auth.GrpcRulesAuthzType,
-		)
-	}
-	authzInterceptor, err := auth.NewGrpcAuthzInterceptor().
-		SetLogger(c.logger).
-		SetFunction(authzFunc).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create gRPC authorization interceptor: %w", err)
 	}
 
 	// Prepare the panic interceptor:
@@ -258,14 +208,12 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 			panicInterceptor.UnaryServer,
 			loggingInterceptor.UnaryServer,
 			authnInterceptor.UnaryServer,
-			authzInterceptor.UnaryServer,
 			txInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
 			panicInterceptor.StreamServer,
 			loggingInterceptor.StreamServer,
 			authnInterceptor.StreamServer,
-			authzInterceptor.StreamServer,
 		),
 	)
 

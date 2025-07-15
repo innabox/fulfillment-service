@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -168,10 +170,37 @@ func (k *Kind) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Install other components:
-	err = k.installCertManager(ctx)
-	if err != nil {
-		return err
+	// Install other components in parallel:
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	errors := &atomic.Int32{}
+	go func() {
+		defer wg.Done()
+		err := k.installCertManager(ctx)
+		if err != nil {
+			k.logger.ErrorContext(
+				ctx,
+				"Failed to install cert-manager",
+				slog.Any("error", err),
+			)
+			errors.Add(1)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		err := k.installAuthorino(ctx)
+		if err != nil {
+			k.logger.ErrorContext(
+				ctx,
+				"Failed to install authorino",
+				slog.Any("error", err),
+			)
+			errors.Add(1)
+		}
+	}()
+	wg.Wait()
+	if errors.Load() > 0 {
+		return fmt.Errorf("failed to install some components, see the logs for details")
 	}
 
 	return nil
@@ -490,7 +519,7 @@ func (k *Kind) installCertManager(ctx context.Context) (err error) {
 		SetArgs(
 			"apply",
 			"--kubeconfig", k.kubeconfigFile,
-			"--filename", cmManifests,
+			"--filename", certManagerManifests,
 		).
 		Build()
 	if err != nil {
@@ -539,6 +568,74 @@ func (k *Kind) installCertManager(ctx context.Context) (err error) {
 	return nil
 }
 
+func (k *Kind) installAuthorino(ctx context.Context) (err error) {
+	// Apply the authorino manifest:
+	k.logger.DebugContext(ctx, "Applying authorino manifests")
+	applyCmd, err := NewCommand().
+		SetLogger(k.logger).
+		SetName(kubectlCmd).
+		SetArgs(
+			"apply",
+			"--kubeconfig", k.kubeconfigFile,
+			"--filename", authorinoManifests,
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create command to apply authorino manifests: %w", err)
+	}
+	err = applyCmd.Execute(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to apply authorino manifests: %w", err)
+	}
+	k.logger.DebugContext(ctx, "Applied authorino manifests")
+
+	// Wait till it is possible to create authorino objects. Any other way to check this has proven to be
+	// unreliable. The fact that the apply worked doesn't mean that the CRDs are established already, and the fact
+	// that the CRDs are established doesn't mean that the webhooks are already running.
+	k.logger.DebugContext(ctx, "Waiting for authorino to be ready")
+	object := &unstructured.Unstructured{}
+	object.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "operator.authorino.kuadrant.io",
+		Version: "v1beta1",
+		Kind:    "Authorino",
+	})
+	object.SetNamespace("default")
+	object.SetName("default")
+	object.Object["spec"] = map[string]any{
+		"logLevel": "debug",
+		"listener": map[string]any{
+			"tls": map[string]any{
+				"enabled": false,
+			},
+		},
+		"oidcServer": map[string]any{
+			"tls": map[string]any{
+				"enabled": false,
+			},
+		},
+	}
+	start := time.Now()
+	for {
+		err = k.kubeClient.Create(ctx, object, crclient.DryRunAll)
+		if err == nil {
+			break
+		}
+		k.logger.LogAttrs(
+			ctx,
+			slog.LevelDebug,
+			"Authorino not ready yet",
+			slog.Any("error", err),
+		)
+		if time.Since(start) > time.Minute {
+			return fmt.Errorf("failed to create authorino object after 1 minute: %w", err)
+		}
+		time.Sleep(5 * time.Second)
+	}
+	k.logger.DebugContext(ctx, "Authorino is ready")
+
+	return nil
+}
+
 func (k *Kind) installCrdFiles(ctx context.Context) error {
 	for _, crdFile := range k.crdFiles {
 		logger := k.logger.With(slog.String("file", crdFile))
@@ -570,5 +667,8 @@ const (
 	kubectlCmd = "kubectl"
 )
 
-// Location of cert-manager manifests:
-const cmManifests = "https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml"
+// Location of manifests:
+const (
+	certManagerManifests = "https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml"
+	authorinoManifests   = "https://raw.githubusercontent.com/Kuadrant/authorino-operator/refs/heads/release-v0.20.0/config/deploy/manifests.yaml"
+)

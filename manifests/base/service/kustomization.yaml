@@ -6,14 +6,12 @@ labels:
     component: service
 
 resources:
+- authconfig.yaml
 - certificate.yaml
 - deployment.yaml
 - service.yaml
 
 configMapGenerator:
-- files:
-  - files/rules.yaml
-  name: fulfillment-service-config
 - files:
   - files/envoy.yaml
   name: fulfillment-service-envoy

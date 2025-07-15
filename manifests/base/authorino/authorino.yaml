@@ -11,33 +11,18 @@
 # specific language governing permissions and limitations under the License.
 #
 
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-labels:
-- includeSelectors: true
-  pairs:
-    app: fulfillment-service
-
-resources:
-- namespace.yaml
-- ca
-- database
-- authorino
-- service
-- client
-- admin
-- controller
-
-generatorOptions:
-  disableNameSuffixHash: true
-
-images:
-- name: envoy
-  newName: docker.io/envoyproxy/envoy
-  newTag: v1.33.0
-- name: fulfillment-service
-  newName: ghcr.io/innabox/fulfillment-service
-  newTag: latest
-- name: postgres
-  newName: quay.io/sclorg/postgresql-15-c9s
-  newTag: latest
+apiVersion: operator.authorino.kuadrant.io/v1beta1
+kind: Authorino
+metadata:
+  name: authorino
+spec:
+  clusterWide: false
+  logLevel: debug
+  listener:
+    tls:
+      enabled: true
+      certSecretRef:
+        name: authorino-tls
+  oidcServer:
+    tls:
+      enabled: false

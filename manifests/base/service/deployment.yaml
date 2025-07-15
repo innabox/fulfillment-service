@@ -29,9 +29,6 @@ spec:
       - name: sockets
         emptyDir:
           medium: Memory
-      - name: config
-        configMap:
-          name: fulfillment-service-config
       - name: cert
         secret:
           secretName: fulfillment-database-client-cert
@@ -49,8 +46,6 @@ spec:
         volumeMounts:
         - name: sockets
           mountPath: /run/sockets
-        - name: config
-          mountPath: /etc/fulfillment-service
         - name: cert
           mountPath: /secrets/cert
         command:
@@ -67,12 +62,7 @@ spec:
           sslrootcert=/secrets/cert/ca.crt"
         - --grpc-listener-network=unix
         - --grpc-listener-address=/run/sockets/server.socket
-        - --grpc-authn-type=jwks
-        - --grpc-authn-jwks-url=https://kubernetes.default.svc/openid/v1/jwks
-        - --grpc-authn-jwks-ca-file=/run/secrets/kubernetes.io/serviceaccount/ca.crt
-        - --grpc-authn-jwks-token-file=/run/secrets/kubernetes.io/serviceaccount/token
-        - --grpc-authz-type=rules
-        - --grpc-authz-rules-file=/etc/fulfillment-service/rules.yaml
+        - --grpc-authn-type=external
 
       - name: gateway
         image: fulfillment-service
@@ -90,7 +80,7 @@ spec:
         - --http-listener-network=unix
         - --http-listener-address=/run/sockets/gateway.socket
         - --grpc-server-network=unix
-        - --grpc-server-address=/run/sockets/server.socket
+        - --grpc-server-address=/run/sockets/ingress.socket
         - --grpc-server-plaintext
 
       - name: envoy

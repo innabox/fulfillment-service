@@ -15,10 +15,7 @@ package auth
 
 // Guest is the subject used when no authentication has been performed.
 var Guest = &Subject{
-	Name: guestName,
-	Claims: map[string]any{
-		"sub": guestName,
-	},
+	User: guestName,
 }
 
 const guestName = "guest"
