@@ -460,7 +460,7 @@ var _ = Describe("Clusters server", func() {
 			))
 		})
 
-		It("Doesn't create object if parameter doesn't exist in the template", func() {
+		It("Doesn't create object if one parameter doesn't exist in the template", func() {
 			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{
 					Spec: ffv1.ClusterSpec_builder{
@@ -478,6 +478,29 @@ var _ = Describe("Clusters server", func() {
 			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
 			Expect(status.Message()).To(Equal(
 				"template parameter 'junk' doesn't exist, valid values for template " +
+					"'my_with_parameters' are 'my_optional_string' and 'my_required_bool'",
+			))
+		})
+
+		It("Doesn't create object if two parameters don't exist in the template", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_with_parameters",
+						TemplateParameters: map[string]*anypb.Any{
+							"junk1": makeAny(wrapperspb.Int32(123)),
+							"junk2": makeAny(wrapperspb.Int32(123)),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"template parameters 'junk1' and 'junk2' don't exist, valid values for template " +
 					"'my_with_parameters' are 'my_optional_string' and 'my_required_bool'",
 			))
 		})

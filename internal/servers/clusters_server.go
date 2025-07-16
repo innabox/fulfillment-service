@@ -269,6 +269,7 @@ func (s *ClustersServer) Create(ctx context.Context,
 	// Check that all the specified template parameters are in the template:
 	templateParameters := template.GetParameters()
 	clusterParameters := cluster.GetSpec().GetTemplateParameters()
+	var invalidParameterNames []string
 	for clusterParameterName := range clusterParameters {
 		clusterParameterValid := false
 		for _, templateParameter := range templateParameters {
@@ -278,21 +279,40 @@ func (s *ClustersServer) Create(ctx context.Context,
 			}
 		}
 		if !clusterParameterValid {
-			templateParameterNames := make([]string, len(templateParameters))
-			for i, templateParameter := range templateParameters {
-				templateParameterNames[i] = templateParameter.GetName()
-			}
-			sort.Strings(templateParameterNames)
-			for i, templateParameterName := range templateParameterNames {
-				templateParameterNames[i] = fmt.Sprintf("'%s'", templateParameterName)
-			}
+			invalidParameterNames = append(invalidParameterNames, clusterParameterName)
+		}
+	}
+	if len(invalidParameterNames) > 0 {
+		templateParameterNames := make([]string, len(templateParameters))
+		for i, templateParameter := range templateParameters {
+			templateParameterNames[i] = templateParameter.GetName()
+		}
+		sort.Strings(templateParameterNames)
+		for i, templateParameterName := range templateParameterNames {
+			templateParameterNames[i] = fmt.Sprintf("'%s'", templateParameterName)
+		}
+		sort.Strings(invalidParameterNames)
+		for i, invalidParameterName := range invalidParameterNames {
+			invalidParameterNames[i] = fmt.Sprintf("'%s'", invalidParameterName)
+		}
+		if len(invalidParameterNames) == 1 {
 			err = grpcstatus.Errorf(
 				grpccodes.InvalidArgument,
-				"template parameter '%s' doesn't exist, valid values for template '%s' are %s",
-				clusterParameterName, templateId, english.WordSeries(templateParameterNames, "and"),
+				"template parameter %s doesn't exist, valid values for template '%s' are %s",
+				invalidParameterNames[0],
+				templateId,
+				english.WordSeries(templateParameterNames, "and"),
 			)
-			return
+		} else {
+			err = grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"template parameters %s don't exist, valid values for template '%s' are %s",
+				english.WordSeries(invalidParameterNames, "and"),
+				templateId,
+				english.WordSeries(templateParameterNames, "and"),
+			)
 		}
+		return
 	}
 
 	// Check that all the mandatory parameters have a value:
