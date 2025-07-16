@@ -15,9 +15,12 @@ package it
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +32,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/ghttp"
 	"google.golang.org/grpc"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -54,11 +58,13 @@ type Config struct {
 }
 
 var (
-	logger     *slog.Logger
-	config     *Config
-	kind       *Kind
-	clientConn *grpc.ClientConn
-	adminConn  *grpc.ClientConn
+	logger      *slog.Logger
+	config      *Config
+	kind        *Kind
+	clientConn  *grpc.ClientConn
+	adminConn   *grpc.ClientConn
+	userClient  *http.Client
+	adminClient *http.Client
 )
 
 func TestIntegration(t *testing.T) {
@@ -255,6 +261,9 @@ var _ = BeforeSuite(func() {
 	caFile := filepath.Join(tmpDir, "ca.crt")
 	err = os.WriteFile(caFile, caBytes, 0400)
 	Expect(err).ToNot(HaveOccurred())
+	caPool := x509.NewCertPool()
+	ok := caPool.AppendCertsFromPEM(caBytes)
+	Expect(ok).To(BeTrue())
 
 	// Create a client token:
 	makeToken := func(sa string) string {
@@ -288,6 +297,26 @@ var _ = BeforeSuite(func() {
 	}
 	clientConn = makeConn(clientToken)
 	adminConn = makeConn(adminToken)
+
+	// Create the HTTP clients:
+	makeClient := func(token string) *http.Client {
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caPool,
+			},
+		}
+		return &http.Client{
+			Transport: ghttp.RoundTripperFunc(
+				func(request *http.Request) (response *http.Response, err error) {
+					request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+					response, err = transport.RoundTrip(request)
+					return
+				},
+			),
+		}
+	}
+	userClient = makeClient(clientToken)
+	adminClient = makeClient(adminToken)
 
 	// Wait till the application is healthy:
 	healthClient := healthv1.NewHealthClient(adminConn)

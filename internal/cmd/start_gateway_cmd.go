@@ -27,6 +27,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/network"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // NewStartGatewayCommand creates and returns the `start server` command.
@@ -84,7 +85,14 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 
 	// Create the gateway multiplexer:
 	c.logger.InfoContext(ctx, "Creating gateway server")
-	gatewayMux := runtime.NewServeMux()
+	gatewayMarshaller := &runtime.JSONPb{
+		MarshalOptions: protojson.MarshalOptions{
+			UseProtoNames: true,
+		},
+	}
+	gatewayMux := runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, gatewayMarshaller),
+	)
 
 	// Register the service handlers:
 	err = api.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
