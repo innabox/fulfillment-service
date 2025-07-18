@@ -288,39 +288,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return fmt.Errorf("failed to create notifier: %w", err)
 	}
 
-	// Create the cluster templates server:
-	c.logger.InfoContext(ctx, "Creating cluster templates server")
-	clusterTemplatesServer, err := servers.NewClusterTemplatesServer().
-		SetLogger(c.logger).
-		SetNotifier(notifier).
-		Build()
-	if err != nil {
-		return errors.Wrapf(err, "failed to create cluster templates server")
-	}
-	ffv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
-
-	// Create the clusters server:
-	c.logger.InfoContext(ctx, "Creating clusters server")
-	clustersServer, err := servers.NewClustersServer().
-		SetLogger(c.logger).
-		SetNotifier(notifier).
-		Build()
-	if err != nil {
-		return errors.Wrapf(err, "failed to create clusters server")
-	}
-	ffv1.RegisterClustersServer(grpcServer, clustersServer)
-
-	// Create the host classes server:
-	c.logger.InfoContext(ctx, "Creating host classes server")
-	hostClassesServer, err := servers.NewHostClassesServer().
-		SetLogger(c.logger).
-		SetNotifier(notifier).
-		Build()
-	if err != nil {
-		return errors.Wrapf(err, "failed to create host classes server")
-	}
-	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
-
 	// Create the private cluster templates server:
 	c.logger.InfoContext(ctx, "Creating private cluster templates server")
 	privateClusterTemplatesServer, err := servers.NewPrivateClusterTemplatesServer().
@@ -331,6 +298,17 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return errors.Wrapf(err, "failed to create private cluster templates server")
 	}
 	privatev1.RegisterClusterTemplatesServer(grpcServer, privateClusterTemplatesServer)
+
+	// Create the cluster templates server:
+	c.logger.InfoContext(ctx, "Creating cluster templates server")
+	clusterTemplatesServer, err := servers.NewClusterTemplatesServer().
+		SetLogger(c.logger).
+		SetPrivate(privateClusterTemplatesServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create cluster templates server")
+	}
+	ffv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
 
 	// Create the private clusters server:
 	c.logger.InfoContext(ctx, "Creating private clusters server")
@@ -343,6 +321,17 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 	privatev1.RegisterClustersServer(grpcServer, privateClustersServer)
 
+	// Create the clusters server:
+	c.logger.InfoContext(ctx, "Creating clusters server")
+	clustersServer, err := servers.NewClustersServer().
+		SetLogger(c.logger).
+		SetPrivate(privateClustersServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create clusters server")
+	}
+	ffv1.RegisterClustersServer(grpcServer, clustersServer)
+
 	// Create the private host classes server:
 	c.logger.InfoContext(ctx, "Creating private host classes server")
 	privateHostClassesServer, err := servers.NewPrivateHostClassesServer().
@@ -353,6 +342,17 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return errors.Wrapf(err, "failed to create private host classes server")
 	}
 	privatev1.RegisterHostClassesServer(grpcServer, privateHostClassesServer)
+
+	// Create the host classes server:
+	c.logger.InfoContext(ctx, "Creating host classes server")
+	hostClassesServer, err := servers.NewHostClassesServer().
+		SetLogger(c.logger).
+		SetPrivate(privateHostClassesServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create host classes server")
+	}
+	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
 
 	// Create the private hubs server:
 	c.logger.InfoContext(ctx, "Creating hubs server")

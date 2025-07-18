@@ -26,6 +26,7 @@ import (
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Private clusters server", func() {
@@ -63,7 +64,7 @@ var _ = Describe("Private clusters server", func() {
 		})
 		ctx = database.TxIntoContext(ctx, tx)
 
-		// Create the templates table:
+		// Create the tables:
 		_, err = tx.Exec(
 			ctx,
 			`
@@ -76,6 +77,22 @@ var _ = Describe("Private clusters server", func() {
 			);
 
 			create table archived_clusters (
+				id text not null,
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
+				data jsonb not null
+			);
+
+			create table cluster_templates (
+				id text not null primary key,
+				creation_timestamp timestamp with time zone not null default now(),
+				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default '{}',
+				data jsonb not null
+			);
+
+			create table archived_cluster_templates (
 				id text not null,
 				creation_timestamp timestamp with time zone not null,
 				deletion_timestamp timestamp with time zone not null,
@@ -115,6 +132,47 @@ var _ = Describe("Private clusters server", func() {
 				SetLogger(logger).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
+
+			// Create the templates DAO:
+			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+				SetLogger(logger).
+				SetTable("cluster_templates").
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a usable template:
+			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+				Id:          "my_template",
+				Title:       "My template",
+				Description: "My template",
+				NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
+					"compute": privatev1.ClusterTemplateNodeSet_builder{
+						HostClass: "acme_1tib",
+						Size:      3,
+					}.Build(),
+					"gpu": privatev1.ClusterTemplateNodeSet_builder{
+						HostClass: "acme_gpu",
+						Size:      1,
+					}.Build(),
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create numbered templates for list tests:
+			for i := 0; i < 10; i++ {
+				_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+					Id:          fmt.Sprintf("my_template_%d", i),
+					Title:       fmt.Sprintf("My template %d", i),
+					Description: fmt.Sprintf("My template %d", i),
+					NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
+						"compute": privatev1.ClusterTemplateNodeSet_builder{
+							HostClass: "acme_1tib",
+							Size:      3,
+						}.Build(),
+					},
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+			}
 		})
 
 		It("Creates object", func() {
@@ -338,6 +396,9 @@ var _ = Describe("Private clusters server", func() {
 		It("Rejects creation with duplicate condition", func() {
 			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
 						Conditions: []*privatev1.ClusterCondition{
 							privatev1.ClusterCondition_builder{
@@ -360,6 +421,9 @@ var _ = Describe("Private clusters server", func() {
 		It("Rejects update with duplicate condition", func() {
 			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
 						Conditions: []*privatev1.ClusterCondition{
 							privatev1.ClusterCondition_builder{

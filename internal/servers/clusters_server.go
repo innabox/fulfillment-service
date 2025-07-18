@@ -18,24 +18,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"sync"
 
-	"golang.org/x/exp/maps"
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/anypb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/tools/clientcmd"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dustin/go-humanize/english"
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/jq"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
@@ -43,8 +38,8 @@ import (
 )
 
 type ClustersServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger  *slog.Logger
+	private privatev1.ClustersServer
 }
 
 var _ ffv1.ClustersServer = (*ClustersServer)(nil)
@@ -53,11 +48,11 @@ type ClustersServer struct {
 	ffv1.UnimplementedClustersServer
 
 	logger          *slog.Logger
+	private         privatev1.ClustersServer
+	inMapper        *GenericMapper[*ffv1.Cluster, *privatev1.Cluster]
+	outMapper       *GenericMapper[*privatev1.Cluster, *ffv1.Cluster]
 	jqTool          *jq.Tool
-	clustersDao     *dao.GenericDAO[*privatev1.Cluster]
-	templatesDao    *dao.GenericDAO[*privatev1.ClusterTemplate]
 	hubsDao         *dao.GenericDAO[*privatev1.Hub]
-	generic         *GenericServer[*ffv1.Cluster, *privatev1.Cluster]
 	kubeClients     map[string]clnt.Client
 	kubeClientsLock *sync.Mutex
 }
@@ -66,13 +61,15 @@ func NewClustersServer() *ClustersServerBuilder {
 	return &ClustersServerBuilder{}
 }
 
+// SetLogger sets the logger to use. This is mandatory.
 func (b *ClustersServerBuilder) SetLogger(value *slog.Logger) *ClustersServerBuilder {
 	b.logger = value
 	return b
 }
 
-func (b *ClustersServerBuilder) SetNotifier(value *database.Notifier) *ClustersServerBuilder {
-	b.notifier = value
+// SetPrivate sets the private server to use. This is mandatory.
+func (b *ClustersServerBuilder) SetPrivate(value privatev1.ClustersServer) *ClustersServerBuilder {
+	b.private = value
 	return b
 }
 
@@ -80,6 +77,10 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
+		return
+	}
+	if b.private == nil {
+		err = errors.New("private server is mandatory")
 		return
 	}
 
@@ -92,20 +93,6 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	}
 
 	// Create the DAOs:
-	clustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
-		SetLogger(b.logger).
-		SetTable("clusters").
-		Build()
-	if err != nil {
-		return
-	}
-	templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
-		SetLogger(b.logger).
-		SetTable("cluster_templates").
-		Build()
-	if err != nil {
-		return
-	}
 	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
 		SetTable("hubs").
@@ -125,13 +112,18 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 		return
 	}
 
-	// Create the generic server:
-	generic, err := NewGenericServer[*ffv1.Cluster, *privatev1.Cluster]().
+	// Create the mappers:
+	inMapper, err := NewGenericMapper[*ffv1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
-		SetService(ffv1.Clusters_ServiceDesc.ServiceName).
-		SetTable("clusters").
+		SetStrict(true).
 		AddIgnoredFields(statusField.FullName()).
-		SetNotifier(b.notifier).
+		Build()
+	if err != nil {
+		return
+	}
+	outMapper, err := NewGenericMapper[*privatev1.Cluster, *ffv1.Cluster]().
+		SetLogger(b.logger).
+		SetStrict(false).
 		Build()
 	if err != nil {
 		return
@@ -141,251 +133,211 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	result = &ClustersServer{
 		logger:          b.logger,
 		jqTool:          jqTool,
-		clustersDao:     clustersDao,
-		templatesDao:    templatesDao,
 		hubsDao:         hubsDao,
-		generic:         generic,
 		kubeClients:     map[string]clnt.Client{},
 		kubeClientsLock: &sync.Mutex{},
+		private:         b.private,
+		inMapper:        inMapper,
+		outMapper:       outMapper,
 	}
 	return
 }
 
 func (s *ClustersServer) List(ctx context.Context,
 	request *ffv1.ClustersListRequest) (response *ffv1.ClustersListResponse, err error) {
-	err = s.generic.List(ctx, request, &response)
+	// Create private request with same parameters:
+	privateRequest := &privatev1.ClustersListRequest{}
+	privateRequest.SetOffset(request.GetOffset())
+	privateRequest.SetLimit(request.GetLimit())
+	privateRequest.SetFilter(request.GetFilter())
+
+	// Delegate to private server:
+	privateResponse, err := s.private.List(ctx, privateRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map private response to public format:
+	privateItems := privateResponse.GetItems()
+	publicItems := make([]*ffv1.Cluster, len(privateItems))
+	for i, privateItem := range privateItems {
+		publicItem := &ffv1.Cluster{}
+		err = s.outMapper.Copy(ctx, privateItem, publicItem)
+		if err != nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to map private cluster to public",
+				slog.Any("error", err),
+			)
+			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process clusters")
+		}
+		publicItems[i] = publicItem
+	}
+
+	// Create the public response:
+	response = &ffv1.ClustersListResponse{}
+	response.SetSize(privateResponse.GetSize())
+	response.SetTotal(privateResponse.GetTotal())
+	response.SetItems(publicItems)
 	return
 }
 
 func (s *ClustersServer) Get(ctx context.Context,
 	request *ffv1.ClustersGetRequest) (response *ffv1.ClustersGetResponse, err error) {
-	err = s.generic.Get(ctx, request, &response)
+	// Create private request:
+	privateRequest := &privatev1.ClustersGetRequest{}
+	privateRequest.SetId(request.GetId())
+
+	// Delegate to private server:
+	privateResponse, err := s.private.Get(ctx, privateRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map private response to public format:
+	privateCluster := privateResponse.GetObject()
+	publicCluster := &ffv1.Cluster{}
+	err = s.outMapper.Copy(ctx, privateCluster, publicCluster)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map private cluster to public",
+			slog.Any("error", err),
+		)
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process cluster")
+	}
+
+	// Create the public response:
+	response = &ffv1.ClustersGetResponse{}
+	response.SetObject(publicCluster)
 	return
 }
 
 func (s *ClustersServer) Create(ctx context.Context,
 	request *ffv1.ClustersCreateRequest) (response *ffv1.ClustersCreateResponse, err error) {
-	// Check that the template is specified and that refers to a existing template:
-	cluster := request.GetObject()
-	if cluster == nil {
+	// Map the public cluster to private format:
+	publicCluster := request.GetObject()
+	if publicCluster == nil {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 		return
 	}
-	templateId := cluster.GetSpec().GetTemplate()
-	if templateId == "" {
-		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template is mandatory")
-		return
-	}
-	template, err := s.templatesDao.Get(ctx, templateId)
+	privateCluster := &privatev1.Cluster{}
+	err = s.inMapper.Copy(ctx, publicCluster, privateCluster)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to get template",
-			slog.String("template", templateId),
+			"Failed to map public cluster to private",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get template '%s'", templateId)
-		return
-	}
-	if template == nil {
-		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' doesn't exist", templateId)
-		return
-	}
-	if template.GetMetadata().HasDeletionTimestamp() {
-		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' has been deleted", templateId)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process cluster")
 		return
 	}
 
-	// Check that all the node sets given in the cluster correspond to node sets that exist in the template:
-	templateNodeSets := template.GetNodeSets()
-	clusterNodeSets := cluster.GetSpec().GetNodeSets()
-	for clusterNodeSetKey := range clusterNodeSets {
-		templateNodeSet := templateNodeSets[clusterNodeSetKey]
-		if templateNodeSet == nil {
-			templateNodeSetKeys := maps.Keys(templateNodeSets)
-			sort.Strings(templateNodeSetKeys)
-			for i, templateNodeSetKey := range templateNodeSetKeys {
-				templateNodeSetKeys[i] = fmt.Sprintf("'%s'", templateNodeSetKey)
-			}
-			err = grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"node set '%s' doesn't exist, valid values for template '%s' are %s",
-				clusterNodeSetKey, templateId, english.WordSeries(templateNodeSetKeys, "and"),
-			)
-			return
-		}
+	// Delegate to the private server:
+	privateRequest := &privatev1.ClustersCreateRequest{}
+	privateRequest.SetObject(privateCluster)
+	privateResponse, err := s.private.Create(ctx, privateRequest)
+	if err != nil {
+		return nil, err
 	}
 
-	// Check that all the node sets given in the cluster specify the same host class that is specified in the
-	// template:
-	for clusterNodeSetKey, clusterNodeSet := range clusterNodeSets {
-		templateNodeSet := templateNodeSets[clusterNodeSetKey]
-		clusterHostClass := clusterNodeSet.GetHostClass()
-		if clusterHostClass == "" {
-			continue
-		}
-		templateHostClass := templateNodeSet.GetHostClass()
-		if clusterHostClass != templateHostClass {
-			err = grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"host class for node set '%s' should be empty or '%s', like in template '%s', "+
-					"but it is '%s'",
-				clusterNodeSetKey, templateHostClass, templateId, clusterHostClass,
-			)
-			return
-		}
-	}
-
-	// Check that all the node sets given in the cluster have a positive size:
-	for clusterNodeSetKey, clusterNodeSet := range clusterNodeSets {
-		clusterNodeSetSize := clusterNodeSet.GetSize()
-		if clusterNodeSetSize <= 0 {
-			err = grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"size for node set '%s' should be greater than zero, but it is %d",
-				clusterNodeSetKey, clusterNodeSetSize,
-			)
-			return
-		}
-	}
-
-	// Replace the node sets given in the cluster with those from the template, taking only the size from cluster:
-	actualNodeSets := map[string]*ffv1.ClusterNodeSet{}
-	for templateNodeSetKey, templateNodeSet := range templateNodeSets {
-		var actualNodeSetSize int32
-		clusterNodeSet := clusterNodeSets[templateNodeSetKey]
-		if clusterNodeSet != nil {
-			actualNodeSetSize = clusterNodeSet.GetSize()
-		} else {
-			actualNodeSetSize = templateNodeSet.GetSize()
-		}
-		actualNodeSets[templateNodeSetKey] = ffv1.ClusterNodeSet_builder{
-			HostClass: templateNodeSet.GetHostClass(),
-			Size:      actualNodeSetSize,
-		}.Build()
-	}
-	cluster.GetSpec().SetNodeSets(actualNodeSets)
-
-	// Check that all the specified template parameters are in the template:
-	templateParameters := template.GetParameters()
-	clusterParameters := cluster.GetSpec().GetTemplateParameters()
-	var invalidParameterNames []string
-	for clusterParameterName := range clusterParameters {
-		clusterParameterValid := false
-		for _, templateParameter := range templateParameters {
-			if templateParameter.GetName() == clusterParameterName {
-				clusterParameterValid = true
-				break
-			}
-		}
-		if !clusterParameterValid {
-			invalidParameterNames = append(invalidParameterNames, clusterParameterName)
-		}
-	}
-	if len(invalidParameterNames) > 0 {
-		templateParameterNames := make([]string, len(templateParameters))
-		for i, templateParameter := range templateParameters {
-			templateParameterNames[i] = templateParameter.GetName()
-		}
-		sort.Strings(templateParameterNames)
-		for i, templateParameterName := range templateParameterNames {
-			templateParameterNames[i] = fmt.Sprintf("'%s'", templateParameterName)
-		}
-		sort.Strings(invalidParameterNames)
-		for i, invalidParameterName := range invalidParameterNames {
-			invalidParameterNames[i] = fmt.Sprintf("'%s'", invalidParameterName)
-		}
-		if len(invalidParameterNames) == 1 {
-			err = grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"template parameter %s doesn't exist, valid values for template '%s' are %s",
-				invalidParameterNames[0],
-				templateId,
-				english.WordSeries(templateParameterNames, "and"),
-			)
-		} else {
-			err = grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"template parameters %s don't exist, valid values for template '%s' are %s",
-				english.WordSeries(invalidParameterNames, "and"),
-				templateId,
-				english.WordSeries(templateParameterNames, "and"),
-			)
-		}
+	// Map the private response back to public format:
+	createdPrivateCluster := privateResponse.GetObject()
+	createdPublicCluster := &ffv1.Cluster{}
+	err = s.outMapper.Copy(ctx, createdPrivateCluster, createdPublicCluster)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map private cluster to public",
+			slog.Any("error", err),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process cluster")
 		return
 	}
 
-	// Check that all the mandatory parameters have a value:
-	for _, templateParameter := range templateParameters {
-		if !templateParameter.GetRequired() {
-			continue
-		}
-		templateParameterName := templateParameter.GetName()
-		clusterParameter := clusterParameters[templateParameterName]
-		if clusterParameter == nil {
-			err = grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"parameter '%s' of template '%s' is mandatory",
-				templateParameterName, templateId,
-			)
-			return
-		}
-	}
-
-	// Check that the parameter values are compatible with the template:
-	for clusterParameterName, clusterParameter := range clusterParameters {
-		for _, templateParameter := range templateParameters {
-			templateParameterName := templateParameter.GetName()
-			if clusterParameterName != templateParameterName {
-				continue
-			}
-			clusterParameterType := clusterParameter.GetTypeUrl()
-			templateParameterType := templateParameter.GetType()
-			if clusterParameterType != templateParameterType {
-				err = grpcstatus.Errorf(
-					grpccodes.InvalidArgument,
-					"type of parameter '%s' of template '%s' should be '%s', "+
-						"but it is '%s'",
-					clusterParameterName,
-					templateId,
-					templateParameterType,
-					clusterParameterType,
-				)
-				return
-			}
-		}
-	}
-
-	// Set default values for template parameters:
-	actualClusterParameters := make(map[string]*anypb.Any)
-	for _, templateParameter := range templateParameters {
-		templateParameterName := templateParameter.GetName()
-		clusterParameter := clusterParameters[templateParameterName]
-		actualClusterParameter := &anypb.Any{
-			TypeUrl: templateParameter.GetType(),
-		}
-		if clusterParameter != nil {
-			actualClusterParameter.Value = clusterParameter.Value
-		} else {
-			actualClusterParameter.Value = templateParameter.GetDefault().GetValue()
-		}
-		actualClusterParameters[templateParameterName] = actualClusterParameter
-	}
-	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)
-
-	err = s.generic.Create(ctx, request, &response)
+	// Create the public response:
+	response = &ffv1.ClustersCreateResponse{}
+	response.SetObject(createdPublicCluster)
 	return
 }
 
 func (s *ClustersServer) Update(ctx context.Context,
 	request *ffv1.ClustersUpdateRequest) (response *ffv1.ClustersUpdateResponse, err error) {
-	err = s.generic.Update(ctx, request, &response)
+	// Validate the request:
+	publicCluster := request.GetObject()
+	if publicCluster == nil {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
+		return
+	}
+	id := publicCluster.GetId()
+	if id == "" {
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "object identifier is mandatory")
+		return
+	}
+
+	// Get the existing object from the private server:
+	getRequest := &privatev1.ClustersGetRequest{}
+	getRequest.SetId(id)
+	getResponse, err := s.private.Get(ctx, getRequest)
+	if err != nil {
+		return nil, err
+	}
+	existingPrivateCluster := getResponse.GetObject()
+
+	// Map the public changes to the existing private object (preserving private data):
+	err = s.inMapper.Copy(ctx, publicCluster, existingPrivateCluster)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map public cluster to private",
+			slog.Any("error", err),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process cluster")
+		return
+	}
+
+	// Delegate to the private server with the merged object:
+	privateRequest := &privatev1.ClustersUpdateRequest{}
+	privateRequest.SetObject(existingPrivateCluster)
+	privateResponse, err := s.private.Update(ctx, privateRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map the private response back to public format:
+	updatedPrivateCluster := privateResponse.GetObject()
+	updatedPublicCluster := &ffv1.Cluster{}
+	err = s.outMapper.Copy(ctx, updatedPrivateCluster, updatedPublicCluster)
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map private cluster to public",
+			slog.Any("error", err),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process cluster")
+		return
+	}
+
+	// Create the public response:
+	response = &ffv1.ClustersUpdateResponse{}
+	response.SetObject(updatedPublicCluster)
 	return
 }
 
 func (s *ClustersServer) Delete(ctx context.Context,
 	request *ffv1.ClustersDeleteRequest) (response *ffv1.ClustersDeleteResponse, err error) {
-	err = s.generic.Delete(ctx, request, &response)
+	// Create private request:
+	privateRequest := &privatev1.ClustersDeleteRequest{}
+	privateRequest.SetId(request.GetId())
+
+	// Delegate to private server:
+	_, err = s.private.Delete(ctx, privateRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the public response:
+	response = &ffv1.ClustersDeleteResponse{}
 	return
 }
 
@@ -565,9 +517,15 @@ func (s *ClustersServer) getPassword(ctx context.Context, clusterId string) (res
 
 func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId string,
 	secretField string) (result *corev1.Secret, err error) {
-	// Get the data of the cluster:
-	cluster, err := s.clustersDao.Get(ctx, clusterId)
-	if err != nil || cluster == nil || cluster.GetStatus().GetHub() == "" {
+	// Get the data of the cluster from the private server:
+	getRequest := &privatev1.ClustersGetRequest{}
+	getRequest.SetId(clusterId)
+	getResponse, err := s.private.Get(ctx, getRequest)
+	if err != nil {
+		return
+	}
+	cluster := getResponse.GetObject()
+	if cluster == nil || cluster.GetStatus().GetHub() == "" {
 		return
 	}
 

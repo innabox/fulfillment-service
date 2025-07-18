@@ -87,17 +87,35 @@ var _ = Describe("Cluster templates server", func() {
 
 	Describe("Creation", func() {
 		It("Can be built if all the required parameters are set", func() {
+			privateServer, err := NewPrivateClusterTemplatesServer().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
 			server, err := NewClusterTemplatesServer().
 				SetLogger(logger).
+				SetPrivate(privateServer).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
 		})
 
 		It("Fails if logger is not set", func() {
+			privateServer, err := NewPrivateClusterTemplatesServer().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
 			server, err := NewClusterTemplatesServer().
+				SetPrivate(privateServer).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
+		It("Fails if private server is not set", func() {
+			server, err := NewClusterTemplatesServer().
+				SetLogger(logger).
+				Build()
+			Expect(err).To(MatchError("private server is mandatory"))
 			Expect(server).To(BeNil())
 		})
 	})
@@ -108,9 +126,16 @@ var _ = Describe("Cluster templates server", func() {
 		BeforeEach(func() {
 			var err error
 
+			// Create the private server:
+			privateServer, err := NewPrivateClusterTemplatesServer().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
 			// Create the server:
 			server, err = NewClusterTemplatesServer().
 				SetLogger(logger).
+				SetPrivate(privateServer).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

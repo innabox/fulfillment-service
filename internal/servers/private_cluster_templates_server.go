@@ -32,7 +32,7 @@ var _ privatev1.ClusterTemplatesServer = (*PrivateClusterTemplatesServer)(nil)
 type PrivateClusterTemplatesServer struct {
 	privatev1.UnimplementedClusterTemplatesServer
 	logger  *slog.Logger
-	generic *GenericServer[*privatev1.ClusterTemplate, *privatev1.ClusterTemplate]
+	generic *GenericServer[*privatev1.ClusterTemplate]
 }
 
 func NewPrivateClusterTemplatesServer() *PrivateClusterTemplatesServerBuilder {
@@ -57,7 +57,7 @@ func (b *PrivateClusterTemplatesServerBuilder) Build() (result *PrivateClusterTe
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*privatev1.ClusterTemplate, *privatev1.ClusterTemplate]().
+	generic, err := NewGenericServer[*privatev1.ClusterTemplate]().
 		SetLogger(b.logger).
 		SetService(privatev1.ClusterTemplates_ServiceDesc.ServiceName).
 		SetTable("cluster_templates").
