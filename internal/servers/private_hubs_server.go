@@ -33,7 +33,7 @@ type PrivateHubsServer struct {
 	privatev1.UnimplementedHubsServer
 
 	logger  *slog.Logger
-	generic *GenericServer[*privatev1.Hub, *privatev1.Hub]
+	generic *GenericServer[*privatev1.Hub]
 }
 
 func NewPrivateHubsServer() *PrivateHubsServerBuilder {
@@ -58,7 +58,7 @@ func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*privatev1.Hub, *privatev1.Hub]().
+	generic, err := NewGenericServer[*privatev1.Hub]().
 		SetLogger(b.logger).
 		SetService(privatev1.Hubs_ServiceDesc.ServiceName).
 		SetTable("hubs").
