@@ -527,6 +527,11 @@ func (s *GenericServer[Public, Private]) notifyEvent(ctx context.Context, e dao.
 	case *privatev1.HostClass:
 		event.SetHostClass(object)
 	case *privatev1.Hub:
+		// TODO: We need to remove the Kubeconfig from the payload of the notification because that usually
+		// exceeds the default limit of 8000 bytes of the PostgreSQL notification mechanism. A better way to
+		// do this would be to store the payloads in a separate table. We will do that later.
+		object = proto.Clone(object).(*privatev1.Hub)
+		object.SetKubeconfig(nil)
 		event.SetHub(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
