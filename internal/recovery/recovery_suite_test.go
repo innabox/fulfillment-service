@@ -14,8 +14,10 @@ language governing permissions and limitations under the License.
 package recovery
 
 import (
+	"log/slog"
 	"testing"
 
+	"github.com/innabox/fulfillment-service/internal/logging"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -24,3 +26,19 @@ func TestRecovery(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Recovery")
 }
+
+// Logger used for tests:
+var logger *slog.Logger
+
+var _ = BeforeSuite(func() {
+	var err error
+
+	// Create a logger that writes to the Ginkgo writer, so that the log messages will be attached to the output of
+	// the right test:
+	logger, err = logging.NewLogger().
+		SetLevel(slog.LevelDebug.String()).
+		SetOut(GinkgoWriter).
+		SetErr(GinkgoWriter).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+})

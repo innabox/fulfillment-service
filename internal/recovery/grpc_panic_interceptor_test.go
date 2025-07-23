@@ -15,8 +15,6 @@ package recovery
 
 import (
 	"context"
-	"log/slog"
-	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,16 +28,15 @@ var _ = Describe("PanicInterceptor", func() {
 	var (
 		ctx         context.Context
 		interceptor *GrpcPanicInterceptor
-		logger      *slog.Logger
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
-
 		var err error
+
+		// Create a context:
+		ctx = context.Background()
+
+		// Create the interceptor:
 		interceptor, err = NewGrpcPanicInterceptor().
 			SetLogger(logger).
 			Build()
