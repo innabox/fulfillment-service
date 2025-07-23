@@ -32,7 +32,7 @@ var _ privatev1.HostClassesServer = (*PrivateHostClassesServer)(nil)
 type PrivateHostClassesServer struct {
 	privatev1.UnimplementedHostClassesServer
 	logger  *slog.Logger
-	generic *GenericServer[*privatev1.HostClass, *privatev1.HostClass]
+	generic *GenericServer[*privatev1.HostClass]
 }
 
 func NewPrivateHostClassesServer() *PrivateHostClassesServerBuilder {
@@ -57,7 +57,7 @@ func (b *PrivateHostClassesServerBuilder) Build() (result *PrivateHostClassesSer
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*privatev1.HostClass, *privatev1.HostClass]().
+	generic, err := NewGenericServer[*privatev1.HostClass]().
 		SetLogger(b.logger).
 		SetService(privatev1.HostClasses_ServiceDesc.ServiceName).
 		SetTable("host_classes").
