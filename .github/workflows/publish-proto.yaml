@@ -1,0 +1,36 @@
+#
+# Copyright (c) 2025 Red Hat Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License
+# is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+# or implied. See the License for the specific language governing permissions and limitations under
+# the License.
+#
+
+# This workflow publishes the protocol buffers specification to the buf schema registry.
+
+name: Publish proto
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+
+  publish-proto:
+    name: Publish proto
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: bufbuild/buf-action@v1
+      with:
+        setup_only: true
+        token: ${{ secrets.BUF_TOKEN }}
+    - run: |
+        buf push --label "${{ github.ref_name }}"
