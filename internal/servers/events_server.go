@@ -293,6 +293,9 @@ func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message
 		)
 		return nil
 	}
+	if private.HasHub() {
+		return nil
+	}
 	public := &eventsv1.Event{}
 	err := s.mapper.Copy(ctx, private, public)
 	if err != nil {
