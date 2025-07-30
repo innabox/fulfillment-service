@@ -1,6 +1,6 @@
 module github.com/innabox/fulfillment-service
 
-go 1.22.9
+go 1.24.4
 
 require (
 	github.com/dustin/go-humanize v1.0.1
