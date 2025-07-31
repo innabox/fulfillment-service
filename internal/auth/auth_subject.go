@@ -15,12 +15,9 @@ package auth
 
 // Subject represents an entity, such as person or a service account.
 type Subject struct {
-	// Token is the raw token.
-	Token string
+	// User is the name of the user.
+	User string `json:"user"`
 
-	// Name is the name of the subject, typically extracted from the 'sub' claim.
-	Name string
-
-	// Claims is the complete set of claims extracted from the token.
-	Claims map[string]any
+	// Groups are the names of the groups that the subject belongs to.
+	Groups []string `json:"groups"`
 }
