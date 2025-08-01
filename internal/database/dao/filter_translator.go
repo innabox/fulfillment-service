@@ -659,6 +659,10 @@ func (t *FilterTranslator[O]) translateSelectThisMdField(fieldName string,
 			result.kind = filterTranslatorTimeKind
 			result.precedence = filterTranslatorMaxPrecedence
 		}
+	case "owner":
+		result.sql = fieldName
+		result.kind = filterTranslatorStringKind
+		result.precedence = filterTranslatorMaxPrecedence
 	default:
 		err = fmt.Errorf("metadata doesn't have a '%s' field", fieldName)
 	}
