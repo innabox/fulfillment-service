@@ -288,11 +288,21 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return fmt.Errorf("failed to create notifier: %w", err)
 	}
 
+	// Create the ownership function:
+	c.logger.InfoContext(ctx, "Creating ownership function")
+	ownershipFunc, err := servers.NewOwnershipFunc().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create ownership function: %w", err)
+	}
+
 	// Create the private cluster templates server:
 	c.logger.InfoContext(ctx, "Creating private cluster templates server")
 	privateClusterTemplatesServer, err := servers.NewPrivateClusterTemplatesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
+		SetOwnershipFunc(ownershipFunc).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private cluster templates server")
@@ -315,6 +325,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	privateClustersServer, err := servers.NewPrivateClustersServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
+		SetOwnershipFunc(ownershipFunc).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private clusters server")
@@ -337,6 +348,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	privateHostClassesServer, err := servers.NewPrivateHostClassesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
+		SetOwnershipFunc(ownershipFunc).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private host classes server")
@@ -359,6 +371,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	privateHubsServer, err := servers.NewPrivateHubsServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
+		SetOwnershipFunc(ownershipFunc).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create hubs server")

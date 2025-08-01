@@ -23,8 +23,9 @@ import (
 )
 
 type PrivateHubsServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger        *slog.Logger
+	notifier      *database.Notifier
+	ownershipFunc func(ctx context.Context) string
 }
 
 var _ privatev1.HubsServer = (*PrivateHubsServer)(nil)
@@ -50,6 +51,11 @@ func (b *PrivateHubsServerBuilder) SetNotifier(value *database.Notifier) *Privat
 	return b
 }
 
+func (b *PrivateHubsServerBuilder) SetOwnershipFunc(value func(ctx context.Context) string) *PrivateHubsServerBuilder {
+	b.ownershipFunc = value
+	return b
+}
+
 func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -63,6 +69,7 @@ func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error
 		SetService(privatev1.Hubs_ServiceDesc.ServiceName).
 		SetTable("hubs").
 		SetNotifier(b.notifier).
+		SetOwnershipFunc(b.ownershipFunc).
 		Build()
 	if err != nil {
 		return

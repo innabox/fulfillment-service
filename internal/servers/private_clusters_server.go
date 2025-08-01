@@ -33,8 +33,9 @@ import (
 )
 
 type PrivateClustersServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger        *slog.Logger
+	notifier      *database.Notifier
+	ownershipFunc func(ctx context.Context) string
 }
 
 var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
@@ -60,6 +61,12 @@ func (b *PrivateClustersServerBuilder) SetNotifier(value *database.Notifier) *Pr
 	return b
 }
 
+func (b *PrivateClustersServerBuilder) SetOwnershipFunc(
+	value func(ctx context.Context) string) *PrivateClustersServerBuilder {
+	b.ownershipFunc = value
+	return b
+}
+
 func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -71,6 +78,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 		SetLogger(b.logger).
 		SetTable("cluster_templates").
+		SetOwnershipFunc(b.ownershipFunc).
 		Build()
 	if err != nil {
 		return
@@ -82,6 +90,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		SetService(privatev1.Clusters_ServiceDesc.ServiceName).
 		SetTable("clusters").
 		SetNotifier(b.notifier).
+		SetOwnershipFunc(b.ownershipFunc).
 		Build()
 	if err != nil {
 		return

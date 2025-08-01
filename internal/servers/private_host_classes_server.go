@@ -23,8 +23,9 @@ import (
 )
 
 type PrivateHostClassesServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger        *slog.Logger
+	notifier      *database.Notifier
+	ownershipFunc func(ctx context.Context) string
 }
 
 var _ privatev1.HostClassesServer = (*PrivateHostClassesServer)(nil)
@@ -49,6 +50,12 @@ func (b *PrivateHostClassesServerBuilder) SetNotifier(value *database.Notifier) 
 	return b
 }
 
+func (b *PrivateHostClassesServerBuilder) SetOwnershipFunc(
+	value func(ctx context.Context) string) *PrivateHostClassesServerBuilder {
+	b.ownershipFunc = value
+	return b
+}
+
 func (b *PrivateHostClassesServerBuilder) Build() (result *PrivateHostClassesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -62,6 +69,7 @@ func (b *PrivateHostClassesServerBuilder) Build() (result *PrivateHostClassesSer
 		SetService(privatev1.HostClasses_ServiceDesc.ServiceName).
 		SetTable("host_classes").
 		SetNotifier(b.notifier).
+		SetOwnershipFunc(b.ownershipFunc).
 		Build()
 	if err != nil {
 		return
