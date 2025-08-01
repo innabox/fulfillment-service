@@ -42,6 +42,7 @@ type GenericServerBuilder[O dao.Object] struct {
 	table         string
 	ignoredFields []any
 	notifier      *database.Notifier
+	ownershipFunc func(ctx context.Context) string
 }
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
@@ -112,6 +113,13 @@ func (b *GenericServerBuilder[O]) SetNotifier(value *database.Notifier) *Generic
 	return b
 }
 
+// SetOwnershipFunc sets the function that will be used to determine the owner value for objects. The function receives
+// the context as a parameter and should return the owner name. If not provided, the owner will be set to unknown.
+func (b *GenericServerBuilder[O]) SetOwnershipFunc(value func(ctx context.Context) string) *GenericServerBuilder[O] {
+	b.ownershipFunc = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create and configure a new generic server.
 func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) {
 	// Check parameters:
@@ -153,6 +161,9 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	daoBuilder.SetTable(b.table)
 	if b.notifier != nil {
 		daoBuilder.AddEventCallback(s.notifyEvent)
+	}
+	if b.ownershipFunc != nil {
+		daoBuilder.SetOwnershipFunc(b.ownershipFunc)
 	}
 	s.dao, err = daoBuilder.Build()
 	if err != nil {

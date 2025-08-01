@@ -23,8 +23,9 @@ import (
 )
 
 type PrivateClusterTemplatesServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger        *slog.Logger
+	notifier      *database.Notifier
+	ownershipFunc func(ctx context.Context) string
 }
 
 var _ privatev1.ClusterTemplatesServer = (*PrivateClusterTemplatesServer)(nil)
@@ -44,8 +45,15 @@ func (b *PrivateClusterTemplatesServerBuilder) SetLogger(value *slog.Logger) *Pr
 	return b
 }
 
-func (b *PrivateClusterTemplatesServerBuilder) SetNotifier(value *database.Notifier) *PrivateClusterTemplatesServerBuilder {
+func (b *PrivateClusterTemplatesServerBuilder) SetNotifier(
+	value *database.Notifier) *PrivateClusterTemplatesServerBuilder {
 	b.notifier = value
+	return b
+}
+
+func (b *PrivateClusterTemplatesServerBuilder) SetOwnershipFunc(
+	value func(ctx context.Context) string) *PrivateClusterTemplatesServerBuilder {
+	b.ownershipFunc = value
 	return b
 }
 
@@ -62,6 +70,7 @@ func (b *PrivateClusterTemplatesServerBuilder) Build() (result *PrivateClusterTe
 		SetService(privatev1.ClusterTemplates_ServiceDesc.ServiceName).
 		SetTable("cluster_templates").
 		SetNotifier(b.notifier).
+		SetOwnershipFunc(b.ownershipFunc).
 		Build()
 	if err != nil {
 		return
