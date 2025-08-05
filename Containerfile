@@ -20,5 +20,12 @@ RUN go build
 
 FROM registry.access.redhat.com/ubi9/ubi:9.6-1753769805 AS runtime
 
+# Install packages:
+RUN \
+  dnf install -y \
+  gettext \
+  && \
+  dnf clean all -y
+
 # Install the binary:
 COPY --from=builder /source/fulfillment-service /usr/local/bin
