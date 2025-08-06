@@ -173,6 +173,7 @@ var _ = Describe("Generic DAO", func() {
 					creation_timestamp timestamp with time zone not null default now(),
 					deletion_timestamp timestamp with time zone not null default 'epoch',
 					finalizers text[] not null default '{}',
+					owner text not null default 'unknown',
 					data jsonb not null
 				);
 
@@ -181,6 +182,7 @@ var _ = Describe("Generic DAO", func() {
 					creation_timestamp timestamp with time zone not null,
 					deletion_timestamp timestamp with time zone not null,
 					archival_timestamp timestamp with time zone not null default now(),
+					owner text not null default 'unknown',
 					data jsonb not null
 				);
 				`,
@@ -194,6 +196,9 @@ var _ = Describe("Generic DAO", func() {
 				SetDefaultOrder("id").
 				SetDefaultLimit(defaultLimit).
 				SetMaxLimit(maxLimit).
+				SetOwnershipFunc(func(ctx context.Context) string {
+					return "my_user"
+				}).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -211,8 +216,20 @@ var _ = Describe("Generic DAO", func() {
 			object := &testsv1.Object{}
 			result, err := generic.Create(ctx, object)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Metadata).ToNot(BeNil())
+		})
+
+		It("Sets owner when creating", func() {
+			// Create the object and verify that the result has the owner set:
+			object := &testsv1.Object{}
+			object, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetOwner()).To(Equal("my_user"))
+
+			// Get the object and verify that the result has the owner set:
+			object, err = generic.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetOwner()).To(Equal("my_user"))
 		})
 
 		It("Sets creation timestamp when creating", func() {
