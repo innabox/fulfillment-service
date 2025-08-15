@@ -12,7 +12,7 @@ Install the _cert-manager_ operator:
 ```shell
 $ oc new-project cert-manager-operator
 
-$ oc create -f <<.
+$ oc create -f - <<.
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -34,6 +34,24 @@ spec:
   name: cert-manager
   source: community-operators
   sourceNamespace: openshift-marketplace
+.
+```
+
+Install the _Authorino_ operator:
+
+```shell
+$ oc create -f - <<.
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  namespace: openshift-operators
+  name: authorino-operator
+spec:
+  name: authorino-operator
+  sourceNamespace: openshift-marketplace
+  source: redhat-operators
+  channel: tech-preview-v1
+  installPlanApproval: Automatic
 .
 ```
 
@@ -63,6 +81,12 @@ Install the _cert-manager_ operator:
 
 ```shell
 $ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
+```
+
+Install the _Authorino_ operator:
+
+```shell
+$ kubectl apply -f https://raw.githubusercontent.com/Kuadrant/authorino-operator/refs/heads/release-v0.20.0/config/deploy/manifests.yaml
 ```
 
 Deploy the application:

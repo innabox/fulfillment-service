@@ -16,28 +16,8 @@ kind: Kustomization
 labels:
 - includeSelectors: true
   pairs:
-    app: fulfillment-service
+    component: authorino
 
 resources:
-- namespace.yaml
-- ca
-- database
-- authorino
-- service
-- client
-- admin
-- controller
-
-generatorOptions:
-  disableNameSuffixHash: true
-
-images:
-- name: envoy
-  newName: docker.io/envoyproxy/envoy
-  newTag: v1.33.0
-- name: fulfillment-service
-  newName: ghcr.io/innabox/fulfillment-service
-  newTag: latest
-- name: postgres
-  newName: quay.io/sclorg/postgresql-15-c9s
-  newTag: latest
+- authorino.yaml
+- certificate.yaml
