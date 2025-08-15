@@ -310,7 +310,7 @@ func (s *PrivateEventsServer) processEvent(ctx context.Context, event *privatev1
 			logger.DebugContext(ctx, "Event accepted by filter")
 			sub.eventsChan <- event
 		} else {
-			s.logger.DebugContext(ctx, "Event rejected by filter")
+			logger.DebugContext(ctx, "Event rejected by filter")
 		}
 	}
 	return nil
