@@ -23,10 +23,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -482,60 +479,29 @@ func (k *Kind) createKubeClientSet(ctx context.Context) error {
 }
 
 func (k *Kind) installCertManager(ctx context.Context) (err error) {
-	// Apply the cert-manager manifest:
-	k.logger.DebugContext(ctx, "Applying cert-manager manifests")
+	k.logger.DebugContext(ctx, "Installing cert-manager chart")
 	applyCmd, err := NewCommand().
 		SetLogger(k.logger).
-		SetName(kubectlCmd).
+		SetName(helmCmd).
 		SetArgs(
-			"apply",
-			"--kubeconfig", k.kubeconfigFile,
-			"--filename", cmManifests,
+			"install",
+			"cert-manager",
+			"oci://quay.io/jetstack/charts/cert-manager",
+			"--version", "v1.18.2",
+			"--namespace", "cert-manager",
+			"--create-namespace",
+			"--set", "crds.enabled=true",
+			"--wait",
 		).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create command to apply cert-manager manifests: %w", err)
+		return fmt.Errorf("failed to create command to install cert-manager chart: %w", err)
 	}
 	err = applyCmd.Execute(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to apply cert-manager manifests: %w", err)
+		return fmt.Errorf("failed to install cert-manager chart: %w", err)
 	}
-	k.logger.DebugContext(ctx, "Applied cert-manager manifests")
-
-	// Wait till it is possible to create cert-manager objects. Any other way to check this has proven to be
-	// unreliable. The fact that the apply worked doesn't mean that the CRDs are established already, and the fact
-	// that the CRDs are established doesn't mean that the webhooks are already running.
-	k.logger.DebugContext(ctx, "Waiting for cert-manager to be ready")
-	object := &unstructured.Unstructured{}
-	object.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "cert-manager.io",
-		Version: "v1",
-		Kind:    "Issuer",
-	})
-	object.SetNamespace("default")
-	object.SetName("default")
-	object.Object["spec"] = map[string]any{
-		"selfSigned": map[string]any{},
-	}
-	start := time.Now()
-	for {
-		err = k.kubeClient.Create(ctx, object, crclient.DryRunAll)
-		if err == nil {
-			break
-		}
-		k.logger.LogAttrs(
-			ctx,
-			slog.LevelDebug,
-			"Cert-manager not ready yet",
-			slog.Any("error", err),
-		)
-		if time.Since(start) > time.Minute {
-			return fmt.Errorf("failed to create cert-manager object after 1 minute: %w", err)
-		}
-		time.Sleep(5 * time.Second)
-	}
-	k.logger.DebugContext(ctx, "Cert-manager is ready")
-
+	k.logger.DebugContext(ctx, "Installed cert-manager chart")
 	return nil
 }
 
@@ -566,9 +532,7 @@ func (k *Kind) installCrdFiles(ctx context.Context) error {
 
 // Names of commands:
 const (
+	helmCmd    = "helm"
 	kindCmd    = "kind"
 	kubectlCmd = "kubectl"
 )
-
-// Location of cert-manager manifests:
-const cmManifests = "https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml"

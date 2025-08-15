@@ -126,9 +126,11 @@ var _ = BeforeSuite(func() {
 	projectDir := currentDir
 
 	// Check that the required tools are available:
-	_, err = exec.LookPath(kubectlPath)
+	_, err = exec.LookPath(helmCmd)
 	Expect(err).ToNot(HaveOccurred())
-	_, err = exec.LookPath(kindPath)
+	_, err = exec.LookPath(kindCmd)
+	Expect(err).ToNot(HaveOccurred())
+	_, err = exec.LookPath(podmanCmd)
 	Expect(err).ToNot(HaveOccurred())
 
 	// We will create the kind cluster and build the container image in parallel, and will use this
@@ -177,7 +179,7 @@ var _ = BeforeSuite(func() {
 			buildCmd, err := NewCommand().
 				SetLogger(logger).
 				SetDir(projectDir).
-				SetName("podman").
+				SetName(podmanCmd).
 				SetArgs(
 					"build",
 					"--tag", fmt.Sprintf("%s:%s", imageName, imageTag),
@@ -193,7 +195,7 @@ var _ = BeforeSuite(func() {
 			saveCmd, err := NewCommand().
 				SetLogger(logger).
 				SetDir(projectDir).
-				SetName("podman").
+				SetName(podmanCmd).
 				SetArgs(
 					"save",
 					"--output", imageTar,
@@ -229,18 +231,25 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	// Deploy the application:
-	applyCmd, err := NewCommand().
+	installCmd, err := NewCommand().
 		SetLogger(logger).
 		SetDir(projectDir).
-		SetName(kubectlPath).
+		SetName(helmCmd).
 		SetArgs(
-			"apply",
+			"install",
+			"fulfillment-service",
+			"chart",
 			"--kubeconfig", kcFile,
-			"--kustomize", filepath.Join("manifests", "overlays", "kind"),
+			"--namespace", "innabox",
+			"--create-namespace",
+			"--set", "variant=kind",
+			"--set", fmt.Sprintf("images.service=%s", imageRef),
+			"--set", "log.level=debug",
+			"--wait",
 		).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
-	err = applyCmd.Execute(ctx)
+	err = installCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Wait till the CA certificate has been issued, and fetch it. We need it to configure gRPC and HTTP clients
@@ -365,8 +374,9 @@ var _ = BeforeSuite(func() {
 
 // Names of the command line tools:
 const (
-	kubectlPath = "kubectl"
-	kindPath    = "podman"
+	helmCmd   = "helm"
+	kindCmd   = "kind"
+	podmanCmd = "podman"
 )
 
 // Name and namespace of the hub:
