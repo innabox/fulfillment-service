@@ -25,7 +25,7 @@ jobs:
     name: Check pre-commit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: actions/setup-python@v5
     - uses: pre-commit/action@v3.0.1
 
@@ -33,7 +33,7 @@ jobs:
     name: Check code format
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/setup-go
     - run: |
         gofmt -s -l -w .
@@ -43,7 +43,7 @@ jobs:
     name: Check generated code
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: bufbuild/buf-action@v1
       with:
         version: '1.50.0'
@@ -56,7 +56,7 @@ jobs:
     name: Run unit tests
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/setup-go
     - run: |
         ginkgo run -r internal
@@ -65,7 +65,7 @@ jobs:
     name: Build image
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - run: |
         image="ghcr.io/innabox/fulfillment-service:latest"
         podman build --tag "${image}" .
@@ -81,7 +81,7 @@ jobs:
     needs:
     - build-image
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: ./.github/actions/setup-go
     - uses: actions/download-artifact@v5
       with:
