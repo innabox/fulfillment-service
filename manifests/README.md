@@ -12,7 +12,7 @@ Install the _cert-manager_ operator:
 ```shell
 $ oc new-project cert-manager-operator
 
-$ oc create -f <<.
+$ oc create -f - <<.
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
