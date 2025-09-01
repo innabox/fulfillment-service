@@ -19,12 +19,14 @@ import (
 	"log/slog"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type PrivateClusterTemplatesServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
 }
 
 var _ privatev1.ClusterTemplatesServer = (*PrivateClusterTemplatesServer)(nil)
@@ -44,8 +46,14 @@ func (b *PrivateClusterTemplatesServerBuilder) SetLogger(value *slog.Logger) *Pr
 	return b
 }
 
-func (b *PrivateClusterTemplatesServerBuilder) SetNotifier(value *database.Notifier) *PrivateClusterTemplatesServerBuilder {
+func (b *PrivateClusterTemplatesServerBuilder) SetNotifier(
+	value *database.Notifier) *PrivateClusterTemplatesServerBuilder {
 	b.notifier = value
+	return b
+}
+
+func (b *PrivateClusterTemplatesServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *PrivateClusterTemplatesServerBuilder {
+	b.attributionLogic = value
 	return b
 }
 
@@ -62,6 +70,7 @@ func (b *PrivateClusterTemplatesServerBuilder) Build() (result *PrivateClusterTe
 		SetService(privatev1.ClusterTemplates_ServiceDesc.ServiceName).
 		SetTable("cluster_templates").
 		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
 		Build()
 	if err != nil {
 		return

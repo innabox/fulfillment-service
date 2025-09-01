@@ -212,5 +212,10 @@ var _ = Describe("Filter translator", func() {
 			`!has(this.metadata.deletion_timestamp)`,
 			`not deletion_timestamp != '1970-01-01 00:00:00Z'`,
 		),
+		Entry(
+			"Filter by creator",
+			`'my_user' in this.metadata.creators`,
+			`creators @> array['my_user']`,
+		),
 	)
 })

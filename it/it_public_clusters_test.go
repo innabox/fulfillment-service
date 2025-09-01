@@ -656,4 +656,30 @@ var _ = Describe("Public clusters", func() {
 		Expect(getPasswordResponse.GetContentType()).To(Equal("text/plain"))
 		Expect(getPasswordResponse.GetData()).To(Equal([]byte("my_password")))
 	})
+
+	It("Sets creator to the name of the user when creating a cluster", func() {
+		// Create the cluster using the client connection:
+		response, err := clustersClient.Create(ctx, ffv1.ClustersCreateRequest_builder{
+			Object: ffv1.Cluster_builder{
+				Spec: ffv1.ClusterSpec_builder{
+					Template: templateId,
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response).ToNot(BeNil())
+		object := response.GetObject()
+		DeferCleanup(func() {
+			_, err := clustersClient.Delete(ctx, ffv1.ClustersDeleteRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		// Verify that the owner is set to the name of the authenticated user:
+		Expect(object).ToNot(BeNil())
+		metadata := object.GetMetadata()
+		Expect(metadata).ToNot(BeNil())
+		Expect(metadata.GetCreators()).To(ConsistOf("system:serviceaccount:innabox:client"))
+	})
 })

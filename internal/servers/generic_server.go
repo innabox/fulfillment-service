@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/masks"
@@ -37,11 +38,12 @@ import (
 
 // GenericServerBuilder contains the data and logic needed to create new generic servers.
 type GenericServerBuilder[O dao.Object] struct {
-	logger        *slog.Logger
-	service       string
-	table         string
-	ignoredFields []any
-	notifier      *database.Notifier
+	logger           *slog.Logger
+	service          string
+	table            string
+	ignoredFields    []any
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
 }
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
@@ -112,6 +114,12 @@ func (b *GenericServerBuilder[O]) SetNotifier(value *database.Notifier) *Generic
 	return b
 }
 
+// SetAttributionLogic sets the logic that will be used to determine the creators for objects.
+func (b *GenericServerBuilder[O]) SetAttributionLogic(value auth.AttributionLogic) *GenericServerBuilder[O] {
+	b.attributionLogic = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create and configure a new generic server.
 func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) {
 	// Check parameters:
@@ -153,6 +161,9 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	daoBuilder.SetTable(b.table)
 	if b.notifier != nil {
 		daoBuilder.AddEventCallback(s.notifyEvent)
+	}
+	if b.attributionLogic != nil {
+		daoBuilder.SetAttributionLogic(b.attributionLogic)
 	}
 	s.dao, err = daoBuilder.Build()
 	if err != nil {

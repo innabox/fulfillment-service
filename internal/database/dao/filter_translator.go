@@ -492,11 +492,25 @@ func (t *FilterTranslator[O]) translateString(value, special string) (text strin
 
 func (t *FilterTranslator[O]) translateIn(args []ast.Expr) (result filterTranslatorResult, err error) {
 	key := args[0]
+	values := args[1]
+	switch values.Kind() {
+	case ast.ListKind:
+		result, err = t.translateInList(key, values.AsList())
+	case ast.SelectKind:
+		result, err = t.translateInField(key, values.AsSelect())
+	default:
+		err = fmt.Errorf("second argument of the 'in' operator must be a list or a select expression")
+		return
+	}
+	return
+}
+
+func (t *FilterTranslator[O]) translateInList(key ast.Expr, list ast.ListExpr) (result filterTranslatorResult, err error) {
 	keyTr, err := t.translate(key)
 	if err != nil {
 		return
 	}
-	values := args[1].AsList().Elements()
+	values := list.Elements()
 	valueTrs := make([]filterTranslatorResult, len(values))
 	for i, value := range values {
 		if value.Kind() != ast.LiteralKind {
@@ -522,6 +536,25 @@ func (t *FilterTranslator[O]) translateIn(args []ast.Expr) (result filterTransla
 		buffer.WriteString(valueTr.sql)
 	}
 	buffer.WriteString(")")
+	result.sql = buffer.String()
+	result.precedence = filterTranslatorInPrecedence
+	return
+}
+
+func (t *FilterTranslator[O]) translateInField(key ast.Expr, value ast.SelectExpr) (result filterTranslatorResult, err error) {
+	keyTr, err := t.translate(key)
+	if err != nil {
+		return
+	}
+	valueTr, err := t.translateSelectField(value)
+	if err != nil {
+		return
+	}
+	var buffer bytes.Buffer
+	buffer.WriteString(valueTr.sql)
+	buffer.WriteString(" @> array[")
+	buffer.WriteString(keyTr.sql)
+	buffer.WriteString("]")
 	result.sql = buffer.String()
 	result.precedence = filterTranslatorInPrecedence
 	return
@@ -659,6 +692,10 @@ func (t *FilterTranslator[O]) translateSelectThisMdField(fieldName string,
 			result.kind = filterTranslatorTimeKind
 			result.precedence = filterTranslatorMaxPrecedence
 		}
+	case "creators":
+		result.sql = fieldName
+		result.kind = filterTranslatorStringKind
+		result.precedence = filterTranslatorMaxPrecedence
 	default:
 		err = fmt.Errorf("metadata doesn't have a '%s' field", fieldName)
 	}

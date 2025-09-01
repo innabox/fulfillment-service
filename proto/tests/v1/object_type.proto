@@ -56,6 +56,7 @@ message Metadata {
   google.protobuf.Timestamp creation_timestamp = 1;
   google.protobuf.Timestamp deletion_timestamp = 2;
   repeated string finalizers = 3;
+  repeated string creators = 4;
 }
 
 message Spec {
