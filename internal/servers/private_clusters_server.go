@@ -28,13 +28,15 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 type PrivateClustersServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger         *slog.Logger
+	notifier       *database.Notifier
+	ownershipLogic auth.OwnershipLogic
 }
 
 var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
@@ -60,6 +62,11 @@ func (b *PrivateClustersServerBuilder) SetNotifier(value *database.Notifier) *Pr
 	return b
 }
 
+func (b *PrivateClustersServerBuilder) SetOwnershipLogic(value auth.OwnershipLogic) *PrivateClustersServerBuilder {
+	b.ownershipLogic = value
+	return b
+}
+
 func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -71,6 +78,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 		SetLogger(b.logger).
 		SetTable("cluster_templates").
+		SetOwnershipLogic(b.ownershipLogic).
 		Build()
 	if err != nil {
 		return
@@ -82,6 +90,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		SetService(privatev1.Clusters_ServiceDesc.ServiceName).
 		SetTable("clusters").
 		SetNotifier(b.notifier).
+		SetOwnershipLogic(b.ownershipLogic).
 		Build()
 	if err != nil {
 		return

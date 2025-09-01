@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/masks"
@@ -37,11 +38,12 @@ import (
 
 // GenericServerBuilder contains the data and logic needed to create new generic servers.
 type GenericServerBuilder[O dao.Object] struct {
-	logger        *slog.Logger
-	service       string
-	table         string
-	ignoredFields []any
-	notifier      *database.Notifier
+	logger         *slog.Logger
+	service        string
+	table          string
+	ignoredFields  []any
+	notifier       *database.Notifier
+	ownershipLogic auth.OwnershipLogic
 }
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
@@ -112,6 +114,13 @@ func (b *GenericServerBuilder[O]) SetNotifier(value *database.Notifier) *Generic
 	return b
 }
 
+// SetOwnershipLogic sets the ownership logic that will be used to determine the owners for objects.
+// The logic receives the context as a parameter and should return the names of the owners. If not provided, no owners will be set.
+func (b *GenericServerBuilder[O]) SetOwnershipLogic(value auth.OwnershipLogic) *GenericServerBuilder[O] {
+	b.ownershipLogic = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create and configure a new generic server.
 func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) {
 	// Check parameters:
@@ -153,6 +162,9 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	daoBuilder.SetTable(b.table)
 	if b.notifier != nil {
 		daoBuilder.AddEventCallback(s.notifyEvent)
+	}
+	if b.ownershipLogic != nil {
+		daoBuilder.SetOwnershipLogic(b.ownershipLogic)
 	}
 	s.dao, err = daoBuilder.Build()
 	if err != nil {

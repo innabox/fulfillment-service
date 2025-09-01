@@ -25,9 +25,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
@@ -39,8 +41,9 @@ var _ = Describe("Generic DAO", func() {
 	)
 
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctrl *gomock.Controller
+		ctx  context.Context
+		tx   database.Tx
 	)
 
 	sort := func(objects []*testsv1.Object) {
@@ -51,6 +54,10 @@ var _ = Describe("Generic DAO", func() {
 
 	BeforeEach(func() {
 		var err error
+
+		// Create the mock conntroller:
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
 
 		// Create a context:
 		ctx = context.Background()
@@ -173,6 +180,7 @@ var _ = Describe("Generic DAO", func() {
 					creation_timestamp timestamp with time zone not null default now(),
 					deletion_timestamp timestamp with time zone not null default 'epoch',
 					finalizers text[] not null default '{}',
+					owners text[] not null default '{}',
 					data jsonb not null
 				);
 
@@ -181,11 +189,18 @@ var _ = Describe("Generic DAO", func() {
 					creation_timestamp timestamp with time zone not null,
 					deletion_timestamp timestamp with time zone not null,
 					archival_timestamp timestamp with time zone not null default now(),
+					owners text[] not null default '{}',
 					data jsonb not null
 				);
 				`,
 			)
 			Expect(err).ToNot(HaveOccurred())
+
+			// Create the ownership logic:
+			ownershipLogic := auth.NewMockOwnershipLogic(ctrl)
+			ownershipLogic.EXPECT().DetermineAssignedOwners(gomock.Any()).
+				Return([]string{"my_user"}, nil).
+				AnyTimes()
 
 			// Create the DAO:
 			generic, err = NewGenericDAO[*testsv1.Object]().
@@ -194,6 +209,7 @@ var _ = Describe("Generic DAO", func() {
 				SetDefaultOrder("id").
 				SetDefaultLimit(defaultLimit).
 				SetMaxLimit(maxLimit).
+				SetOwnershipLogic(ownershipLogic).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -211,8 +227,20 @@ var _ = Describe("Generic DAO", func() {
 			object := &testsv1.Object{}
 			result, err := generic.Create(ctx, object)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Metadata).ToNot(BeNil())
+		})
+
+		It("Sets owners when creating", func() {
+			// Create the object and verify that the result has the owner set:
+			object := &testsv1.Object{}
+			object, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetOwners()).To(ConsistOf("my_user"))
+
+			// Get the object and verify that the result has the owners set:
+			object, err = generic.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetOwners()).To(ConsistOf("my_user"))
 		})
 
 		It("Sets creation timestamp when creating", func() {
