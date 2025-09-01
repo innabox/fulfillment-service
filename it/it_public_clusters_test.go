@@ -676,7 +676,7 @@ var _ = Describe("Public clusters", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		// Verify that the owner is set to the name of the authenticated user:
+		// Verify that the creator is set to the name of the authenticated user:
 		Expect(object).ToNot(BeNil())
 		metadata := object.GetMetadata()
 		Expect(metadata).ToNot(BeNil())

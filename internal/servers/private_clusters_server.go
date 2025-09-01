@@ -37,6 +37,7 @@ type PrivateClustersServerBuilder struct {
 	logger           *slog.Logger
 	notifier         *database.Notifier
 	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
@@ -67,6 +68,11 @@ func (b *PrivateClustersServerBuilder) SetAttributionLogic(value auth.Attributio
 	return b
 }
 
+func (b *PrivateClustersServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateClustersServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -79,6 +85,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		SetLogger(b.logger).
 		SetTable("cluster_templates").
 		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return
@@ -91,6 +98,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		SetTable("clusters").
 		SetNotifier(b.notifier).
 		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

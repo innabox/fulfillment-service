@@ -19,12 +19,15 @@ import (
 	"log/slog"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type PrivateVirtualMachineTemplatesServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ privatev1.VirtualMachineTemplatesServer = (*PrivateVirtualMachineTemplatesServer)(nil)
@@ -49,6 +52,16 @@ func (b *PrivateVirtualMachineTemplatesServerBuilder) SetNotifier(value *databas
 	return b
 }
 
+func (b *PrivateVirtualMachineTemplatesServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *PrivateVirtualMachineTemplatesServerBuilder {
+	b.attributionLogic = value
+	return b
+}
+
+func (b *PrivateVirtualMachineTemplatesServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateVirtualMachineTemplatesServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *PrivateVirtualMachineTemplatesServerBuilder) Build() (result *PrivateVirtualMachineTemplatesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -62,6 +75,8 @@ func (b *PrivateVirtualMachineTemplatesServerBuilder) Build() (result *PrivateVi
 		SetService(privatev1.VirtualMachineTemplates_ServiceDesc.ServiceName).
 		SetTable("virtual_machine_templates").
 		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

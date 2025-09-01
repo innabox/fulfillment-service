@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/google/cel-go/cel"
@@ -33,13 +34,15 @@ import (
 
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type EventsServerBuilder struct {
-	logger *slog.Logger
-	flags  *pflag.FlagSet
-	dbUrl  string
+	logger       *slog.Logger
+	flags        *pflag.FlagSet
+	dbUrl        string
+	tenancyLogic auth.TenancyLogic
 }
 
 var _ eventsv1.EventsServer = (*EventsServer)(nil)
@@ -47,12 +50,13 @@ var _ eventsv1.EventsServer = (*EventsServer)(nil)
 type EventsServer struct {
 	eventsv1.UnimplementedEventsServer
 
-	logger   *slog.Logger
-	listener *database.Listener
-	subs     map[string]privateEventsServerSubInfo
-	subsLock *sync.RWMutex
-	celEnv   *cel.Env
-	mapper   *GenericMapper[*privatev1.Event, *eventsv1.Event]
+	logger       *slog.Logger
+	listener     *database.Listener
+	subs         map[string]privateEventsServerSubInfo
+	subsLock     *sync.RWMutex
+	celEnv       *cel.Env
+	mapper       *GenericMapper[*privatev1.Event, *eventsv1.Event]
+	tenancyLogic auth.TenancyLogic
 }
 
 type privateEventsServerSubInfo struct {
@@ -78,6 +82,11 @@ func (b *EventsServerBuilder) SetFlags(value *pflag.FlagSet) *EventsServerBuilde
 
 func (b *EventsServerBuilder) SetDbUrl(value string) *EventsServerBuilder {
 	b.dbUrl = value
+	return b
+}
+
+func (b *EventsServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *EventsServerBuilder {
+	b.tenancyLogic = value
 	return b
 }
 
@@ -108,13 +117,26 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 		return
 	}
 
+	// Create the tenancy logic:
+	tenancyLogic := b.tenancyLogic
+	if tenancyLogic == nil {
+		tenancyLogic, err = auth.NewEmptyTenancyLogic().
+			SetLogger(b.logger).
+			Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create tenancy logic: %w", err)
+			return
+		}
+	}
+
 	// Create the object early so that whe can use its methods as callback functions:
 	s := &EventsServer{
-		logger:   b.logger,
-		subs:     map[string]privateEventsServerSubInfo{},
-		subsLock: &sync.RWMutex{},
-		celEnv:   celEnv,
-		mapper:   mapper,
+		logger:       b.logger,
+		subs:         map[string]privateEventsServerSubInfo{},
+		subsLock:     &sync.RWMutex{},
+		celEnv:       celEnv,
+		mapper:       mapper,
+		tenancyLogic: tenancyLogic,
 	}
 
 	// Create the notification listener:
@@ -183,7 +205,7 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 	// Get the context:
 	ctx := stream.Context()
 
-	// Compile the filterPrg expression:
+	// Compile the filter expression:
 	var (
 		filterSrc string
 		filterPrg cel.Program
@@ -283,6 +305,7 @@ func (s *EventsServer) evalFilter(ctx context.Context, filterPrg cel.Program, ev
 }
 
 func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message) error {
+	// Get the object:
 	private, ok := payload.(*privatev1.Event)
 	if !ok {
 		s.logger.ErrorContext(
@@ -293,15 +316,101 @@ func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message
 		)
 		return nil
 	}
+
+	// Skip object that don't have a public representtion:
 	if private.HasHub() {
 		return nil
 	}
-	public := &eventsv1.Event{}
-	err := s.mapper.Copy(ctx, private, public)
+
+	// Check if the user has permission to see the event:
+	visible, err := s.checkTenancy(ctx, private)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check tenancy: %w", err)
+	}
+	if !visible {
+		return nil
+	}
+
+	// Translate the private event to a public event and process it:
+	public := &eventsv1.Event{}
+	err = s.mapper.Copy(ctx, private, public)
+	if err != nil {
+		return fmt.Errorf("failed to translate event: %w", err)
 	}
 	return s.processEvent(ctx, public)
+}
+
+// checkTenancy checks if the object is visible to the current user.
+func (s *EventsServer) checkTenancy(ctx context.Context, event *privatev1.Event) (result bool, err error) {
+	// Get the visible tenants for the current user:
+	visibleTenants, err := s.tenancyLogic.DetermineVisibleTenants(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to determine visible tenants: %w", err)
+		return
+	}
+	if len(visibleTenants) == 0 {
+		result = true
+		return
+	}
+
+	// Get the tenants of the object:
+	objectTenants := s.extractTenants(ctx, event)
+
+	// Check if any of the visible tenants is in the object tenants:
+	for _, objectTenant := range objectTenants {
+		if slices.Contains(visibleTenants, objectTenant) {
+			s.logger.DebugContext(
+				ctx,
+				"Event is visible to the current user",
+				slog.Any("event", event),
+				slog.Any("visibible_tenants", visibleTenants),
+				slog.Any("object_tenants", objectTenants),
+			)
+			result = true
+			return
+		}
+	}
+
+	// If we are here then none of the visibile tenants is in the object tenants, so the user can't see the object.
+	s.logger.DebugContext(
+		ctx,
+		"Event isn't visible to the current user",
+		slog.Any("event", event),
+		slog.Any("visibible_tenants", visibleTenants),
+		slog.Any("object_tenants", objectTenants),
+	)
+	result = false
+	return
+}
+
+func (s *EventsServer) extractTenants(ctx context.Context, event *privatev1.Event) []string {
+	metadata := s.extractMetadata(ctx, event)
+	if metadata == nil {
+		return nil
+	}
+	return metadata.GetTenants()
+}
+
+func (s *EventsServer) extractMetadata(ctx context.Context, event *privatev1.Event) *privatev1.Metadata {
+	switch {
+	case event.HasCluster():
+		return event.GetCluster().GetMetadata()
+	case event.HasClusterTemplate():
+		return event.GetClusterTemplate().GetMetadata()
+	case event.HasHostClass():
+		return event.GetHostClass().GetMetadata()
+	case event.HasVirtualMachineTemplate():
+		return event.GetVirtualMachineTemplate().GetMetadata()
+	case event.HasVirtualMachine():
+		return event.GetVirtualMachine().GetMetadata()
+	default:
+		s.logger.ErrorContext(
+			ctx,
+			"Unexpected event type",
+			slog.Any("event", event),
+		)
+		return nil
+	}
 }
 
 func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) error {
@@ -314,6 +423,8 @@ func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) 
 			slog.Any("event", event),
 		)
 		accepted := true
+
+		// Apply user-defined filter - tenant filtering is already done in processPayload
 		if sub.filterPrg != nil {
 			var err error
 			accepted, err = s.evalFilter(ctx, sub.filterPrg, event)
@@ -326,6 +437,7 @@ func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) 
 				accepted = false
 			}
 		}
+
 		if accepted {
 			logger.DebugContext(ctx, "Event accepted by filter")
 			sub.eventsChan <- event

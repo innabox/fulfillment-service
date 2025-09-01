@@ -44,6 +44,7 @@ type GenericServerBuilder[O dao.Object] struct {
 	ignoredFields    []any
 	notifier         *database.Notifier
 	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
@@ -120,6 +121,13 @@ func (b *GenericServerBuilder[O]) SetAttributionLogic(value auth.AttributionLogi
 	return b
 }
 
+// SetTenancyLogic sets the tenancy logic that will be used to determine the tenants for objects. The logic receives the
+// context as a parameter and should return the names of the tenants. If not provided, no tenants will be set.
+func (b *GenericServerBuilder[O]) SetTenancyLogic(value auth.TenancyLogic) *GenericServerBuilder[O] {
+	b.tenancyLogic = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create and configure a new generic server.
 func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) {
 	// Check parameters:
@@ -164,6 +172,9 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	}
 	if b.attributionLogic != nil {
 		daoBuilder.SetAttributionLogic(b.attributionLogic)
+	}
+	if b.tenancyLogic != nil {
+		daoBuilder.SetTenancyLogic(b.tenancyLogic)
 	}
 	s.dao, err = daoBuilder.Build()
 	if err != nil {

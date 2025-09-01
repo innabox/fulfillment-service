@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,6 +51,7 @@ type GenericDAOBuilder[O Object] struct {
 	maxLimit         int32
 	eventCallbacks   []EventCallback
 	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 // GenericDAO provides generic data access operations for protocol buffers messages. It assumes that objects will be
@@ -79,6 +81,7 @@ type GenericDAO[O Object] struct {
 	unmarshalOptions protojson.UnmarshalOptions
 	filterTranslator *FilterTranslator[O]
 	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 type metadataIface interface {
@@ -91,6 +94,8 @@ type metadataIface interface {
 	SetFinalizers([]string)
 	GetCreators() []string
 	SetCreators([]string)
+	GetTenants() []string
+	SetTenants([]string)
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
@@ -149,6 +154,14 @@ func (b *GenericDAOBuilder[O]) AddEventCallback(value EventCallback) *GenericDAO
 // that returns no creators will be recorded.
 func (b *GenericDAOBuilder[O]) SetAttributionLogic(value auth.AttributionLogic) *GenericDAOBuilder[O] {
 	b.attributionLogic = value
+	return b
+}
+
+// SetTenancyLogic sets the tenancy logic that will be used to determine the tenants value for objects.
+// The logic receives the context as a parameter and should return the names of the tenants. If not provided,
+// a default logic that returns no tenants will be used.
+func (b *GenericDAOBuilder[O]) SetTenancyLogic(value auth.TenancyLogic) *GenericDAOBuilder[O] {
+	b.tenancyLogic = value
 	return b
 }
 
@@ -253,6 +266,16 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		}
 	}
 
+	// Set the default tenancy logic so that it will never be nil:
+	tenancyLogic := b.tenancyLogic
+	if tenancyLogic == nil {
+		tenancyLogic, err = auth.NewEmptyTenancyLogic().Build()
+		if err != nil {
+			err = fmt.Errorf("failed to create default tenancy logic: %w", err)
+			return
+		}
+	}
+
 	// Create and populate the object:
 	result = &GenericDAO[O]{
 		logger:           b.logger,
@@ -270,6 +293,7 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		unmarshalOptions: unmarshalOptions,
 		filterTranslator: filterTranslator,
 		attributionLogic: attributionLogic,
+		tenancyLogic:     tenancyLogic,
 	}
 	return
 }
@@ -312,27 +336,82 @@ func (d *GenericDAO[O]) List(ctx context.Context, request ListRequest) (response
 func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRequest) (response ListResponse[O],
 	err error) {
 	// Calculate the filter:
-	var filter string
+	filterBuffer := &strings.Builder{}
+	parameters := []any{}
 	if request.Filter != "" {
+		var filter string
 		filter, err = d.filterTranslator.Translate(ctx, request.Filter)
 		if err != nil {
 			return
 		}
+		filterBuffer.WriteString(filter)
 	}
 
-	// Calculate the order cluase:
+	// Add tenant visibility filter:
+	err = d.addTenancyFilter(ctx, filterBuffer, &parameters)
+	if err != nil {
+		return
+	}
+
+	// Calculate the order clause:
 	var order string
 	if d.defaultOrder != "" {
 		order = d.defaultOrder
 	}
 
-	// Calculate the offset:
-	offset := request.Offset
-	if offset < 0 {
-		offset = 0
+	// Count the total number of results, disregarding the offset and the limit:
+	sqlBuffer := &strings.Builder{}
+	fmt.Fprintf(sqlBuffer, `select count(*) from %s`, d.table)
+	if filterBuffer.Len() > 0 {
+		sqlBuffer.WriteString(" where ")
+		sqlBuffer.WriteString(filterBuffer.String())
+	}
+	sql := sqlBuffer.String()
+	d.logger.DebugContext(
+		ctx,
+		"Running SQL query",
+		slog.String("sql", sql),
+	)
+	row := tx.QueryRow(ctx, sql, parameters...)
+	var total int
+	err = row.Scan(&total)
+	if err != nil {
+		return
 	}
 
-	// Calculate the limit:
+	// Fetch the results:
+	sqlBuffer.Reset()
+	fmt.Fprintf(
+		sqlBuffer,
+		`
+		select
+			id,
+			creation_timestamp,
+			deletion_timestamp,
+			finalizers,
+			creators,
+			tenants,
+			data
+		from
+			 %s
+		`,
+		d.table,
+	)
+	if filterBuffer.Len() > 0 {
+		sqlBuffer.WriteString(" where ")
+		sqlBuffer.WriteString(filterBuffer.String())
+	}
+	if order != "" {
+		sqlBuffer.WriteString(" order by ")
+		sqlBuffer.WriteString(order)
+	}
+
+	// Add the offset:
+	offset := max(request.Offset, 0)
+	parameters = append(parameters, offset)
+	fmt.Fprintf(sqlBuffer, " offset $%d", len(parameters))
+
+	// Add the limit:
 	limit := request.Limit
 	if limit < 0 {
 		limit = 0
@@ -341,52 +420,18 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 	} else if limit > d.maxLimit {
 		limit = d.maxLimit
 	}
+	parameters = append(parameters, limit)
+	fmt.Fprintf(sqlBuffer, " limit $%d", len(parameters))
 
-	// Count the total number of results, disregarding the offset and the limit:
-	totalQuery := fmt.Sprintf("select count(*) from %s", d.table)
-	if filter != "" {
-		totalQuery += fmt.Sprintf(" where %s", filter)
-	}
+	// Execute the SQL query:
+	sql = sqlBuffer.String()
 	d.logger.DebugContext(
 		ctx,
 		"Running SQL query",
-		slog.String("sql", totalQuery),
+		slog.String("sql", sql),
+		slog.Any("parameters", parameters),
 	)
-	totalRow := tx.QueryRow(ctx, totalQuery)
-	var total int
-	err = totalRow.Scan(&total)
-	if err != nil {
-		return
-	}
-
-	// Fetch the results:
-	itemsQuery := fmt.Sprintf(
-		`
-		select
-			id,
-			creation_timestamp,
-			deletion_timestamp,
-			finalizers,
-			creators,
-			data
-		from
-			%s
-		`,
-		d.table,
-	)
-	if filter != "" {
-		itemsQuery += fmt.Sprintf(" where %s", filter)
-	}
-	if order != "" {
-		itemsQuery += fmt.Sprintf(" order by %s", order)
-	}
-	itemsQuery += " offset $1 limit $2"
-	d.logger.DebugContext(
-		ctx,
-		"Running SQL query",
-		slog.String("sql", itemsQuery),
-	)
-	itemsRows, err := tx.Query(ctx, itemsQuery, offset, limit)
+	itemsRows, err := tx.Query(ctx, sql, parameters...)
 	if err != nil {
 		return
 	}
@@ -399,6 +444,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 			deletionTs time.Time
 			finalizers []string
 			creators   []string
+			tenants    []string
 			data       []byte
 		)
 		err = itemsRows.Scan(
@@ -407,6 +453,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 			&deletionTs,
 			&finalizers,
 			&creators,
+			&tenants,
 			&data,
 		)
 		if err != nil {
@@ -417,7 +464,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		if err != nil {
 			return
 		}
-		md := d.makeMetadata(creationTs, deletionTs, finalizers, creators)
+		md := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
 		item.SetId(id)
 		d.setMetadata(item, md)
 		items = append(items, item)
@@ -426,6 +473,8 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 	if err != nil {
 		return
 	}
+
+	// Populate the response:
 	response.Size = int32(len(items))
 	response.Total = int32(total)
 	response.Items = items
@@ -445,31 +494,58 @@ func (d *GenericDAO[O]) Get(ctx context.Context, id string) (result O, err error
 }
 
 func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (result O, err error) {
+	// Add the id parameter:
 	if id == "" {
 		err = errors.New("object identifier is mandatory")
 		return
 	}
-	sql := fmt.Sprintf(
+	filterBuffer := &strings.Builder{}
+	parameters := []any{}
+	parameters = append(parameters, id)
+	filterBuffer.WriteString("id = $1")
+
+	// Create the where clause to filter by tenant:
+	err = d.addTenancyFilter(ctx, filterBuffer, &parameters)
+	if err != nil {
+		return
+	}
+
+	// Create the SQL statement:
+	sqlBuffer := &strings.Builder{}
+	fmt.Fprintf(
+		sqlBuffer,
 		`
 		select
 			creation_timestamp,
 			deletion_timestamp,
 			finalizers,
 			creators,
+			tenants,
 			data
 		from
 			%s
 		where
-			id = $1
+			%s
 		`,
 		d.table,
+		filterBuffer.String(),
 	)
-	row := tx.QueryRow(ctx, sql, id)
+
+	// Execute the SQL statement:
+	sql := sqlBuffer.String()
+	d.logger.DebugContext(
+		ctx,
+		"Running SQL query",
+		slog.String("sql", sql),
+		slog.Any("parameters", parameters),
+	)
+	row := tx.QueryRow(ctx, sql, parameters...)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
 		finalizers []string
 		creators   []string
+		tenants    []string
 		data       []byte
 	)
 	err = row.Scan(
@@ -477,6 +553,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		&deletionTs,
 		&finalizers,
 		&creators,
+		&tenants,
 		&data,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -491,7 +568,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 	if err != nil {
 		return
 	}
-	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators)
+	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 	result = object
@@ -511,12 +588,42 @@ func (d *GenericDAO[O]) Exists(ctx context.Context, id string) (ok bool, err err
 }
 
 func (d *GenericDAO[O]) exists(ctx context.Context, tx database.Tx, id string) (ok bool, err error) {
+	// Add the id parameter:
 	if id == "" {
 		err = errors.New("object identifier is mandatory")
 		return
 	}
-	sql := fmt.Sprintf("select count(*) from %s where id = $1", d.table)
-	row := tx.QueryRow(ctx, sql, id)
+	filterBuffer := &strings.Builder{}
+	parameters := []any{}
+	parameters = append(parameters, id)
+	filterBuffer.WriteString("id = $1")
+
+	// Add the tenancy filter:
+	err = d.addTenancyFilter(ctx, filterBuffer, &parameters)
+	if err != nil {
+		return
+	}
+
+	// Build the SQL statement:
+	sqlBuffer := &strings.Builder{}
+	fmt.Fprintf(
+		sqlBuffer,
+		`
+		select count(*) from %s where %s
+		`,
+		d.table,
+		filterBuffer.String(),
+	)
+
+	// Execute the SQL statement:
+	sql := sqlBuffer.String()
+	d.logger.DebugContext(
+		ctx,
+		"Running SQL query",
+		slog.String("sql", sql),
+		slog.Any("parameters", parameters),
+	)
+	row := tx.QueryRow(ctx, sql, parameters...)
 	var count int
 	err = row.Scan(&count)
 	if err != nil {
@@ -554,6 +661,13 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	if creators == nil {
 		creators = []string{}
 	}
+	tenants, err := d.tenancyLogic.DetermineAssignedTenants(ctx)
+	if err != nil {
+		return
+	}
+	if tenants == nil {
+		tenants = []string{}
+	}
 
 	// Save the object:
 	data, err := d.marshalData(object)
@@ -566,12 +680,14 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 			id,
 			finalizers,
 			creators,
+			tenants,
 			data
 		) values (
 		 	$1,
 		 	$2,
 			$3,
-			$4
+			$4,
+			$5
 		)
 		returning
 			creation_timestamp,
@@ -579,7 +695,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, id, finalizers, creators, data)
+	row := tx.QueryRow(ctx, sql, id, finalizers, creators, tenants, data)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -592,7 +708,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 	created := d.cloneObject(object)
-	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators)
+	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
 	created.SetId(id)
 	d.setMetadata(created, metadata)
 
@@ -656,7 +772,8 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		returning
 			creation_timestamp,
 			deletion_timestamp,
-			creators
+			creators,
+			tenants
 		`,
 		d.table,
 	)
@@ -665,17 +782,19 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		creationTs time.Time
 		deletionTs time.Time
 		creators   []string
+		tenants    []string
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
 		&creators,
+		&tenants,
 	)
 	if err != nil {
 		return
 	}
 	object = d.cloneObject(object)
-	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators)
+	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
@@ -690,7 +809,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 
 	// If the object has been deleted and there are no finalizers we can now archive the object and delete the row:
 	if deletionTs.Unix() != 0 && len(finalizers) == 0 {
-		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, data)
+		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, data)
 		if err != nil {
 			return
 		}
@@ -714,34 +833,59 @@ func (d *GenericDAO[O]) Delete(ctx context.Context, id string) (err error) {
 }
 
 func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (err error) {
+	// Add the id parameter:
 	if id == "" {
 		err = errors.New("object identifier is mandatory")
+		return
+	}
+	filterBuffer := &strings.Builder{}
+	parameters := []any{}
+	parameters = append(parameters, id)
+	filterBuffer.WriteString("id = $1")
+
+	// Add the tenancy filter:
+	err = d.addTenancyFilter(ctx, filterBuffer, &parameters)
+	if err != nil {
 		return
 	}
 
 	// Set the deletion timestamp of the row and simultaneousyly retrieve the data, as we need it to fire the event
 	// later:
-	sql := fmt.Sprintf(
+	sqlBuffer := &strings.Builder{}
+	fmt.Fprintf(
+		sqlBuffer,
 		`
 		update %s set
 			deletion_timestamp = now()
 		where
-			id = $1
+			%s
 		returning
 			creation_timestamp,
 			deletion_timestamp,
 			finalizers,
 			creators,
+			tenants,
 			data
 		`,
 		d.table,
+		filterBuffer.String(),
 	)
-	row := tx.QueryRow(ctx, sql, id)
+
+	// Execute the SQL statement:
+	sql := sqlBuffer.String()
+	d.logger.DebugContext(
+		ctx,
+		"Running SQL statement",
+		slog.String("sql", sql),
+		slog.Any("parameters", parameters),
+	)
+	row := tx.QueryRow(ctx, sql, parameters...)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
 		finalizers []string
 		creators   []string
+		tenants    []string
 		data       []byte
 	)
 	err = row.Scan(
@@ -749,8 +893,13 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 		&deletionTs,
 		&finalizers,
 		&creators,
+		&tenants,
 		&data,
 	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = nil
+		return
+	}
 	if err != nil {
 		return
 	}
@@ -759,7 +908,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	if err != nil {
 		return
 	}
-	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators)
+	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
@@ -774,7 +923,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 
 	// If there are no finalizers we can now archive the object and delete the row:
 	if len(finalizers) == 0 {
-		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, data)
+		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, data)
 		if err != nil {
 			return
 		}
@@ -784,7 +933,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 }
 
 func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, creationTs, deletionTs time.Time,
-	creators []string, data []byte) error {
+	creators []string, tenants []string, data []byte) error {
 	sql := fmt.Sprintf(
 		`
 		insert into archived_%s (
@@ -792,18 +941,20 @@ func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, 
 			creation_timestamp,
 			deletion_timestamp,
 			creators,
+			tenants,
 			data
 		) values (
 		 	$1,
 			$2,
 			$3,
 			$4,
-			$5
+			$5,
+			$6
 		)
 		`,
 		d.table,
 	)
-	_, err := tx.Exec(ctx, sql, id, creationTs, deletionTs, creators, data)
+	_, err := tx.Exec(ctx, sql, id, creationTs, deletionTs, creators, tenants, data)
 	if err != nil {
 		return err
 	}
@@ -845,7 +996,7 @@ func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
 }
 
 func (d *GenericDAO[O]) makeMetadata(creationTs, deletionTs time.Time, finalizers []string,
-	creators []string) metadataIface {
+	creators []string, tenants []string) metadataIface {
 	result := d.metadataTemplate.New().Interface().(metadataIface)
 	if creationTs.Unix() != 0 {
 		result.SetCreationTimestamp(timestamppb.New(creationTs))
@@ -855,6 +1006,7 @@ func (d *GenericDAO[O]) makeMetadata(creationTs, deletionTs time.Time, finalizer
 	}
 	result.SetFinalizers(finalizers)
 	result.SetCreators(creators)
+	result.SetTenants(tenants)
 	return result
 }
 
@@ -949,6 +1101,35 @@ func (d *GenericDAO[O]) equivalentMetadata(x, y protoreflect.Message) bool {
 		}
 	}
 	return true
+}
+
+// addTenancyFilter adds a clause to restrict results to only those objects that belong to tenants the/ current user
+// has permission to see.
+func (d *GenericDAO[O]) addTenancyFilter(ctx context.Context, buffer *strings.Builder, parameters *[]any) error {
+	// Get the tenants that the current user has permission to see:
+	tenants, err := d.tenancyLogic.DetermineVisibleTenants(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If no visible tenants are returned, don't apply any tenant filtering. This allows the empty tenancy logic to
+	// work as a permissive fallback.
+	if len(tenants) == 0 {
+		return nil
+	}
+
+	// Add the tenant values to the parameters and the text to the buffer. Note that if the buffer isn't empty then
+	// we need to wrap the previous content in parentheses and add the tenancy filter with the 'and' operator.
+	*parameters = append(*parameters, tenants)
+	filter := fmt.Sprintf("tenants && $%d", len(*parameters))
+	if buffer.Len() == 0 {
+		buffer.WriteString(filter)
+	} else {
+		previous := buffer.String()
+		buffer.Reset()
+		fmt.Fprintf(buffer, "(%s) and %s", previous, filter)
+	}
+	return nil
 }
 
 // Names of well known fields:

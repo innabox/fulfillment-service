@@ -27,6 +27,7 @@ type PrivateHostClassesServerBuilder struct {
 	logger           *slog.Logger
 	notifier         *database.Notifier
 	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ privatev1.HostClassesServer = (*PrivateHostClassesServer)(nil)
@@ -56,6 +57,11 @@ func (b *PrivateHostClassesServerBuilder) SetAttributionLogic(value auth.Attribu
 	return b
 }
 
+func (b *PrivateHostClassesServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateHostClassesServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *PrivateHostClassesServerBuilder) Build() (result *PrivateHostClassesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -70,6 +76,7 @@ func (b *PrivateHostClassesServerBuilder) Build() (result *PrivateHostClassesSer
 		SetTable("host_classes").
 		SetNotifier(b.notifier).
 		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

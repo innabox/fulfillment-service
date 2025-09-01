@@ -27,6 +27,7 @@ type PrivateHubsServerBuilder struct {
 	logger           *slog.Logger
 	notifier         *database.Notifier
 	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ privatev1.HubsServer = (*PrivateHubsServer)(nil)
@@ -57,6 +58,11 @@ func (b *PrivateHubsServerBuilder) SetAttributionLogic(value auth.AttributionLog
 	return b
 }
 
+func (b *PrivateHubsServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateHubsServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -71,6 +77,7 @@ func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error
 		SetTable("hubs").
 		SetNotifier(b.notifier).
 		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

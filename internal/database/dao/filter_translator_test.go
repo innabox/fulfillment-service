@@ -217,5 +217,10 @@ var _ = Describe("Filter translator", func() {
 			`'my_user' in this.metadata.creators`,
 			`creators @> array['my_user']`,
 		),
+		Entry(
+			"Filter by tenant",
+			`'my_tenant' in this.metadata.tenants`,
+			`tenants @> array['my_tenant']`,
+		),
 	)
 })

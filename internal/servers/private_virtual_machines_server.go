@@ -22,14 +22,17 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/utils"
 )
 
 type PrivateVirtualMachinesServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ privatev1.VirtualMachinesServer = (*PrivateVirtualMachinesServer)(nil)
@@ -56,6 +59,16 @@ func (b *PrivateVirtualMachinesServerBuilder) SetNotifier(value *database.Notifi
 	return b
 }
 
+func (b *PrivateVirtualMachinesServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *PrivateVirtualMachinesServerBuilder {
+	b.attributionLogic = value
+	return b
+}
+
+func (b *PrivateVirtualMachinesServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateVirtualMachinesServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *PrivateVirtualMachinesServerBuilder) Build() (result *PrivateVirtualMachinesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -67,6 +80,8 @@ func (b *PrivateVirtualMachinesServerBuilder) Build() (result *PrivateVirtualMac
 	templatesDao, err := dao.NewGenericDAO[*privatev1.VirtualMachineTemplate]().
 		SetLogger(b.logger).
 		SetTable("virtual_machine_templates").
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return
@@ -78,6 +93,8 @@ func (b *PrivateVirtualMachinesServerBuilder) Build() (result *PrivateVirtualMac
 		SetService(privatev1.VirtualMachines_ServiceDesc.ServiceName).
 		SetTable("virtual_machines").
 		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

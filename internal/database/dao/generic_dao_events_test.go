@@ -55,6 +55,7 @@ var _ = Describe("Generic DAO events", func() {
 				deletion_timestamp timestamp with time zone not null default 'epoch',
 				finalizers text[] not null default '{}',
 				creators text[] not null default '{}',
+				tenants text[] not null default '{}',
 				data jsonb not null
 			);
 
@@ -64,6 +65,7 @@ var _ = Describe("Generic DAO events", func() {
 				deletion_timestamp timestamp with time zone not null,
 				archival_timestamp timestamp with time zone not null default now(),
 				creators text[] not null default '{}',
+				tenants text[] not null default '{}',
 				data jsonb not null
 			);
 			`,

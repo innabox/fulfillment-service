@@ -245,12 +245,22 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return fmt.Errorf("failed to create attribution logic: %w", err)
 	}
 
+	// Create the tenancy logic:
+	c.logger.InfoContext(ctx, "Creating tenancy logic")
+	tenancyLogic, err := auth.NewDefaultTenancyLogic().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create tenancy logic: %w", err)
+	}
+
 	// Create the private cluster templates server:
 	c.logger.InfoContext(ctx, "Creating private cluster templates server")
 	privateClusterTemplatesServer, err := servers.NewPrivateClusterTemplatesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private cluster templates server")
@@ -274,6 +284,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private clusters server")
@@ -297,6 +308,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private host classes server")
@@ -319,6 +331,8 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	privateVirtualMachineTemplatesServer, err := servers.NewPrivateVirtualMachineTemplatesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
+		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private virtual machine templates server")
@@ -341,6 +355,8 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	privateVirtualMachinesServer, err := servers.NewPrivateVirtualMachinesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
+		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create private virtual machines server")
@@ -364,6 +380,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create hubs server")
@@ -376,6 +393,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetLogger(c.logger).
 		SetFlags(c.flags).
 		SetDbUrl(dbTool.URL()).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create events server")

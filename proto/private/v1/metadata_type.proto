@@ -31,4 +31,7 @@ message Metadata {
 
   // Creators contains the identifiers of the users and groups that created the object.
   repeated string creators = 4;
+
+  // Tenants contains the identifiers of the tenants that the object belongs to.
+  repeated string tenants = 5;
 }
