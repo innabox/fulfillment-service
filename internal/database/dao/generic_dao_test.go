@@ -25,9 +25,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
@@ -39,8 +41,9 @@ var _ = Describe("Generic DAO", func() {
 	)
 
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctrl *gomock.Controller
+		ctx  context.Context
+		tx   database.Tx
 	)
 
 	sort := func(objects []*testsv1.Object) {
@@ -51,6 +54,10 @@ var _ = Describe("Generic DAO", func() {
 
 	BeforeEach(func() {
 		var err error
+
+		// Create the mock conntroller:
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
 
 		// Create a context:
 		ctx = context.Background()
@@ -173,6 +180,8 @@ var _ = Describe("Generic DAO", func() {
 					creation_timestamp timestamp with time zone not null default now(),
 					deletion_timestamp timestamp with time zone not null default 'epoch',
 					finalizers text[] not null default '{}',
+					owners text[] not null default '{}',
+					tenants text[] not null default '{}',
 					data jsonb not null
 				);
 
@@ -181,11 +190,28 @@ var _ = Describe("Generic DAO", func() {
 					creation_timestamp timestamp with time zone not null,
 					deletion_timestamp timestamp with time zone not null,
 					archival_timestamp timestamp with time zone not null default now(),
+					owners text[] not null default '{}',
+					tenants text[] not null default '{}',
 					data jsonb not null
 				);
 				`,
 			)
 			Expect(err).ToNot(HaveOccurred())
+
+			// Create the ownership logic:
+			ownershipLogic := auth.NewMockOwnershipLogic(ctrl)
+			ownershipLogic.EXPECT().DetermineAssignedOwners(gomock.Any()).
+				Return([]string{"my_user"}, nil).
+				AnyTimes()
+
+			// Create the tenancy logic:
+			tenancyLogic := auth.NewMockTenancyLogic(ctrl)
+			tenancyLogic.EXPECT().DetermineAssignedTenants(gomock.Any()).
+				Return([]string{"my_tenant"}, nil).
+				AnyTimes()
+			tenancyLogic.EXPECT().DetermineVisibleTenants(gomock.Any()).
+				Return([]string{"my_tenant"}, nil).
+				AnyTimes()
 
 			// Create the DAO:
 			generic, err = NewGenericDAO[*testsv1.Object]().
@@ -194,6 +220,8 @@ var _ = Describe("Generic DAO", func() {
 				SetDefaultOrder("id").
 				SetDefaultLimit(defaultLimit).
 				SetMaxLimit(maxLimit).
+				SetOwnershipLogic(ownershipLogic).
+				SetTenancyLogic(tenancyLogic).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -211,8 +239,20 @@ var _ = Describe("Generic DAO", func() {
 			object := &testsv1.Object{}
 			result, err := generic.Create(ctx, object)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Metadata).ToNot(BeNil())
+		})
+
+		It("Sets owners when creating", func() {
+			// Create the object and verify that the result has the owner set:
+			object := &testsv1.Object{}
+			object, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetOwners()).To(ConsistOf("my_user"))
+
+			// Get the object and verify that the result has the owners set:
+			object, err = generic.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetOwners()).To(ConsistOf("my_user"))
 		})
 
 		It("Sets creation timestamp when creating", func() {
@@ -1214,6 +1254,112 @@ var _ = Describe("Generic DAO", func() {
 				items := response.Items
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
+			})
+
+			It("Filters by tenant", func() {
+				// Create objects - they will have 'my_tenant' assigned by the tenancy logic
+				_, err := generic.Create(
+					ctx,
+					testsv1.Object_builder{
+						Id: "object_1",
+					}.Build(),
+				)
+				Expect(err).ToNot(HaveOccurred())
+				_, err = generic.Create(
+					ctx,
+					testsv1.Object_builder{
+						Id: "object_2",
+					}.Build(),
+				)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Filter by the tenant that should be assigned by the tenancy logic
+				response, err := generic.List(ctx, ListRequest{
+					Filter: "'my_tenant' in this.metadata.tenants",
+				})
+				Expect(err).ToNot(HaveOccurred())
+				items := response.Items
+				Expect(items).To(HaveLen(2)) // Both objects should have 'my_tenant'
+				for _, item := range items {
+					Expect(item.GetMetadata().GetTenants()).To(ContainElement("my_tenant"))
+				}
+
+				// Filter by a non-existent tenant
+				response, err = generic.List(ctx, ListRequest{
+					Filter: "'non_existent_tenant' in this.metadata.tenants",
+				})
+				Expect(err).ToNot(HaveOccurred())
+				items = response.Items
+				Expect(items).To(HaveLen(0)) // No objects should match
+			})
+
+			It("Filters results based on tenant visibility", func() {
+				// Create ownership logic for the restricted DAO
+				restrictedOwnershipLogic := auth.NewMockOwnershipLogic(ctrl)
+				restrictedOwnershipLogic.EXPECT().DetermineAssignedOwners(gomock.Any()).
+					Return([]string{"test_user"}, nil).
+					AnyTimes()
+
+				// Create a new DAO with restricted tenant visibility
+				restrictedTenancyLogic := auth.NewMockTenancyLogic(ctrl)
+				restrictedTenancyLogic.EXPECT().DetermineAssignedTenants(gomock.Any()).
+					Return([]string{"tenant_a"}, nil).
+					AnyTimes()
+				restrictedTenancyLogic.EXPECT().DetermineVisibleTenants(gomock.Any()).
+					Return([]string{"tenant_a"}, nil). // Can only see tenant_a
+					AnyTimes()
+
+				restrictedDAO, err := NewGenericDAO[*testsv1.Object]().
+					SetLogger(logger).
+					SetTable("objects").
+					SetDefaultOrder("id").
+					SetDefaultLimit(defaultLimit).
+					SetMaxLimit(maxLimit).
+					SetOwnershipLogic(restrictedOwnershipLogic).
+					SetTenancyLogic(restrictedTenancyLogic).
+					Build()
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create objects with tenant_a (should be visible)
+				_, err = restrictedDAO.Create(ctx, testsv1.Object_builder{
+					Id: "visible_object",
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+
+				// Manually insert an object with tenant_b (should not be visible)
+				_, err = tx.Exec(ctx, `
+					insert into objects (id, finalizers, owners, tenants, data)
+					values ('invisible_object', '{}', '{}', array['tenant_b'], '{}')
+				`)
+				Expect(err).ToNot(HaveOccurred())
+
+				// List objects - should only return the visible one
+				response, err := restrictedDAO.List(ctx, ListRequest{})
+				Expect(err).ToNot(HaveOccurred())
+				items := response.Items
+				Expect(items).To(HaveLen(1))
+				Expect(items[0].GetId()).To(Equal("visible_object"))
+
+				// Try to get the invisible object - should return nil (not found)
+				invisibleObject, err := restrictedDAO.Get(ctx, "invisible_object")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(invisibleObject).To(BeNil())
+
+				// Check exists for invisible object - should return false
+				exists, err := restrictedDAO.Exists(ctx, "invisible_object")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(exists).To(BeFalse())
+
+				// Try to delete the invisible object - should not affect any rows
+				err = restrictedDAO.Delete(ctx, "invisible_object")
+				Expect(err).ToNot(HaveOccurred()) // Delete doesn't error, but doesn't delete anything
+
+				// Verify the object still exists in the database (using direct SQL)
+				var count int
+				row := tx.QueryRow(ctx, "select count(*) from objects where id = 'invisible_object'")
+				err = row.Scan(&count)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(count).To(Equal(1)) // Object should still exist
 			})
 		})
 	})

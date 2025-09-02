@@ -73,6 +73,8 @@ var _ = Describe("Private clusters server", func() {
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
 				finalizers text[] not null default '{}',
+				owners text[] not null default '{}',
+				tenants text[] not null default '{}',
 				data jsonb not null
 			);
 
@@ -81,6 +83,8 @@ var _ = Describe("Private clusters server", func() {
 				creation_timestamp timestamp with time zone not null,
 				deletion_timestamp timestamp with time zone not null,
 				archival_timestamp timestamp with time zone not null default now(),
+				owners text[] not null default '{}',
+				tenants text[] not null default '{}',
 				data jsonb not null
 			);
 
@@ -89,6 +93,8 @@ var _ = Describe("Private clusters server", func() {
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
 				finalizers text[] not null default '{}',
+				owners text[] not null default '{}',
+				tenants text[] not null default '{}',
 				data jsonb not null
 			);
 
@@ -97,6 +103,8 @@ var _ = Describe("Private clusters server", func() {
 				creation_timestamp timestamp with time zone not null,
 				deletion_timestamp timestamp with time zone not null,
 				archival_timestamp timestamp with time zone not null default now(),
+				owners text[] not null default '{}',
+				tenants text[] not null default '{}',
 				data jsonb not null
 			);
 			`,

@@ -19,12 +19,15 @@ import (
 	"log/slog"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type PrivateClusterTemplatesServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger         *slog.Logger
+	notifier       *database.Notifier
+	ownershipLogic auth.OwnershipLogic
+	tenancyLogic   auth.TenancyLogic
 }
 
 var _ privatev1.ClusterTemplatesServer = (*PrivateClusterTemplatesServer)(nil)
@@ -44,8 +47,19 @@ func (b *PrivateClusterTemplatesServerBuilder) SetLogger(value *slog.Logger) *Pr
 	return b
 }
 
-func (b *PrivateClusterTemplatesServerBuilder) SetNotifier(value *database.Notifier) *PrivateClusterTemplatesServerBuilder {
+func (b *PrivateClusterTemplatesServerBuilder) SetNotifier(
+	value *database.Notifier) *PrivateClusterTemplatesServerBuilder {
 	b.notifier = value
+	return b
+}
+
+func (b *PrivateClusterTemplatesServerBuilder) SetOwnershipLogic(value auth.OwnershipLogic) *PrivateClusterTemplatesServerBuilder {
+	b.ownershipLogic = value
+	return b
+}
+
+func (b *PrivateClusterTemplatesServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateClusterTemplatesServerBuilder {
+	b.tenancyLogic = value
 	return b
 }
 
@@ -62,6 +76,8 @@ func (b *PrivateClusterTemplatesServerBuilder) Build() (result *PrivateClusterTe
 		SetService(privatev1.ClusterTemplates_ServiceDesc.ServiceName).
 		SetTable("cluster_templates").
 		SetNotifier(b.notifier).
+		SetOwnershipLogic(b.ownershipLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

@@ -19,12 +19,15 @@ import (
 	"log/slog"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type PrivateHubsServerBuilder struct {
-	logger   *slog.Logger
-	notifier *database.Notifier
+	logger         *slog.Logger
+	notifier       *database.Notifier
+	ownershipLogic auth.OwnershipLogic
+	tenancyLogic   auth.TenancyLogic
 }
 
 var _ privatev1.HubsServer = (*PrivateHubsServer)(nil)
@@ -50,6 +53,16 @@ func (b *PrivateHubsServerBuilder) SetNotifier(value *database.Notifier) *Privat
 	return b
 }
 
+func (b *PrivateHubsServerBuilder) SetOwnershipLogic(value auth.OwnershipLogic) *PrivateHubsServerBuilder {
+	b.ownershipLogic = value
+	return b
+}
+
+func (b *PrivateHubsServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *PrivateHubsServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -63,6 +76,8 @@ func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error
 		SetService(privatev1.Hubs_ServiceDesc.ServiceName).
 		SetTable("hubs").
 		SetNotifier(b.notifier).
+		SetOwnershipLogic(b.ownershipLogic).
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

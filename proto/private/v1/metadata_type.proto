@@ -28,4 +28,10 @@ message Metadata {
   // Finalizers indicate tasks that need to be completed before the object can be completely deleted. When the object
   // has been deleted and this list is empty the system will automatically archive the object.
   repeated string finalizers = 3;
+
+  // Onwers contains the identifiers of the owners of the object.
+  repeated string owners = 4;
+
+  // Tenants contains the identifiers of the tenants that the object belongs to.
+  repeated string tenants = 5;
 }
