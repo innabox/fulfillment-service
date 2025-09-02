@@ -31,4 +31,7 @@ message Metadata {
 
   // Onwers contains the identifiers of the owners of the object.
   repeated string owners = 4;
+
+  // Tenants contains the identifiers of the tenants that the object belongs to.
+  repeated string tenants = 5;
 }

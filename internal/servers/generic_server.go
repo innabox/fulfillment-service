@@ -44,6 +44,7 @@ type GenericServerBuilder[O dao.Object] struct {
 	ignoredFields  []any
 	notifier       *database.Notifier
 	ownershipLogic auth.OwnershipLogic
+	tenancyLogic   auth.TenancyLogic
 }
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
@@ -114,10 +115,17 @@ func (b *GenericServerBuilder[O]) SetNotifier(value *database.Notifier) *Generic
 	return b
 }
 
-// SetOwnershipLogic sets the ownership logic that will be used to determine the owners for objects.
-// The logic receives the context as a parameter and should return the names of the owners. If not provided, no owners will be set.
+// SetOwnershipLogic sets the ownership logic that will be used to determine the owners for objects. The logic receives
+// the context as a parameter and should return the names of the owners. If not provided, no owners will be set.
 func (b *GenericServerBuilder[O]) SetOwnershipLogic(value auth.OwnershipLogic) *GenericServerBuilder[O] {
 	b.ownershipLogic = value
+	return b
+}
+
+// SetTenancyLogic sets the tenancy logic that will be used to determine the tenants for objects. The logic receives the
+// context as a parameter and should return the names of the tenants. If not provided, no tenants will be set.
+func (b *GenericServerBuilder[O]) SetTenancyLogic(value auth.TenancyLogic) *GenericServerBuilder[O] {
+	b.tenancyLogic = value
 	return b
 }
 
@@ -165,6 +173,9 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	}
 	if b.ownershipLogic != nil {
 		daoBuilder.SetOwnershipLogic(b.ownershipLogic)
+	}
+	if b.tenancyLogic != nil {
+		daoBuilder.SetTenancyLogic(b.tenancyLogic)
 	}
 	s.dao, err = daoBuilder.Build()
 	if err != nil {
