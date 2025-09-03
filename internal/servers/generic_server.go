@@ -510,6 +510,8 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 		object = proto.Clone(object).(*privatev1.Hub)
 		object.SetKubeconfig(nil)
 		event.SetHub(object)
+	case *privatev1.VirtualMachineTemplate:
+		event.SetVirtualMachineTemplate(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
 	}

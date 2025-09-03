@@ -178,6 +178,15 @@ func (x *Event) GetHub() *Hub {
 	return nil
 }
 
+func (x *Event) GetVirtualMachineTemplate() *VirtualMachineTemplate {
+	if x != nil {
+		if x, ok := x.xxx_hidden_Payload.(*event_VirtualMachineTemplate); ok {
+			return x.VirtualMachineTemplate
+		}
+	}
+	return nil
+}
+
 func (x *Event) SetId(v string) {
 	x.xxx_hidden_Id = v
 }
@@ -216,6 +225,14 @@ func (x *Event) SetHub(v *Hub) {
 		return
 	}
 	x.xxx_hidden_Payload = &event_Hub{v}
+}
+
+func (x *Event) SetVirtualMachineTemplate(v *VirtualMachineTemplate) {
+	if v == nil {
+		x.xxx_hidden_Payload = nil
+		return
+	}
+	x.xxx_hidden_Payload = &event_VirtualMachineTemplate{v}
 }
 
 func (x *Event) HasPayload() bool {
@@ -257,6 +274,14 @@ func (x *Event) HasHub() bool {
 	return ok
 }
 
+func (x *Event) HasVirtualMachineTemplate() bool {
+	if x == nil {
+		return false
+	}
+	_, ok := x.xxx_hidden_Payload.(*event_VirtualMachineTemplate)
+	return ok
+}
+
 func (x *Event) ClearPayload() {
 	x.xxx_hidden_Payload = nil
 }
@@ -285,11 +310,18 @@ func (x *Event) ClearHub() {
 	}
 }
 
+func (x *Event) ClearVirtualMachineTemplate() {
+	if _, ok := x.xxx_hidden_Payload.(*event_VirtualMachineTemplate); ok {
+		x.xxx_hidden_Payload = nil
+	}
+}
+
 const Event_Payload_not_set_case case_Event_Payload = 0
 const Event_Cluster_case case_Event_Payload = 3
 const Event_ClusterTemplate_case case_Event_Payload = 4
 const Event_HostClass_case case_Event_Payload = 5
 const Event_Hub_case case_Event_Payload = 6
+const Event_VirtualMachineTemplate_case case_Event_Payload = 7
 
 func (x *Event) WhichPayload() case_Event_Payload {
 	if x == nil {
@@ -304,6 +336,8 @@ func (x *Event) WhichPayload() case_Event_Payload {
 		return Event_HostClass_case
 	case *event_Hub:
 		return Event_Hub_case
+	case *event_VirtualMachineTemplate:
+		return Event_VirtualMachineTemplate_case
 	default:
 		return Event_Payload_not_set_case
 	}
@@ -319,10 +353,11 @@ type Event_builder struct {
 	// Payload of the event.
 
 	// Fields of oneof xxx_hidden_Payload:
-	Cluster         *Cluster
-	ClusterTemplate *ClusterTemplate
-	HostClass       *HostClass
-	Hub             *Hub
+	Cluster                *Cluster
+	ClusterTemplate        *ClusterTemplate
+	HostClass              *HostClass
+	Hub                    *Hub
+	VirtualMachineTemplate *VirtualMachineTemplate
 	// -- end of xxx_hidden_Payload
 }
 
@@ -343,6 +378,9 @@ func (b0 Event_builder) Build() *Event {
 	}
 	if b.Hub != nil {
 		x.xxx_hidden_Payload = &event_Hub{b.Hub}
+	}
+	if b.VirtualMachineTemplate != nil {
+		x.xxx_hidden_Payload = &event_VirtualMachineTemplate{b.VirtualMachineTemplate}
 	}
 	return m0
 }
@@ -377,6 +415,10 @@ type event_Hub struct {
 	Hub *Hub `protobuf:"bytes,6,opt,name=hub,proto3,oneof"`
 }
 
+type event_VirtualMachineTemplate struct {
+	VirtualMachineTemplate *VirtualMachineTemplate `protobuf:"bytes,7,opt,name=virtual_machine_template,json=virtualMachineTemplate,proto3,oneof"`
+}
+
 func (*event_Cluster) isEvent_Payload() {}
 
 func (*event_ClusterTemplate) isEvent_Payload() {}
@@ -384,6 +426,8 @@ func (*event_ClusterTemplate) isEvent_Payload() {}
 func (*event_HostClass) isEvent_Payload() {}
 
 func (*event_Hub) isEvent_Payload() {}
+
+func (*event_VirtualMachineTemplate) isEvent_Payload() {}
 
 var File_private_v1_event_type_proto protoreflect.FileDescriptor
 
@@ -400,7 +444,10 @@ var file_private_v1_event_type_proto_rawDesc = string([]byte{
 	0x76, 0x61, 0x74, 0x65, 0x2f, 0x76, 0x31, 0x2f, 0x68, 0x6f, 0x73, 0x74, 0x5f, 0x63, 0x6c, 0x61,
 	0x73, 0x73, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x19, 0x70,
 	0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2f, 0x76, 0x31, 0x2f, 0x68, 0x75, 0x62, 0x5f, 0x74, 0x79,
-	0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xa5, 0x02, 0x0a, 0x05, 0x45, 0x76, 0x65,
+	0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74,
+	0x65, 0x2f, 0x76, 0x31, 0x2f, 0x76, 0x69, 0x72, 0x74, 0x75, 0x61, 0x6c, 0x5f, 0x6d, 0x61, 0x63,
+	0x68, 0x69, 0x6e, 0x65, 0x5f, 0x74, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x5f, 0x74, 0x79,
+	0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x85, 0x03, 0x0a, 0x05, 0x45, 0x76, 0x65,
 	0x6e, 0x74, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02,
 	0x69, 0x64, 0x12, 0x29, 0x0a, 0x04, 0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e,
 	0x32, 0x15, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x45, 0x76,
@@ -418,7 +465,13 @@ var file_private_v1_event_type_proto_rawDesc = string([]byte{
 	0x61, 0x73, 0x73, 0x48, 0x00, 0x52, 0x09, 0x68, 0x6f, 0x73, 0x74, 0x43, 0x6c, 0x61, 0x73, 0x73,
 	0x12, 0x23, 0x0a, 0x03, 0x68, 0x75, 0x62, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0f, 0x2e,
 	0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x75, 0x62, 0x48, 0x00,
-	0x52, 0x03, 0x68, 0x75, 0x62, 0x42, 0x09, 0x0a, 0x07, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64,
+	0x52, 0x03, 0x68, 0x75, 0x62, 0x12, 0x5e, 0x0a, 0x18, 0x76, 0x69, 0x72, 0x74, 0x75, 0x61, 0x6c,
+	0x5f, 0x6d, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x5f, 0x74, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74,
+	0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x22, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74,
+	0x65, 0x2e, 0x76, 0x31, 0x2e, 0x56, 0x69, 0x72, 0x74, 0x75, 0x61, 0x6c, 0x4d, 0x61, 0x63, 0x68,
+	0x69, 0x6e, 0x65, 0x54, 0x65, 0x6d, 0x70, 0x6c, 0x61, 0x74, 0x65, 0x48, 0x00, 0x52, 0x16, 0x76,
+	0x69, 0x72, 0x74, 0x75, 0x61, 0x6c, 0x4d, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x54, 0x65, 0x6d,
+	0x70, 0x6c, 0x61, 0x74, 0x65, 0x42, 0x09, 0x0a, 0x07, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64,
 	0x2a, 0x84, 0x01, 0x0a, 0x09, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1a,
 	0x0a, 0x16, 0x45, 0x56, 0x45, 0x4e, 0x54, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x5f, 0x55, 0x4e, 0x53,
 	0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x1d, 0x0a, 0x19, 0x45, 0x56,
@@ -445,12 +498,13 @@ var file_private_v1_event_type_proto_rawDesc = string([]byte{
 var file_private_v1_event_type_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_private_v1_event_type_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_private_v1_event_type_proto_goTypes = []any{
-	(EventType)(0),          // 0: private.v1.EventType
-	(*Event)(nil),           // 1: private.v1.Event
-	(*Cluster)(nil),         // 2: private.v1.Cluster
-	(*ClusterTemplate)(nil), // 3: private.v1.ClusterTemplate
-	(*HostClass)(nil),       // 4: private.v1.HostClass
-	(*Hub)(nil),             // 5: private.v1.Hub
+	(EventType)(0),                 // 0: private.v1.EventType
+	(*Event)(nil),                  // 1: private.v1.Event
+	(*Cluster)(nil),                // 2: private.v1.Cluster
+	(*ClusterTemplate)(nil),        // 3: private.v1.ClusterTemplate
+	(*HostClass)(nil),              // 4: private.v1.HostClass
+	(*Hub)(nil),                    // 5: private.v1.Hub
+	(*VirtualMachineTemplate)(nil), // 6: private.v1.VirtualMachineTemplate
 }
 var file_private_v1_event_type_proto_depIdxs = []int32{
 	0, // 0: private.v1.Event.type:type_name -> private.v1.EventType
@@ -458,11 +512,12 @@ var file_private_v1_event_type_proto_depIdxs = []int32{
 	3, // 2: private.v1.Event.cluster_template:type_name -> private.v1.ClusterTemplate
 	4, // 3: private.v1.Event.host_class:type_name -> private.v1.HostClass
 	5, // 4: private.v1.Event.hub:type_name -> private.v1.Hub
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 5: private.v1.Event.virtual_machine_template:type_name -> private.v1.VirtualMachineTemplate
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_private_v1_event_type_proto_init() }
@@ -474,11 +529,13 @@ func file_private_v1_event_type_proto_init() {
 	file_private_v1_cluster_type_proto_init()
 	file_private_v1_host_class_type_proto_init()
 	file_private_v1_hub_type_proto_init()
+	file_private_v1_virtual_machine_template_type_proto_init()
 	file_private_v1_event_type_proto_msgTypes[0].OneofWrappers = []any{
 		(*event_Cluster)(nil),
 		(*event_ClusterTemplate)(nil),
 		(*event_HostClass)(nil),
 		(*event_Hub)(nil),
+		(*event_VirtualMachineTemplate)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

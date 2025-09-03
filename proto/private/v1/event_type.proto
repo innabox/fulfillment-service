@@ -20,6 +20,7 @@ import "private/v1/cluster_template_type.proto";
 import "private/v1/cluster_type.proto";
 import "private/v1/host_class_type.proto";
 import "private/v1/hub_type.proto";
+import "private/v1/virtual_machine_template_type.proto";
 
 // Represents events delivered by the server.
 message Event {
@@ -35,6 +36,7 @@ message Event {
     ClusterTemplate cluster_template = 4;
     HostClass host_class = 5;
     Hub hub = 6;
+    VirtualMachineTemplate virtual_machine_template = 7;
   }
 }
 
