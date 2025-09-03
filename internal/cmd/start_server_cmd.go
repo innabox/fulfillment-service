@@ -376,6 +376,28 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 	ffv1.RegisterVirtualMachineTemplatesServer(grpcServer, virtualMachineTemplatesServer)
 
+	// Create the private virtual machines server:
+	c.logger.InfoContext(ctx, "Creating private virtual machines server")
+	privateVirtualMachinesServer, err := servers.NewPrivateVirtualMachinesServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create private virtual machines server")
+	}
+	privatev1.RegisterVirtualMachinesServer(grpcServer, privateVirtualMachinesServer)
+
+	// Create the virtual machines server:
+	c.logger.InfoContext(ctx, "Creating virtual machines server")
+	virtualMachinesServer, err := servers.NewVirtualMachinesServer().
+		SetLogger(c.logger).
+		SetPrivate(privateVirtualMachinesServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create virtual machines server")
+	}
+	ffv1.RegisterVirtualMachinesServer(grpcServer, virtualMachinesServer)
+
 	// Create the private hubs server:
 	c.logger.InfoContext(ctx, "Creating hubs server")
 	privateHubsServer, err := servers.NewPrivateHubsServer().

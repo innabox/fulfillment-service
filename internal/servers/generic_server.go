@@ -512,6 +512,8 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 		event.SetHub(object)
 	case *privatev1.VirtualMachineTemplate:
 		event.SetVirtualMachineTemplate(object)
+	case *privatev1.VirtualMachine:
+		event.SetVirtualMachine(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
 	}

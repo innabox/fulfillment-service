@@ -25,11 +25,11 @@ import (
 	"golang.org/x/exp/maps"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
+	"github.com/innabox/fulfillment-service/internal/utils"
 )
 
 type PrivateClustersServerBuilder struct {
@@ -255,108 +255,18 @@ func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context,
 	}
 	cluster.GetSpec().SetNodeSets(actualNodeSets)
 
-	// Check that all the specified template parameters are in the template:
-	templateParameters := template.GetParameters()
+	// Validate template parameters:
 	clusterParameters := cluster.GetSpec().GetTemplateParameters()
-	var invalidParameterNames []string
-	for clusterParameterName := range clusterParameters {
-		clusterParameterValid := false
-		for _, templateParameter := range templateParameters {
-			if templateParameter.GetName() == clusterParameterName {
-				clusterParameterValid = true
-				break
-			}
-		}
-		if !clusterParameterValid {
-			invalidParameterNames = append(invalidParameterNames, clusterParameterName)
-		}
-	}
-	if len(invalidParameterNames) > 0 {
-		templateParameterNames := make([]string, len(templateParameters))
-		for i, templateParameter := range templateParameters {
-			templateParameterNames[i] = templateParameter.GetName()
-		}
-		sort.Strings(templateParameterNames)
-		for i, templateParameterName := range templateParameterNames {
-			templateParameterNames[i] = fmt.Sprintf("'%s'", templateParameterName)
-		}
-		sort.Strings(invalidParameterNames)
-		for i, invalidParameterName := range invalidParameterNames {
-			invalidParameterNames[i] = fmt.Sprintf("'%s'", invalidParameterName)
-		}
-		if len(invalidParameterNames) == 1 {
-			return grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"template parameter %s doesn't exist, valid values for template '%s' are %s",
-				invalidParameterNames[0],
-				templateId,
-				english.WordSeries(templateParameterNames, "and"),
-			)
-		} else {
-			return grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"template parameters %s don't exist, valid values for template '%s' are %s",
-				english.WordSeries(invalidParameterNames, "and"),
-				templateId,
-				english.WordSeries(templateParameterNames, "and"),
-			)
-		}
-	}
-
-	// Check that all the mandatory parameters have a value:
-	for _, templateParameter := range templateParameters {
-		if !templateParameter.GetRequired() {
-			continue
-		}
-		templateParameterName := templateParameter.GetName()
-		clusterParameter := clusterParameters[templateParameterName]
-		if clusterParameter == nil {
-			return grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"parameter '%s' of template '%s' is mandatory",
-				templateParameterName, templateId,
-			)
-		}
-	}
-
-	// Check that the parameter values are compatible with the template:
-	for clusterParameterName, clusterParameter := range clusterParameters {
-		for _, templateParameter := range templateParameters {
-			templateParameterName := templateParameter.GetName()
-			if clusterParameterName != templateParameterName {
-				continue
-			}
-			clusterParameterType := clusterParameter.GetTypeUrl()
-			templateParameterType := templateParameter.GetType()
-			if clusterParameterType != templateParameterType {
-				return grpcstatus.Errorf(
-					grpccodes.InvalidArgument,
-					"type of parameter '%s' of template '%s' should be '%s', "+
-						"but it is '%s'",
-					clusterParameterName,
-					templateId,
-					templateParameterType,
-					clusterParameterType,
-				)
-			}
-		}
+	err = utils.ValidateClusterTemplateParameters(template, clusterParameters)
+	if err != nil {
+		return err
 	}
 
 	// Set default values for template parameters:
-	actualClusterParameters := make(map[string]*anypb.Any)
-	for _, templateParameter := range templateParameters {
-		templateParameterName := templateParameter.GetName()
-		clusterParameter := clusterParameters[templateParameterName]
-		actualClusterParameter := &anypb.Any{
-			TypeUrl: templateParameter.GetType(),
-		}
-		if clusterParameter != nil {
-			actualClusterParameter.Value = clusterParameter.Value
-		} else {
-			actualClusterParameter.Value = templateParameter.GetDefault().GetValue()
-		}
-		actualClusterParameters[templateParameterName] = actualClusterParameter
-	}
+	actualClusterParameters := utils.ProcessTemplateParametersWithDefaults(
+		utils.ClusterTemplateAdapter{ClusterTemplate: template},
+		clusterParameters,
+	)
 	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)
 
 	return nil
