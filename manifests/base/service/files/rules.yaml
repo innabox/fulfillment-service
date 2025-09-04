@@ -34,6 +34,13 @@
       '/fulfillment.v1.Clusters/Update',
       '/fulfillment.v1.HostClasses/Get',
       '/fulfillment.v1.HostClasses/List',
+      '/fulfillment.v1.VirtualMachineTemplates/Get',
+      '/fulfillment.v1.VirtualMachineTemplates/List',
+      '/fulfillment.v1.VirtualMachines/Create',
+      '/fulfillment.v1.VirtualMachines/Delete',
+      '/fulfillment.v1.VirtualMachines/Get',
+      '/fulfillment.v1.VirtualMachines/List',
+      '/fulfillment.v1.VirtualMachines/Update',
     ]
 
 - name: Allow everything to admin and controller
