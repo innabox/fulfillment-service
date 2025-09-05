@@ -444,6 +444,161 @@ var _ = Describe("ProcessTemplateParametersWithDefaults", func() {
 	})
 })
 
+var _ = Describe("ConvertTemplateParametersToJSON", func() {
+	var params map[string]*anypb.Any
+
+	BeforeEach(func() {
+		params = make(map[string]*anypb.Any)
+	})
+
+	Context("with empty parameters", func() {
+		It("should return empty JSON object", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal("{}"))
+		})
+	})
+
+	Context("with string parameters", func() {
+		BeforeEach(func() {
+			stringValue, err := anypb.New(wrapperspb.String("test-value"))
+			Expect(err).ToNot(HaveOccurred())
+			params["string_param"] = stringValue
+
+			emptyStringValue, err := anypb.New(wrapperspb.String(""))
+			Expect(err).ToNot(HaveOccurred())
+			params["empty_string_param"] = emptyStringValue
+		})
+
+		It("should convert string parameters correctly", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring(`"string_param":"test-value"`))
+			Expect(result).To(ContainSubstring(`"empty_string_param":""`))
+		})
+	})
+
+	Context("with numeric parameters", func() {
+		BeforeEach(func() {
+			intValue, err := anypb.New(wrapperspb.Int32(42))
+			Expect(err).ToNot(HaveOccurred())
+			params["int_param"] = intValue
+
+			doubleValue, err := anypb.New(wrapperspb.Double(3.14))
+			Expect(err).ToNot(HaveOccurred())
+			params["double_param"] = doubleValue
+
+			boolValue, err := anypb.New(wrapperspb.Bool(true))
+			Expect(err).ToNot(HaveOccurred())
+			params["bool_param"] = boolValue
+		})
+
+		It("should convert numeric parameters correctly", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring(`"int_param":42`))
+			Expect(result).To(ContainSubstring(`"double_param":3.14`))
+			Expect(result).To(ContainSubstring(`"bool_param":true`))
+		})
+	})
+
+	Context("with complex parameters", func() {
+		BeforeEach(func() {
+			// Test with a nested object-like structure
+			nestedValue, err := anypb.New(wrapperspb.String(`{"nested": {"key": "value"}}`))
+			Expect(err).ToNot(HaveOccurred())
+			params["nested_param"] = nestedValue
+
+			// Test with array-like structure
+			arrayValue, err := anypb.New(wrapperspb.String(`["item1", "item2", "item3"]`))
+			Expect(err).ToNot(HaveOccurred())
+			params["array_param"] = arrayValue
+		})
+
+		It("should convert complex parameters correctly", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring(`"nested_param":"{\"nested\": {\"key\": \"value\"}}"`))
+			Expect(result).To(ContainSubstring(`"array_param":"[\"item1\", \"item2\", \"item3\"]"`))
+		})
+	})
+
+	Context("with mixed parameter types", func() {
+		BeforeEach(func() {
+			stringValue, err := anypb.New(wrapperspb.String("test"))
+			Expect(err).ToNot(HaveOccurred())
+			params["string_param"] = stringValue
+
+			intValue, err := anypb.New(wrapperspb.Int32(123))
+			Expect(err).ToNot(HaveOccurred())
+			params["int_param"] = intValue
+
+			boolValue, err := anypb.New(wrapperspb.Bool(false))
+			Expect(err).ToNot(HaveOccurred())
+			params["bool_param"] = boolValue
+		})
+
+		It("should convert mixed parameters correctly", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring(`"string_param":"test"`))
+			Expect(result).To(ContainSubstring(`"int_param":123`))
+			Expect(result).To(ContainSubstring(`"bool_param":false`))
+		})
+	})
+
+	Context("with invalid parameters", func() {
+		BeforeEach(func() {
+			// Create an invalid Any that will cause unmarshaling to fail
+			invalidAny := &anypb.Any{
+				TypeUrl: "invalid/type",
+				Value:   []byte("invalid data"),
+			}
+			params["invalid_param"] = invalidAny
+		})
+
+		It("should return an error", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to convert parameter 'invalid_param'"))
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	Context("with nil parameter value", func() {
+		BeforeEach(func() {
+			params["nil_param"] = nil
+		})
+
+		It("should handle nil parameters gracefully", func() {
+			// This should not happen in practice as the map should not contain nil values
+			// but let's test the behavior
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to convert parameter 'nil_param'"))
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	Context("with special characters in parameter names", func() {
+		BeforeEach(func() {
+			stringValue, err := anypb.New(wrapperspb.String("value"))
+			Expect(err).ToNot(HaveOccurred())
+			params["param-with-dashes"] = stringValue
+			params["param_with_underscores"] = stringValue
+			params["param.with.dots"] = stringValue
+		})
+
+		It("should handle special characters in parameter names", func() {
+			result, err := ConvertTemplateParametersToJSON(params)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring(`"param-with-dashes":"value"`))
+			Expect(result).To(ContainSubstring(`"param_with_underscores":"value"`))
+			Expect(result).To(ContainSubstring(`"param.with.dots":"value"`))
+		})
+	})
+})
+
 // Mock implementations for testing
 
 type mockTemplate struct {

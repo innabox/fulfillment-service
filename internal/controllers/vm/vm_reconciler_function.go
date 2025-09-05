@@ -11,7 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package cluster
+package vm
 
 import (
 	"context"
@@ -33,9 +33,9 @@ import (
 )
 
 // objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
-const objectPrefix = "order-"
+const objectPrefix = "vm-"
 
-// FunctionBuilder contains the data and logic needed to build a function that reconciles clustes.
+// FunctionBuilder contains the data and logic needed to build a function that reconciles virtual machines.
 type FunctionBuilder struct {
 	logger     *slog.Logger
 	connection *grpc.ClientConn
@@ -43,21 +43,21 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger         *slog.Logger
-	hubCache       *controllers.HubCache
-	clustersClient privatev1.ClustersClient
-	hubsClient     privatev1.HubsClient
+	logger     *slog.Logger
+	hubCache   *controllers.HubCache
+	vmsClient  privatev1.VirtualMachinesClient
+	hubsClient privatev1.HubsClient
 }
 
 type task struct {
 	r            *function
-	cluster      *privatev1.Cluster
+	vm           *privatev1.VirtualMachine
 	hubId        string
 	hubNamespace string
 	hubClient    clnt.Client
 }
 
-// NewFunction creates a new builder that can then be used to create a new cluster reconciler function.
+// NewFunction creates a new builder that can then be used to create a new virtual machine reconciler function.
 func NewFunction() *FunctionBuilder {
 	return &FunctionBuilder{}
 }
@@ -80,8 +80,8 @@ func (b *FunctionBuilder) SetHubCache(value *controllers.HubCache) *FunctionBuil
 	return b
 }
 
-// Build uses the information stored in the buidler to create a new cluster reconciler.
-func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.Cluster], err error) {
+// Build uses the information stored in the builder to create a new virtual machine reconciler.
+func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.VirtualMachine], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -98,22 +98,22 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	// Create and populate the object:
 	object := &function{
-		logger:         b.logger,
-		clustersClient: privatev1.NewClustersClient(b.connection),
-		hubsClient:     privatev1.NewHubsClient(b.connection),
-		hubCache:       b.hubCache,
+		logger:     b.logger,
+		vmsClient:  privatev1.NewVirtualMachinesClient(b.connection),
+		hubsClient: privatev1.NewHubsClient(b.connection),
+		hubCache:   b.hubCache,
 	}
 	result = object.run
 	return
 }
 
-func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
+func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error {
 	t := task{
-		r:       r,
-		cluster: cluster,
+		r:  r,
+		vm: vm,
 	}
 	var err error
-	if cluster.GetMetadata().HasDeletionTimestamp() {
+	if vm.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
 		err = t.update(ctx)
@@ -121,8 +121,8 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-		Object: cluster,
+	_, err = r.vmsClient.Update(ctx, privatev1.VirtualMachinesUpdateRequest_builder{
+		Object: vm,
 	}.Build())
 	return err
 }
@@ -131,8 +131,8 @@ func (t *task) update(ctx context.Context) error {
 	// Set the default values:
 	t.setDefaults()
 
-	// Do nothing if the order isn't progressing:
-	if t.cluster.GetStatus().GetState() != privatev1.ClusterState_CLUSTER_STATE_PROGRESSING {
+	// Do nothing if the VM isn't progressing:
+	if t.vm.GetStatus().GetState() != privatev1.VirtualMachineState_VIRTUAL_MACHINE_STATE_PROGRESSING {
 		return nil
 	}
 
@@ -142,8 +142,8 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Save the selected hub in the private data of the cluster:
-	t.cluster.GetStatus().SetHub(t.hubId)
+	// Save the selected hub in the private data of the VM:
+	t.vm.GetStatus().SetHub(t.hubId)
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
@@ -152,25 +152,23 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Prepare the changes to the spec:
-	nodeRequests := t.prepareNodeRequests()
-	templateParameters, err := utils.ConvertTemplateParametersToJSON(t.cluster.GetSpec().GetTemplateParameters())
+	templateParameters, err := utils.ConvertTemplateParametersToJSON(t.vm.GetSpec().GetTemplateParameters())
 	if err != nil {
 		return err
 	}
 	spec := map[string]any{
-		"templateID":         t.cluster.GetSpec().GetTemplate(),
+		"templateID":         t.vm.GetSpec().GetTemplate(),
 		"templateParameters": templateParameters,
-		"nodeRequests":       nodeRequests,
 	}
 
 	// Create or update the Kubernetes object:
 	if object == nil {
 		object := &unstructured.Unstructured{}
-		object.SetGroupVersionKind(gvks.ClusterOrder)
+		object.SetGroupVersionKind(gvks.VirtualMachine)
 		object.SetNamespace(t.hubNamespace)
 		object.SetGenerateName(objectPrefix)
 		object.SetLabels(map[string]string{
-			labels.ClusterOrderUuid: t.cluster.GetId(),
+			labels.VirtualMachineUuid: t.vm.GetId(),
 		})
 		err = unstructured.SetNestedField(object.Object, spec, "spec")
 		if err != nil {
@@ -182,7 +180,7 @@ func (t *task) update(ctx context.Context) error {
 		}
 		t.r.logger.DebugContext(
 			ctx,
-			"Created cluster order",
+			"Created virtual machine",
 			slog.String("namespace", object.GetNamespace()),
 			slog.String("name", object.GetName()),
 		)
@@ -198,7 +196,7 @@ func (t *task) update(ctx context.Context) error {
 		}
 		t.r.logger.DebugContext(
 			ctx,
-			"Updated cluster order",
+			"Updated virtual machine",
 			slog.String("namespace", object.GetNamespace()),
 			slog.String("name", object.GetName()),
 		)
@@ -208,56 +206,40 @@ func (t *task) update(ctx context.Context) error {
 }
 
 func (t *task) setDefaults() {
-	if !t.cluster.HasStatus() {
-		t.cluster.SetStatus(&privatev1.ClusterStatus{})
+	if !t.vm.HasStatus() {
+		t.vm.SetStatus(&privatev1.VirtualMachineStatus{})
 	}
-	if t.cluster.GetStatus().GetState() == privatev1.ClusterState_CLUSTER_STATE_UNSPECIFIED {
-		t.cluster.GetStatus().SetState(privatev1.ClusterState_CLUSTER_STATE_PROGRESSING)
+	if t.vm.GetStatus().GetState() == privatev1.VirtualMachineState_VIRTUAL_MACHINE_STATE_UNSPECIFIED {
+		t.vm.GetStatus().SetState(privatev1.VirtualMachineState_VIRTUAL_MACHINE_STATE_PROGRESSING)
 	}
-	for value := range privatev1.ClusterConditionType_name {
+	for value := range privatev1.VirtualMachineConditionType_name {
 		if value != 0 {
-			t.setConditionDefaults(privatev1.ClusterConditionType(value))
+			t.setConditionDefaults(privatev1.VirtualMachineConditionType(value))
 		}
 	}
 }
 
-func (t *task) setConditionDefaults(value privatev1.ClusterConditionType) {
+func (t *task) setConditionDefaults(value privatev1.VirtualMachineConditionType) {
 	exists := false
-	for _, current := range t.cluster.GetStatus().GetConditions() {
+	for _, current := range t.vm.GetStatus().GetConditions() {
 		if current.GetType() == value {
 			exists = true
 			break
 		}
 	}
 	if !exists {
-		conditions := t.cluster.GetStatus().GetConditions()
-		conditions = append(conditions, privatev1.ClusterCondition_builder{
+		conditions := t.vm.GetStatus().GetConditions()
+		conditions = append(conditions, privatev1.VirtualMachineCondition_builder{
 			Type:   value,
 			Status: sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
 		}.Build())
-		t.cluster.GetStatus().SetConditions(conditions)
-	}
-}
-
-func (t *task) prepareNodeRequests() any {
-	var nodeRequests []any
-	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
-		nodeRequest := t.prepareNodeRequest(nodeSet)
-		nodeRequests = append(nodeRequests, nodeRequest)
-	}
-	return nodeRequests
-}
-
-func (t *task) prepareNodeRequest(nodeSet *privatev1.ClusterNodeSet) any {
-	return map[string]any{
-		"resourceClass": nodeSet.GetHostClass(),
-		"numberOfNodes": int64(nodeSet.GetSize()),
+		t.vm.GetStatus().SetConditions(conditions)
 	}
 }
 
 func (t *task) delete(ctx context.Context) error {
 	// Do nothing if we don't know the hub yet:
-	t.hubId = t.cluster.GetStatus().GetHub()
+	t.hubId = t.vm.GetStatus().GetHub()
 	if t.hubId == "" {
 		return nil
 	}
@@ -274,8 +256,8 @@ func (t *task) delete(ctx context.Context) error {
 	if object == nil {
 		t.r.logger.DebugContext(
 			ctx,
-			"Cluster order doesn't exist",
-			slog.String("id", t.cluster.GetId()),
+			"Virtual machine doesn't exist",
+			slog.String("id", t.vm.GetId()),
 		)
 		return nil
 	}
@@ -285,7 +267,7 @@ func (t *task) delete(ctx context.Context) error {
 	}
 	t.r.logger.DebugContext(
 		ctx,
-		"Deleted cluster order",
+		"Deleted virtual machine",
 		slog.String("namespace", object.GetNamespace()),
 		slog.String("name", object.GetName()),
 	)
@@ -294,7 +276,7 @@ func (t *task) delete(ctx context.Context) error {
 }
 
 func (t *task) selectHub(ctx context.Context) error {
-	t.hubId = t.cluster.GetStatus().GetHub()
+	t.hubId = t.vm.GetStatus().GetHub()
 	if t.hubId == "" {
 		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 		if err != nil {
@@ -320,7 +302,7 @@ func (t *task) selectHub(ctx context.Context) error {
 }
 
 func (t *task) getHub(ctx context.Context) error {
-	t.hubId = t.cluster.GetStatus().GetHub()
+	t.hubId = t.vm.GetStatus().GetHub()
 	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
 	if err != nil {
 		return err
@@ -332,12 +314,12 @@ func (t *task) getHub(ctx context.Context) error {
 
 func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstructured, err error) {
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvks.ClusterOrderList)
+	list.SetGroupVersionKind(gvks.VirtualMachineList)
 	err = t.hubClient.List(
 		ctx, list,
 		clnt.InNamespace(t.hubNamespace),
 		clnt.MatchingLabels{
-			labels.ClusterOrderUuid: t.cluster.GetId(),
+			labels.VirtualMachineUuid: t.vm.GetId(),
 		},
 	)
 	if err != nil {
@@ -347,8 +329,8 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 	count := len(items)
 	if count > 1 {
 		err = fmt.Errorf(
-			"expected at most one cluster order with identifer '%s' but found %d",
-			t.cluster.GetId(), count,
+			"expected at most one virtual machine with identifier '%s' but found %d",
+			t.vm.GetId(), count,
 		)
 		return
 	}

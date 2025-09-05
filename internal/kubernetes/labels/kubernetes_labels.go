@@ -21,3 +21,6 @@ import (
 
 // ClusterOrderUuid is the label where the fulfillment API will write the identifier of the order.
 var ClusterOrderUuid = fmt.Sprintf("%s/%s", gvks.ClusterOrder.Group, "clusterorder-uuid")
+
+// VirtualMachineUuid is the label where the fulfillment API will write the identifier of the virtual machine.
+var VirtualMachineUuid = fmt.Sprintf("%s/%s", gvks.VirtualMachine.Group, "virtualmachine-uuid")

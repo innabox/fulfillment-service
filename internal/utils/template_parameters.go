@@ -1,12 +1,14 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 
 	"github.com/dustin/go-humanize/english"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -196,4 +198,40 @@ func ValidateVirtualMachineTemplateParameters(
 	providedParameters map[string]*anypb.Any,
 ) error {
 	return ValidateTemplateParameters(VirtualMachineTemplateAdapter{template}, providedParameters)
+}
+
+// ConvertTemplateParametersToJSON converts template parameters from protobuf Any format to JSON string.
+// This is used when preparing parameters for Kubernetes controllers that expect JSON format.
+func ConvertTemplateParametersToJSON(templateParameters map[string]*anypb.Any) (string, error) {
+	paramsJson := map[string]any{}
+	for paramName, paramAny := range templateParameters {
+		paramJson, err := convertTemplateParam(paramAny)
+		if err != nil {
+			return "", fmt.Errorf("failed to convert parameter '%s': %w", paramName, err)
+		}
+		paramsJson[paramName] = paramJson
+	}
+	paramsBytes, err := json.Marshal(paramsJson)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal parameters to JSON: %w", err)
+	}
+	return string(paramsBytes), nil
+}
+
+// convertTemplateParam converts a protobuf Any parameter to a JSON-compatible value.
+func convertTemplateParam(paramAny *anypb.Any) (any, error) {
+	paramMsg, err := paramAny.UnmarshalNew()
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal parameter: %w", err)
+	}
+	paramBytes, err := protojson.Marshal(paramMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal parameter to JSON: %w", err)
+	}
+	var paramValue any
+	err = json.Unmarshal(paramBytes, &paramValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal parameter from JSON: %w", err)
+	}
+	return paramValue, nil
 }
