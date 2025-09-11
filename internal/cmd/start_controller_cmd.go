@@ -152,7 +152,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		SetLogger(r.logger).
 		SetClient(r.client).
 		SetFunction(vmReconcilerFunction).
-		SetEventFilter("has(event.virtualMachine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
