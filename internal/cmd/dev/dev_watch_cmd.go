@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -29,7 +30,6 @@ import (
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	apiclient "github.com/innabox/fulfillment-service/internal/clients/api"
-	"github.com/innabox/fulfillment-service/internal/network"
 )
 
 // NewWatchCommand creates and returns the `listen` command.

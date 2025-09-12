@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -36,7 +37,6 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
 	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
 	"github.com/innabox/fulfillment-service/internal/controllers/vm"
-	"github.com/innabox/fulfillment-service/internal/network"
 	"google.golang.org/grpc"
 )
 

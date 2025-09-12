@@ -19,6 +19,7 @@ import (
 	"net/http"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/innabox/fulfillment-common/network"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/net/http2"
@@ -26,7 +27,6 @@ import (
 
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
-	"github.com/innabox/fulfillment-service/internal/network"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

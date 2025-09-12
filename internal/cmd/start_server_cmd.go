@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -30,14 +31,13 @@ import (
 	"k8s.io/klog/v2"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
-	"github.com/innabox/fulfillment-service/internal/logging"
-	"github.com/innabox/fulfillment-service/internal/network"
 	"github.com/innabox/fulfillment-service/internal/recovery"
 	"github.com/innabox/fulfillment-service/internal/servers"
 )

@@ -19,12 +19,13 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/innabox/fulfillment-common/network"
+	"github.com/spf13/pflag"
+	"google.golang.org/grpc"
+
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"github.com/innabox/fulfillment-service/internal/network"
-	"github.com/spf13/pflag"
-	"google.golang.org/grpc"
 )
 
 // ClientBuilder contains the data and logic needed to create an object that simplifies use of the API for clients.

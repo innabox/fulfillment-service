@@ -17,10 +17,9 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/innabox/fulfillment-common/logging"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
-
-	"github.com/innabox/fulfillment-service/internal/logging"
 )
 
 func TestJSON(t *testing.T) {

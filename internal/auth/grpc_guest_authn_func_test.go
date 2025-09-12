@@ -17,11 +17,10 @@ import (
 	"context"
 	"time"
 
+	. "github.com/innabox/fulfillment-common/testing"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc/metadata"
-
-	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
 var _ = Describe("gRPC guest authentication function", func() {

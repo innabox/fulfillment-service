@@ -22,9 +22,8 @@ import (
 	"runtime/debug"
 	"slices"
 
+	"github.com/innabox/fulfillment-common/logging"
 	"github.com/spf13/cobra"
-
-	"github.com/innabox/fulfillment-service/internal/logging"
 )
 
 // ToolBuilder contains the data and logic needed to create an instance of the command line tool. Don't create instances

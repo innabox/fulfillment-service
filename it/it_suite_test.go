@@ -29,6 +29,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/innabox/fulfillment-common/logging"
+	"github.com/innabox/fulfillment-common/network"
+	. "github.com/innabox/fulfillment-common/testing"
 	"github.com/kelseyhightower/envconfig"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
@@ -45,9 +48,6 @@ import (
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"github.com/innabox/fulfillment-service/internal/logging"
-	"github.com/innabox/fulfillment-service/internal/network"
-	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
 // Config contains configuration options for the integration tests.

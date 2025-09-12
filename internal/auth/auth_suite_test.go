@@ -18,11 +18,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/innabox/fulfillment-common/logging"
+	. "github.com/innabox/fulfillment-common/testing"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
-
-	"github.com/innabox/fulfillment-service/internal/logging"
-	. "github.com/innabox/fulfillment-service/internal/testing"
 )
 
 func TestAuthentication(t *testing.T) {
