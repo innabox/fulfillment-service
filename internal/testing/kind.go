@@ -96,6 +96,11 @@ func (b *KindBuilder) Build() (result *Kind, err error) {
 	)
 
 	// Check that the command line tools that we need are available:
+	_, err = exec.LookPath(helmCmd)
+	if err != nil {
+		err = fmt.Errorf("command line tool '%s' isn't available: %w", helmCmd, err)
+		return
+	}
 	_, err = exec.LookPath(kindCmd)
 	if err != nil {
 		err = fmt.Errorf("command line tool '%s' isn't available: %w", kindCmd, err)
@@ -367,6 +372,11 @@ func (k *Kind) createCluster(ctx context.Context) error {
 					map[string]any{
 						"containerPort": 30000,
 						"hostPort":      8000,
+						"listenAddress": "0.0.0.0",
+					},
+					map[string]any{
+						"containerPort": 30001,
+						"hostPort":      8001,
 						"listenAddress": "0.0.0.0",
 					},
 				},
@@ -663,6 +673,7 @@ func (k *Kind) installCrdFiles(ctx context.Context) error {
 
 // Names of commands:
 const (
+	helmCmd    = "helm"
 	kindCmd    = "kind"
 	kubectlCmd = "kubectl"
 )

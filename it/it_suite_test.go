@@ -126,14 +126,17 @@ var _ = BeforeSuite(func() {
 	projectDir := currentDir
 
 	// Check that the required tools are available:
-	_, err = exec.LookPath(kubectlPath)
+	_, err = exec.LookPath(kubectlCmd)
 	Expect(err).ToNot(HaveOccurred())
-	_, err = exec.LookPath(kindPath)
+	_, err = exec.LookPath(podmanCmd)
 	Expect(err).ToNot(HaveOccurred())
 
 	// We will create the kind cluster and build the container image in parallel, and will use this
 	// to wait for both to complete.
 	var wg sync.WaitGroup
+
+	// We will store the kubeconfig here:
+	var kcFile string
 
 	// Start the kind cluster:
 	wg.Add(1)
@@ -160,6 +163,32 @@ var _ = BeforeSuite(func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 		}
+
+		// Get the kubeconfig:
+		kcFile = filepath.Join(tmpDir, "kubeconfig")
+		err = os.WriteFile(kcFile, kind.Kubeconfig(), 0400)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Install Keycloak:
+		logger.DebugContext(ctx, "Installing Keycloak chart")
+		installCmd, err := NewCommand().
+			SetLogger(logger).
+			SetDir(projectDir).
+			SetName(helmCmd).
+			SetArgs(
+				"install",
+				"keycloak",
+				"charts/keycloak",
+				"--kubeconfig", kcFile,
+				"--namespace", "keycloak",
+				"--create-namespace",
+				"--wait",
+				"--set", "variant=kind",
+			).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		err = installCmd.Execute(ctx)
+		Expect(err).ToNot(HaveOccurred())
 	}()
 
 	// In the GitHub actions environment, the image is already built and available in the 'image.tar'
@@ -215,11 +244,6 @@ var _ = BeforeSuite(func() {
 	// Wait for the kind cluster to be started and the container image to be built:
 	wg.Wait()
 
-	// Get the kubeconfig:
-	kcFile := filepath.Join(tmpDir, "kubeconfig")
-	err = os.WriteFile(kcFile, kind.Kubeconfig(), 0400)
-	Expect(err).ToNot(HaveOccurred())
-
 	// Get the client:
 	kubeClient := kind.Client()
 	kubeClientSet := kind.ClientSet()
@@ -232,7 +256,7 @@ var _ = BeforeSuite(func() {
 	applyCmd, err := NewCommand().
 		SetLogger(logger).
 		SetDir(projectDir).
-		SetName(kubectlPath).
+		SetName(kubectlCmd).
 		SetArgs(
 			"apply",
 			"--kubeconfig", kcFile,
@@ -365,8 +389,9 @@ var _ = BeforeSuite(func() {
 
 // Names of the command line tools:
 const (
-	kubectlPath = "kubectl"
-	kindPath    = "podman"
+	kubectlCmd = "kubectl"
+	podmanCmd  = "podman"
+	helmCmd    = "helm"
 )
 
 // Name and namespace of the hub:
