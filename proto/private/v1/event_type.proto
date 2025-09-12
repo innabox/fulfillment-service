@@ -19,6 +19,8 @@ import "google/protobuf/any.proto";
 import "private/v1/cluster_template_type.proto";
 import "private/v1/cluster_type.proto";
 import "private/v1/host_class_type.proto";
+import "private/v1/host_pool_type.proto";
+import "private/v1/host_type.proto";
 import "private/v1/hub_type.proto";
 import "private/v1/virtual_machine_template_type.proto";
 import "private/v1/virtual_machine_type.proto";
@@ -39,6 +41,8 @@ message Event {
     Hub hub = 6;
     VirtualMachineTemplate virtual_machine_template = 7;
     VirtualMachine virtual_machine = 8;
+    Host host = 9;
+    HostPool host_pool = 10;
   }
 }
 

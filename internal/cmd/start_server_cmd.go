@@ -326,6 +326,54 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
 
+	// Create the private hosts server:
+	c.logger.InfoContext(ctx, "Creating private hosts server")
+	privateHostsServer, err := servers.NewPrivateHostsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create private hosts server")
+	}
+	privatev1.RegisterHostsServer(grpcServer, privateHostsServer)
+
+	// Create the hosts server:
+	c.logger.InfoContext(ctx, "Creating hosts server")
+	hostsServer, err := servers.NewHostsServer().
+		SetLogger(c.logger).
+		SetPrivate(privateHostsServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create hosts server")
+	}
+	ffv1.RegisterHostsServer(grpcServer, hostsServer)
+
+	// Create the private host pools server:
+	c.logger.InfoContext(ctx, "Creating private host pools server")
+	privateHostPoolsServer, err := servers.NewPrivateHostPoolsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(attributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create private host pools server")
+	}
+	privatev1.RegisterHostPoolsServer(grpcServer, privateHostPoolsServer)
+
+	// Create the host pools server:
+	c.logger.InfoContext(ctx, "Creating host pools server")
+	hostPoolsServer, err := servers.NewHostPoolsServer().
+		SetLogger(c.logger).
+		SetPrivate(privateHostPoolsServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create host pools server")
+	}
+	ffv1.RegisterHostPoolsServer(grpcServer, hostPoolsServer)
+
 	// Create the private virtual machine templates server:
 	c.logger.InfoContext(ctx, "Creating private virtual machine templates server")
 	privateVirtualMachineTemplatesServer, err := servers.NewPrivateVirtualMachineTemplatesServer().
