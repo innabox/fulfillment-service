@@ -518,14 +518,29 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 	default:
 		return fmt.Errorf("unknown event kind '%s'", e.Type)
 	}
+	if e.Object == nil {
+		return fmt.Errorf("event object is nil")
+	}
 	switch object := e.Object.(type) {
 	case *privatev1.ClusterTemplate:
+		if object == nil {
+			return fmt.Errorf("cluster template object is nil")
+		}
 		event.SetClusterTemplate(object)
 	case *privatev1.Cluster:
+		if object == nil {
+			return fmt.Errorf("cluster object is nil")
+		}
 		event.SetCluster(object)
 	case *privatev1.HostClass:
+		if object == nil {
+			return fmt.Errorf("host class object is nil")
+		}
 		event.SetHostClass(object)
 	case *privatev1.Hub:
+		if object == nil {
+			return fmt.Errorf("hub object is nil")
+		}
 		// TODO: We need to remove the Kubeconfig from the payload of the notification because that usually
 		// exceeds the default limit of 8000 bytes of the PostgreSQL notification mechanism. A better way to
 		// do this would be to store the payloads in a separate table. We will do that later.
@@ -533,8 +548,14 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 		object.SetKubeconfig(nil)
 		event.SetHub(object)
 	case *privatev1.VirtualMachineTemplate:
+		if object == nil {
+			return fmt.Errorf("virtual machine template object is nil")
+		}
 		event.SetVirtualMachineTemplate(object)
 	case *privatev1.VirtualMachine:
+		if object == nil {
+			return fmt.Errorf("virtual machine object is nil")
+		}
 		event.SetVirtualMachine(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)

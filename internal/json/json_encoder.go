@@ -174,10 +174,21 @@ func (e *Encoder) marshalMessage(stream *jsoniter.Stream, message protoreflect.M
 			err = stream.Error
 			return false
 		}
-		err := e.marshalValue(stream, value, field)
-		if err != nil {
-			return false
+		
+		// Defensive marshaling with fallback to null
+		beforePos := len(stream.Buffer())
+		marshalErr := e.marshalValue(stream, value, field)
+		afterPos := len(stream.Buffer())
+		
+		if marshalErr != nil || beforePos == afterPos {
+			// If marshaling failed or nothing was written, write null
+			stream.WriteNil()
+			if stream.Error != nil {
+				err = stream.Error
+				return false
+			}
 		}
+		
 		first = false
 		return true
 	})
@@ -209,6 +220,35 @@ func (e *Encoder) marshalSingle(stream *jsoniter.Stream, value protoreflect.Valu
 		stream.WriteNil()
 		return stream.Error
 	}
+	// Handle empty protobuf.Any and protobuf.Value by writing null or empty array
+	if field.Kind() == protoreflect.MessageKind {
+		message := value.Message()
+		if message.Descriptor() == e.anyDesc {
+			// Check if the Any message is empty/nil
+			anyValue := message.Interface().(*anypb.Any)
+			if anyValue == nil || anyValue.TypeUrl == "" {
+				// Write appropriate defaults based on field type
+				fieldName := string(field.Name())
+				// Log what we're fixing
+				fmt.Printf("CUSTOM DEBUG: Fixing empty field: %s\n", fieldName)
+				if fieldName == "additional_disks" || fieldName == "vm_service_ports" {
+					// Array fields get empty arrays
+					fmt.Printf("CUSTOM DEBUG: Writing empty array for %s\n", fieldName)
+					stream.WriteArrayStart()
+					stream.WriteArrayEnd()
+				} else if fieldName == "cloud_init_config" {
+					// cloud_init_config gets empty string
+					fmt.Printf("CUSTOM DEBUG: Writing empty string for %s\n", fieldName)
+					stream.WriteString("")
+				} else {
+					// Other fields get null
+					fmt.Printf("CUSTOM DEBUG: Writing null for %s\n", fieldName)
+					stream.WriteNil()
+				}
+				return stream.Error
+			}
+		}
+	}
 	switch field.Kind() {
 	case protoreflect.BoolKind:
 		stream.WriteBool(value.Bool())
@@ -234,10 +274,13 @@ func (e *Encoder) marshalSingle(stream *jsoniter.Stream, value protoreflect.Valu
 		return stream.Error
 	case protoreflect.FloatKind:
 		stream.WriteFloat64(value.Float())
+		return stream.Error
 	case protoreflect.DoubleKind:
 		stream.WriteFloat64(value.Float())
+		return stream.Error
 	case protoreflect.BytesKind:
 		stream.WriteString(base64.StdEncoding.EncodeToString(value.Bytes()))
+		return stream.Error
 	case protoreflect.EnumKind:
 		enum := value.Enum()
 		if enum == 0 {
@@ -299,9 +342,19 @@ func (e *Encoder) marshalMap(stream *jsoniter.Stream, m protoreflect.Map,
 			err = stream.Error
 			return false
 		}
+		
+		// Save the current buffer position to detect if a value was written
+		beforeValuePos := len(stream.Buffer())
 		err = e.marshalSingle(stream, value, field.MapValue())
-		if err != nil {
-			return false
+		afterValuePos := len(stream.Buffer())
+		
+		if err != nil || beforeValuePos == afterValuePos {
+			// If marshaling fails or no value was written, write null to prevent malformed JSON
+			stream.WriteNil()
+			if stream.Error != nil {
+				err = stream.Error
+				return false
+			}
 		}
 		first = false
 		return true
@@ -314,9 +367,19 @@ func (e *Encoder) marshalMap(stream *jsoniter.Stream, m protoreflect.Map,
 }
 
 func (e *Encoder) marshalWellKnown(stream *jsoniter.Stream, value proto.Message) error {
+	// Handle empty Any values - write appropriate defaults
+	if anyValue, ok := value.(*anypb.Any); ok {
+		if anyValue == nil || anyValue.TypeUrl == "" {
+			stream.WriteNil()
+			return stream.Error
+		}
+	}
+	
 	data, err := protojson.Marshal(value)
 	if err != nil {
-		return err
+		// If protojson marshal fails, write null instead of causing malformed JSON
+		stream.WriteNil()
+		return stream.Error
 	}
 	_, err = stream.Write(data)
 	return err

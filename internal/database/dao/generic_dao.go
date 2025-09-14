@@ -988,6 +988,11 @@ func (d *GenericDAO[O]) cloneObject(object O) O {
 
 func (d *GenericDAO[O]) marshalData(object O) (result []byte, err error) {
 	result, err = d.jsonEncoder.Marshal(object)
+	if err != nil {
+		d.logger.Error("JSON marshaling failed", "error", err, "object_type", fmt.Sprintf("%T", object))
+		return
+	}
+	d.logger.Debug("Generated JSON for database", "json", string(result), "object_type", fmt.Sprintf("%T", object))
 	return
 }
 

@@ -121,3 +121,45 @@ func (r *HubCache) create(ctx context.Context, id string) (result *HubEntry, err
 	}
 	return
 }
+
+// SelectByCapability returns a hub that has the specified capability.
+func (r *HubCache) SelectByCapability(ctx context.Context, capability string) (*HubEntry, error) {
+	// List all hubs and find one with the required capability
+	response, err := r.client.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+	if err != nil {
+		return nil, err
+	}
+	
+	for _, hub := range response.GetItems() {
+		for _, cap := range hub.GetCapabilities() {
+			if cap == capability {
+				return r.Get(ctx, hub.GetId())
+			}
+		}
+	}
+	
+	return nil, errors.New("no hub found with capability: " + capability)
+}
+
+// SelectByCapabilityWithID returns a hub ID and entry for a hub that has the specified capability.
+func (r *HubCache) SelectByCapabilityWithID(ctx context.Context, capability string) (string, *HubEntry, error) {
+	// List all hubs and find one with the required capability
+	response, err := r.client.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+	if err != nil {
+		return "", nil, err
+	}
+	
+	for _, hub := range response.GetItems() {
+		for _, cap := range hub.GetCapabilities() {
+			if cap == capability {
+				entry, err := r.Get(ctx, hub.GetId())
+				if err != nil {
+					return "", nil, err
+				}
+				return hub.GetId(), entry, nil
+			}
+		}
+	}
+	
+	return "", nil, errors.New("no hub found with capability: " + capability)
+}

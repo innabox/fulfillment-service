@@ -10,6 +10,8 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
@@ -140,17 +142,42 @@ func ProcessTemplateParametersWithDefaults(
 	for _, templateParameter := range templateParameters {
 		templateParameterName := templateParameter.GetName()
 		providedParameter := providedParameters[templateParameterName]
-		actualParameter := &anypb.Any{
-			TypeUrl: templateParameter.GetType(),
-		}
 
 		if providedParameter != nil {
-			actualParameter.Value = providedParameter.Value
+			actualParameters[templateParameterName] = providedParameter
 		} else {
-			actualParameter.Value = templateParameter.GetDefault().GetValue()
+			// Use default value if available and valid
+			defaultValue := templateParameter.GetDefault()
+			if defaultValue != nil && len(defaultValue.GetValue()) > 0 {
+				actualParameter := &anypb.Any{
+					TypeUrl: templateParameter.GetType(),
+					Value:   defaultValue.GetValue(),
+				}
+				actualParameters[templateParameterName] = actualParameter
+			} else {
+				// Handle special cases where we need sensible defaults for certain parameter types
+				paramType := templateParameter.GetType()
+				paramName := templateParameter.GetName()
+				
+				if paramType == "type.googleapis.com/google.protobuf.StringValue" && paramName == "cloud_init_config" {
+					// cloud_init_config should default to '#cloud-config' when not specified
+					defaultStringValue := &wrapperspb.StringValue{Value: "#cloud-config"}
+					defaultStringAny, err := anypb.New(defaultStringValue)
+					if err == nil {
+						actualParameters[templateParameterName] = defaultStringAny
+					}
+				} else if paramType == "type.googleapis.com/google.protobuf.Value" && (paramName == "vm_service_ports" || paramName == "additional_disks") {
+					// vm_service_ports and additional_disks should default to empty list when not specified
+					emptyListValue := &structpb.ListValue{Values: []*structpb.Value{}}
+					emptyListAny, err := anypb.New(emptyListValue)
+					if err == nil {
+						actualParameters[templateParameterName] = emptyListAny
+					}
+				}
+				// For other types without defaults, skip this parameter entirely
+				// rather than creating an invalid anypb.Any
+			}
 		}
-
-		actualParameters[templateParameterName] = actualParameter
 	}
 
 	return actualParameters
