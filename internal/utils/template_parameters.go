@@ -168,7 +168,15 @@ func ProcessTemplateParametersWithDefaults(
 					}
 				} else if paramType == "type.googleapis.com/google.protobuf.Value" && (paramName == "vm_service_ports" || paramName == "additional_disks") {
 					// vm_service_ports and additional_disks should default to empty list when not specified
-					emptyListValue := &structpb.ListValue{Values: []*structpb.Value{}}
+					// vm_service_ports expects list of dicts with: name, port, target_port, protocol
+					// additional_disks expects list of dicts with: name, size, storage_class
+					emptyListValue := &structpb.Value{
+						Kind: &structpb.Value_ListValue{
+							ListValue: &structpb.ListValue{
+								Values: []*structpb.Value{}, // Empty list - let template handle the structure validation
+							},
+						},
+					}
 					emptyListAny, err := anypb.New(emptyListValue)
 					if err == nil {
 						actualParameters[templateParameterName] = emptyListAny
