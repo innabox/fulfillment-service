@@ -7,6 +7,12 @@ for Kind, intended for development and testing environments.
 
 ## OpenShift
 
+The gRPC protocol is based on HTTP2, which isn't enabled by default in OpenShift. To enable it run this command:
+
+```shell
+$ oc annotate ingresses.config/cluster ingress.operator.openshift.io/default-enable-http2=true
+```
+
 Install the _cert-manager_ operator:
 
 ```shell
