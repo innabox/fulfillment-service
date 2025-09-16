@@ -50,7 +50,7 @@ spec:
   name: authorino-operator
   sourceNamespace: openshift-marketplace
   source: redhat-operators
-  channel: tech-preview-v1
+  channel: stable
   installPlanApproval: Automatic
 .
 ```
