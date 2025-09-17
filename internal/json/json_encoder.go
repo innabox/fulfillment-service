@@ -174,7 +174,7 @@ func (e *Encoder) marshalMessage(stream *jsoniter.Stream, message protoreflect.M
 			err = stream.Error
 			return false
 		}
-		err := e.marshalValue(stream, value, field)
+		err = e.marshalValue(stream, value, field)
 		if err != nil {
 			return false
 		}
