@@ -31,4 +31,25 @@ message Hub {
 
   // Namespace where the cluster orders will be created.
   string namespace = 4;
+
+  // List of capabilities that this hub supports.
+  //
+  // Possible values:
+  // - "clusters": Hub can provision clusters (ClusterOrder CRDs)
+  // - "virtualmachines": Hub can provision virtual machines (VirtualMachine CRDs)
+  //
+  // A hub can have multiple capabilities. For example, a hybrid hub might have
+  // both "clusters" and "virtualmachines" capabilities.
+  repeated string capabilities = 5;
+
+  // Type of the hub indicating its primary purpose.
+  //
+  // Possible values:
+  // - "cluster": Primarily for cluster provisioning
+  // - "vmaas": Primarily for virtual machine provisioning  
+  // - "hybrid": Supports both clusters and virtual machines
+  //
+  // This field is informational and used for categorization.
+  // The actual routing decisions are based on the capabilities field.
+  string hub_type = 6;
 }

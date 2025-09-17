@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -296,18 +295,28 @@ func (t *task) delete(ctx context.Context) error {
 func (t *task) selectHub(ctx context.Context) error {
 	t.hubId = t.cluster.GetStatus().GetHub()
 	if t.hubId == "" {
-		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+		// Use the new capability-based hub selection
+		hubId, hubEntry, err := t.r.hubCache.SelectByCapabilityWithID(ctx, "clusters")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to select cluster-capable hub: %w", err)
 		}
-		if len(response.Items) == 0 {
-			return errors.New("there are no hubs")
-		}
-		t.hubId = response.Items[rand.IntN(len(response.Items))].GetId()
+		t.hubId = hubId
+		t.hubNamespace = hubEntry.Namespace
+		t.hubClient = hubEntry.Client
+		
+		t.r.logger.DebugContext(
+			ctx,
+			"Selected cluster-capable hub",
+			slog.String("id", t.hubId),
+			slog.String("namespace", t.hubNamespace),
+		)
+		return nil
 	}
+	
+	// If hub is already assigned, get it directly
 	t.r.logger.DebugContext(
 		ctx,
-		"Selected hub",
+		"Using assigned hub",
 		slog.String("id", t.hubId),
 	)
 	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
