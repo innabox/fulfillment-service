@@ -9,6 +9,7 @@ import (
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -127,9 +128,10 @@ func ValidateTemplateParameters(
 	return nil
 }
 
-// ProcessTemplateParametersWithDefaults processes template parameters by applying default values
-// for parameters that are not provided. It returns a new map with all template parameters
-// populated with either the provided value or the default value from the template.
+// ProcessTemplateParametersWithDefaults processes template parameters by applying default values for parameters that
+// are not provided and have a default value in the template definition. It returns a new map with all template
+// parameters that have a value, either provided or default. Note that this doesn't mean *all* the parameters defined
+// in the template, as some of them may be optional *and* have no default value.
 func ProcessTemplateParametersWithDefaults(
 	template Template,
 	providedParameters map[string]*anypb.Any,
@@ -137,20 +139,18 @@ func ProcessTemplateParametersWithDefaults(
 	actualParameters := make(map[string]*anypb.Any)
 	templateParameters := template.GetParameters()
 
-	for _, templateParameter := range templateParameters {
-		templateParameterName := templateParameter.GetName()
-		providedParameter := providedParameters[templateParameterName]
-		actualParameter := &anypb.Any{
-			TypeUrl: templateParameter.GetType(),
+	for _, parameterDefinition := range templateParameters {
+		parameterName := parameterDefinition.GetName()
+		providedValue := providedParameters[parameterName]
+		if providedValue != nil {
+			actualParameters[parameterName] = proto.Clone(providedValue).(*anypb.Any)
+			continue
 		}
-
-		if providedParameter != nil {
-			actualParameter.Value = providedParameter.Value
-		} else {
-			actualParameter.Value = templateParameter.GetDefault().GetValue()
+		defaultValue := parameterDefinition.GetDefault()
+		if defaultValue != nil {
+			actualParameters[parameterName] = proto.Clone(defaultValue).(*anypb.Any)
+			continue
 		}
-
-		actualParameters[templateParameterName] = actualParameter
 	}
 
 	return actualParameters

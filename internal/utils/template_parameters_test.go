@@ -442,6 +442,22 @@ var _ = Describe("ProcessTemplateParametersWithDefaults", func() {
 			Expect(resultInt.Value).To(Equal(int32(3)))
 		})
 	})
+
+	It("Ignores optional parameter that has no default value", func() {
+		template = &mockTemplate{
+			id: "my_template",
+			parameters: []TemplateParameterDefinition{
+				&mockParameter{
+					name:         "my_parameter",
+					paramType:    "type.googleapis.com/google.protobuf.StringValue",
+					required:     false,
+					defaultValue: nil,
+				},
+			},
+		}
+		result := ProcessTemplateParametersWithDefaults(template, nil)
+		Expect(result).To(BeEmpty())
+	})
 })
 
 var _ = Describe("ConvertTemplateParametersToJSON", func() {
