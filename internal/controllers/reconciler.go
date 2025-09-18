@@ -344,6 +344,11 @@ func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.logger.DebugContext(
+		ctx,
+		"Started watching events",
+		slog.String("filter", c.eventFilter),
+	)
 	for {
 		response, err := stream.Recv()
 		if err != nil {

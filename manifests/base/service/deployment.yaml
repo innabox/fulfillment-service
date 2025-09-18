@@ -82,6 +82,7 @@ spec:
         - --grpc-server-network=unix
         - --grpc-server-address=/run/sockets/ingress.socket
         - --grpc-server-plaintext
+        - --grpc-keep-alive=5m
 
       - name: envoy
         image: envoy

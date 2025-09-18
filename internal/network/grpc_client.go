@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	"golang.org/x/oauth2"
@@ -30,6 +31,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/credentials/oauth"
 	experiementalcredentials "google.golang.org/grpc/experimental/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 // GrpcClientBuilder contains the data and logic needed to create a gRPC client. Don't create instances of this object
@@ -43,6 +45,7 @@ type GrpcClientBuilder struct {
 	caFiles         []string
 	token           string
 	tokenFile       string
+	keepAlive       time.Duration
 }
 
 // NewClient creates a builder that can then used to configure and create a gRPC client.
@@ -144,6 +147,15 @@ func (b *GrpcClientBuilder) SetFlags(flags *pflag.FlagSet, name string) *GrpcCli
 		}
 	}
 
+	// Keep alive:
+	flag = grpcClientFlagName(name, grpcClientKeepAliveFlagSuffix)
+	keepAliveValue, err := flags.GetDuration(flag)
+	if err != nil {
+		failure()
+	} else {
+		b.SetKeepAlive(keepAliveValue)
+	}
+
 	return b
 }
 
@@ -197,6 +209,12 @@ func (b *GrpcClientBuilder) SetTokenFile(value string) *GrpcClientBuilder {
 	return b
 }
 
+// SetKeepAlive sets the keep alive interval. This is optional, by default no keep alive is used.
+func (b *GrpcClientBuilder) SetKeepAlive(value time.Duration) *GrpcClientBuilder {
+	b.keepAlive = value
+	return b
+}
+
 // Build uses the data stored in the builder to create a new network client.
 func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	// Check parameters:
@@ -214,6 +232,10 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	}
 	if b.token != "" && b.tokenFile != "" {
 		err = errors.New("token and token file are incompatible")
+		return
+	}
+	if b.keepAlive < 0 {
+		err = fmt.Errorf("keep alive interval should be positive, but it is %s", b.keepAlive)
 		return
 	}
 
@@ -280,6 +302,13 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 		}
 		options = append(options, grpc.WithPerRPCCredentials(oauth.TokenSource{
 			TokenSource: tokenSource,
+		}))
+	}
+
+	// Set the keep alive options:
+	if b.keepAlive > 0 {
+		options = append(options, grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time: b.keepAlive,
 		}))
 	}
 

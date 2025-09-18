@@ -16,6 +16,7 @@ package network
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 )
@@ -35,6 +36,7 @@ import (
 //	--api-ca-file               API trusted CA file.
 //	--api-token                 API token.
 //	--api-token-file            API token file.
+//	--api-keep-alive            API keep alive interval.
 func AddGrpcClientFlags(flags *pflag.FlagSet, name, addr string) {
 	_ = flags.String(
 		grpcClientFlagName(name, grpcClientServerNetworkFlagSuffix),
@@ -71,6 +73,11 @@ func AddGrpcClientFlags(flags *pflag.FlagSet, name, addr string) {
 		"",
 		fmt.Sprintf("%s authentication token file.", name),
 	)
+	_ = flags.Duration(
+		grpcClientFlagName(name, grpcClientKeepAliveFlagSuffix),
+		5*time.Minute,
+		fmt.Sprintf("%s keep alive interval.", name),
+	)
 }
 
 // Names of the flags:
@@ -82,6 +89,7 @@ const (
 	grpcClientCaFileFlagSuffix          = "ca-file"
 	grpcClientTokenFlagSuffix           = "token"
 	grpcClientTokenFileFlagSuffix       = "token-file"
+	grpcClientKeepAliveFlagSuffix       = "keep-alive"
 )
 
 // grpcClientFlagName calculates a complete flag name from a client name and a flag name suffix. For example, if the

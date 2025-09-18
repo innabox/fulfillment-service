@@ -72,7 +72,26 @@ static_resources:
                     "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                     disabled: true
 
-              - name: server
+              # This route is for the gRPC streaming requests used to watch events. Those streams can last very long,
+              # so we don't want to set a timeout, as that would cause the connection to be closed and events to be
+              # potentially lost.
+              - name: watch
+                match:
+                  safe_regex:
+                    regex: ^.*/Watch$
+                route:
+                  cluster: server
+                  timeout: 0s
+                  idle_timeout: 0s
+                typed_per_filter_config:
+                  envoy.filters.http.header_mutation:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutationPerRoute
+                    mutations:
+                      request_mutations:
+                      - remove: authorization
+
+              # This route is for gRPC unary requests, which should be quite fast, so we can safely set a timeout
+              - name: other
                 match:
                   prefix: /
                 route:

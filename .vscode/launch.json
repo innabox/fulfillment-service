@@ -52,7 +52,8 @@
                                 "--log-bodies=true",
                                 "--http-listener-address=localhost:8001",
                                 "--grpc-server-address=localhost:8000",
-                                "--grpc-server-plaintext"
+                                "--grpc-server-plaintext",
+                                "--grpc-keep-alive=5m"
                         ]
                 },
                 {
@@ -68,7 +69,8 @@
                                 "--log-headers=true",
                                 "--log-bodies=true",
                                 "--grpc-server-address=localhost:8000",
-                                "--grpc-server-plaintext"
+                                "--grpc-server-plaintext",
+                                "--grpc-keep-alive=5m"
                         ]
                 }
         ]
