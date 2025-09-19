@@ -142,7 +142,7 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Save the selected hub in the private data of the host pool:
-	// Note: HostPool doesn't have a hub field in status, we'll track this differently
+	t.hostPool.GetStatus().SetHub(t.hubId)
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
@@ -283,15 +283,17 @@ func (t *task) delete(ctx context.Context) error {
 }
 
 func (t *task) selectHub(ctx context.Context) error {
-	// For now, randomly select a hub (HostPool doesn't have hub field in status)
-	response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
-	if err != nil {
-		return err
+	t.hubId = t.hostPool.GetStatus().GetHub()
+	if t.hubId == "" {
+		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+		if err != nil {
+			return err
+		}
+		if len(response.Items) == 0 {
+			return errors.New("there are no hubs")
+		}
+		t.hubId = response.Items[rand.IntN(len(response.Items))].GetId()
 	}
-	if len(response.Items) == 0 {
-		return errors.New("there are no hubs")
-	}
-	t.hubId = response.Items[rand.IntN(len(response.Items))].GetId()
 	t.r.logger.DebugContext(
 		ctx,
 		"Selected hub",

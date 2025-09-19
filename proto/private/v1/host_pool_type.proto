@@ -39,6 +39,9 @@ message HostPoolStatus {
   repeated string hosts = 2;
   repeated HostPoolCondition conditions = 3;
   map<string, HostPoolHostSet> host_sets = 4;
+
+  // Identifier of the hub that was selected for this cluster.
+  string hub = 5;
 }
 
 // Represents the overall state of a host pool.

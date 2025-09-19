@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -41,10 +40,11 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger      *slog.Logger
-	hubCache    *controllers.HubCache
-	hostsClient privatev1.HostsClient
-	hubsClient  privatev1.HubsClient
+	logger          *slog.Logger
+	hubCache        *controllers.HubCache
+	hostsClient     privatev1.HostsClient
+	hostPoolsClient privatev1.HostPoolsClient
+	hubsClient      privatev1.HubsClient
 }
 
 type task struct {
@@ -96,10 +96,11 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	// Create and populate the object:
 	object := &function{
-		logger:      b.logger,
-		hostsClient: privatev1.NewHostsClient(b.connection),
-		hubsClient:  privatev1.NewHubsClient(b.connection),
-		hubCache:    b.hubCache,
+		logger:          b.logger,
+		hostsClient:     privatev1.NewHostsClient(b.connection),
+		hostPoolsClient: privatev1.NewHostPoolsClient(b.connection),
+		hubsClient:      privatev1.NewHubsClient(b.connection),
+		hubCache:        b.hubCache,
 	}
 	result = object.run
 	return
@@ -139,9 +140,6 @@ func (t *task) update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	// Save the selected hub in the private data of the host:
-	// Note: Host doesn't have a hub field in status, we'll track this differently
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
@@ -245,15 +243,20 @@ func (t *task) delete(ctx context.Context) error {
 }
 
 func (t *task) selectHub(ctx context.Context) error {
-	// For now, randomly select a hub (Host doesn't have hub field in status)
-	response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+	// Use the Hub from the parent host pool
+	hostPoolId := t.host.GetStatus().GetHostPool()
+	if hostPoolId == "" {
+		return errors.New("host is not associated with a host pool")
+	}
+	response, err := t.r.hostPoolsClient.Get(ctx, privatev1.HostPoolsGetRequest_builder{Id: hostPoolId}.Build())
 	if err != nil {
 		return err
 	}
-	if len(response.Items) == 0 {
-		return errors.New("there are no hubs")
+	t.hubId = response.GetObject().GetStatus().GetHub()
+	if t.hubId == "" {
+		return errors.New("parent host pool is not associated with a hub")
 	}
-	t.hubId = response.Items[rand.IntN(len(response.Items))].GetId()
+
 	t.r.logger.DebugContext(
 		ctx,
 		"Selected hub",
