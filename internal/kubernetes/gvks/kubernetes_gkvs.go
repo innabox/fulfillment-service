@@ -39,6 +39,22 @@ var VirtualMachine = schema.GroupVersionKind{
 
 var VirtualMachineList = listGVK(VirtualMachine)
 
+var Host = schema.GroupVersionKind{
+	Group:   "cloudkit.openshift.io",
+	Version: "v1alpha1",
+	Kind:    "Host",
+}
+
+var HostList = listGVK(Host)
+
+var HostPool = schema.GroupVersionKind{
+	Group:   "cloudkit.openshift.io",
+	Version: "v1alpha1",
+	Kind:    "HostPool",
+}
+
+var HostPoolList = listGVK(HostPool)
+
 func listGVK(gvk schema.GroupVersionKind) schema.GroupVersionKind {
 	gvk.Kind = gvk.Kind + "List"
 	return gvk

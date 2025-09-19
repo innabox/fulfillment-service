@@ -24,3 +24,9 @@ var ClusterOrderUuid = fmt.Sprintf("%s/%s", gvks.ClusterOrder.Group, "clusterord
 
 // VirtualMachineUuid is the label where the fulfillment API will write the identifier of the virtual machine.
 var VirtualMachineUuid = fmt.Sprintf("%s/%s", gvks.VirtualMachine.Group, "virtualmachine-uuid")
+
+// HostUuid is the label where the fulfillment API will write the identifier of the host.
+var HostUuid = fmt.Sprintf("%s/%s", gvks.Host.Group, "host-uuid")
+
+// HostPoolUuid is the label where the fulfillment API will write the identifier of the host pool.
+var HostPoolUuid = fmt.Sprintf("%s/%s", gvks.HostPool.Group, "hostpool-uuid")
