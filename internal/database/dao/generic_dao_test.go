@@ -217,7 +217,6 @@ var _ = Describe("Generic DAO", func() {
 			generic, err = NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
-				SetDefaultOrder("id").
 				SetDefaultLimit(defaultLimit).
 				SetMaxLimit(maxLimit).
 				SetAttributionLogic(attributionLogic).
@@ -316,6 +315,30 @@ var _ = Describe("Generic DAO", func() {
 			Expect(request.Items).To(HaveLen(count))
 			for _, item := range request.Items {
 				Expect(item).ToNot(BeNil())
+			}
+		})
+
+		It("Lists objects sorted by ID identifier default", func() {
+			// Create objects with specific identifier in non-alphabetical order:
+			ids := []string{"zebra", "apple", "banana"}
+			objects := make([]*testsv1.Object, len(ids))
+			for i, id := range ids {
+				object, err := generic.Create(ctx, testsv1.Object_builder{
+					Id: id,
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				objects[i] = object
+			}
+
+			// List objects and verify they are sorted by identifier:
+			response, err := generic.List(ctx, ListRequest{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.Items).To(HaveLen(len(ids)))
+
+			// Verify the objects are returned in alphabetical order:
+			expected := []string{"apple", "banana", "zebra"}
+			for i, item := range response.Items {
+				Expect(item.GetId()).To(Equal(expected[i]))
 			}
 		})
 
@@ -614,8 +637,7 @@ var _ = Describe("Generic DAO", func() {
 
 			BeforeEach(func() {
 				// Create a list of objects and sort it like they will be sorted by the DAO. Not that
-				// this works correctly because the DAO is configured with a default sorting. That is
-				// intended for use only in these unit tests.
+				// this works correctly because the DAO sorts object by identifier by default.
 				objects = make([]*testsv1.Object, objectCount)
 				for i := range len(objects) {
 					objects[i] = &testsv1.Object{
@@ -1306,7 +1328,6 @@ var _ = Describe("Generic DAO", func() {
 				restrictedDAO, err := NewGenericDAO[*testsv1.Object]().
 					SetLogger(logger).
 					SetTable("objects").
-					SetDefaultOrder("id").
 					SetDefaultLimit(defaultLimit).
 					SetMaxLimit(maxLimit).
 					SetTenancyLogic(restrictedTenancyLogic).

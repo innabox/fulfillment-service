@@ -46,7 +46,6 @@ type Object interface {
 type GenericDAOBuilder[O Object] struct {
 	logger           *slog.Logger
 	table            string
-	defaultOrder     string
 	defaultLimit     int32
 	maxLimit         int32
 	eventCallbacks   []EventCallback
@@ -68,7 +67,6 @@ type GenericDAOBuilder[O Object] struct {
 type GenericDAO[O Object] struct {
 	logger           *slog.Logger
 	table            string
-	defaultOrder     string
 	defaultLimit     int32
 	maxLimit         int32
 	timestampDesc    protoreflect.MessageDescriptor
@@ -115,14 +113,6 @@ func (b *GenericDAOBuilder[O]) SetLogger(value *slog.Logger) *GenericDAOBuilder[
 // SetTable sets the table name. This is mandatory.
 func (b *GenericDAOBuilder[O]) SetTable(value string) *GenericDAOBuilder[O] {
 	b.table = value
-	return b
-}
-
-// SetDefaultOrder sets the default order criteria to use when nothing has been requested by the user. This is optional
-// and the default is no order. This is intended only for use in unit tests, where it is convenient to have some
-// predictable ordering.
-func (b *GenericDAOBuilder[O]) SetDefaultOrder(value string) *GenericDAOBuilder[O] {
-	b.defaultOrder = value
 	return b
 }
 
@@ -280,7 +270,6 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	result = &GenericDAO[O]{
 		logger:           b.logger,
 		table:            b.table,
-		defaultOrder:     b.defaultOrder,
 		defaultLimit:     b.defaultLimit,
 		maxLimit:         b.maxLimit,
 		timestampDesc:    timestampDesc,
@@ -354,10 +343,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 	}
 
 	// Calculate the order clause:
-	var order string
-	if d.defaultOrder != "" {
-		order = d.defaultOrder
-	}
+	const order = "id"
 
 	// Count the total number of results, disregarding the offset and the limit:
 	sqlBuffer := &strings.Builder{}
