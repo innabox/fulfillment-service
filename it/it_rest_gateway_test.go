@@ -20,11 +20,11 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 var _ = Describe("REST gateway", func() {
@@ -42,8 +42,8 @@ var _ = Describe("REST gateway", func() {
 
 	It("Should use protobuf field names in JSON representation", func() {
 		// Create a couple of host classes for the node sets:
-		computeHostClassID := fmt.Sprintf("compute_%s", uuid.NewString())
-		gpuHostClassID := fmt.Sprintf("gpus_%s", uuid.NewString())
+		computeHostClassID := fmt.Sprintf("compute_%s", uuid.New())
+		gpuHostClassID := fmt.Sprintf("gpus_%s", uuid.New())
 		_, err := hostClassesClient.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
 				Id:          computeHostClassID,
@@ -74,7 +74,7 @@ var _ = Describe("REST gateway", func() {
 		})
 
 		// Create a cluster template:
-		templateID := fmt.Sprintf("my_%s", uuid.NewString())
+		templateID := fmt.Sprintf("my_%s", uuid.New())
 		nodeSets := map[string]*privatev1.ClusterTemplateNodeSet{
 			"compute": privatev1.ClusterTemplateNodeSet_builder{
 				HostClass: computeHostClassID,

@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/google/uuid"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -34,6 +33,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/masks"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 // GenericServerBuilder contains the data and logic needed to create new generic servers.
@@ -507,7 +507,7 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 	// TODO: This is the only part of the generic server that depends on specific object types. Is there a way
 	// to avoid that?
 	event := &privatev1.Event{}
-	event.SetId(uuid.NewString())
+	event.SetId(uuid.New())
 	switch e.Type {
 	case dao.EventTypeCreated:
 		event.SetType(privatev1.EventType_EVENT_TYPE_OBJECT_CREATED)

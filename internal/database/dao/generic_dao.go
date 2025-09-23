@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -33,6 +32,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/json"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 // Object is the interface that should be satisfied by objects to be managed by the generic DAO.
@@ -648,7 +648,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	// Generate an identifier if needed:
 	id := object.GetId()
 	if id == "" {
-		id = d.newId()
+		id = uuid.New()
 	}
 
 	// Get the metadata:
@@ -972,10 +972,6 @@ func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {
 		}
 	}
 	return nil
-}
-
-func (d *GenericDAO[O]) newId() string {
-	return uuid.NewString()
 }
 
 func (d *GenericDAO[O]) newObject() O {

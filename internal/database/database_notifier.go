@@ -18,9 +18,10 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 // NotifierBuilder contains the data and logic needed to build a notifier.
@@ -105,7 +106,7 @@ func (n *Notifier) Notify(ctx context.Context, payload proto.Message) (err error
 	}
 
 	// Generate an identifier:
-	id := uuid.NewString()
+	id := uuid.New()
 
 	// Save the payload to the database:
 	_, err = tx.Exec(ctx, "insert into notifications (id, payload) values ($1, $2)", id, data)

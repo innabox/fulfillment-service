@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
-	"github.com/google/uuid"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
@@ -36,6 +35,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 type EventsServerBuilder struct {
@@ -231,7 +231,7 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 	}
 
 	// Create a subscription and remember to remove it when done:
-	subId := uuid.NewString()
+	subId := uuid.New()
 	logger := s.logger.With(
 		slog.String("subscription", subId),
 	)

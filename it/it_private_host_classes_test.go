@@ -17,11 +17,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 var _ = Describe("Priate host classes", func() {
@@ -37,7 +37,7 @@ var _ = Describe("Priate host classes", func() {
 
 	It("Can get the list of host classes", func() {
 		// Create the host class:
-		id := fmt.Sprintf("my_host_class_%s", uuid.NewString())
+		id := fmt.Sprintf("my_host_class_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
 				Id:          id,
@@ -57,7 +57,7 @@ var _ = Describe("Priate host classes", func() {
 
 	It("Can get a specific host class", func() {
 		// Create the host class:
-		id := fmt.Sprintf("my_host_class_%s", uuid.NewString())
+		id := fmt.Sprintf("my_host_class_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
 				Id:          id,
@@ -85,7 +85,7 @@ var _ = Describe("Priate host classes", func() {
 	})
 
 	It("Can create a host class", func() {
-		id := fmt.Sprintf("my_template_%s", uuid.NewString())
+		id := fmt.Sprintf("my_template_%s", uuid.New())
 		response, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
 				Id:          id,
@@ -108,7 +108,7 @@ var _ = Describe("Priate host classes", func() {
 
 	It("Can update a host class", func() {
 		// Create a host class::
-		id := fmt.Sprintf("my_host_class_%s", uuid.NewString())
+		id := fmt.Sprintf("my_host_class_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
 				Id:          id,
@@ -157,7 +157,7 @@ var _ = Describe("Priate host classes", func() {
 
 	It("Can delete a host class", func() {
 		// Create a host class::
-		id := fmt.Sprintf("my_host_class_%s", uuid.NewString())
+		id := fmt.Sprintf("my_host_class_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
 				Metadata: privatev1.Metadata_builder{

@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,6 +30,7 @@ import (
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 var _ = Describe("Generic DAO", func() {
@@ -619,7 +619,7 @@ var _ = Describe("Generic DAO", func() {
 				objects = make([]*testsv1.Object, objectCount)
 				for i := range len(objects) {
 					objects[i] = &testsv1.Object{
-						Id: uuid.NewString(),
+						Id: uuid.New(),
 					}
 					_, err := generic.Create(ctx, objects[i])
 					Expect(err).ToNot(HaveOccurred())
@@ -731,7 +731,7 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Returns false if the object doesn't exist", func() {
-				exists, err := generic.Exists(ctx, uuid.NewString())
+				exists, err := generic.Exists(ctx, uuid.New())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(exists).To(BeFalse())
 			})

@@ -21,10 +21,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 // DatabaseServer knows how to start a PostgreSQL database server inside a container, and how to create databases to be
@@ -73,7 +74,7 @@ func MakeDatabaseServer() *DatabaseServer {
 	}
 
 	// Generate a random password for the database admnistrator:
-	password := uuid.NewString()
+	password := uuid.New()
 
 	// Start the database server:
 	runOut := &bytes.Buffer{}
@@ -162,7 +163,7 @@ func (s *DatabaseServer) MakeDatabase() *Database {
 	// Generate the database name and password:
 	name := fmt.Sprintf("test_%d", s.count)
 	user := fmt.Sprintf("test_%d", s.count)
-	password := uuid.NewString()
+	password := uuid.New()
 	s.count++
 
 	// Create the user:

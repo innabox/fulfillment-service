@@ -17,13 +17,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
-
-	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 var _ = Describe("Private cluster templates", func() {
@@ -47,7 +47,7 @@ var _ = Describe("Private cluster templates", func() {
 
 	It("Can get a specific template", func() {
 		// Create the template:
-		id := fmt.Sprintf("my_template_%s", uuid.NewString())
+		id := fmt.Sprintf("my_template_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
@@ -75,7 +75,7 @@ var _ = Describe("Private cluster templates", func() {
 	})
 
 	It("Can create a template", func() {
-		id := fmt.Sprintf("my_template_%s", uuid.NewString())
+		id := fmt.Sprintf("my_template_%s", uuid.New())
 		response, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
@@ -98,7 +98,7 @@ var _ = Describe("Private cluster templates", func() {
 
 	It("Can update a template", func() {
 		// Create a template::
-		id := fmt.Sprintf("my_template_%s", uuid.NewString())
+		id := fmt.Sprintf("my_template_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,
@@ -147,7 +147,7 @@ var _ = Describe("Private cluster templates", func() {
 
 	It("Can delete a template", func() {
 		// Create a template::
-		id := fmt.Sprintf("my_template_%s", uuid.NewString())
+		id := fmt.Sprintf("my_template_%s", uuid.New())
 		_, err := client.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 			Object: privatev1.ClusterTemplate_builder{
 				Id:          id,

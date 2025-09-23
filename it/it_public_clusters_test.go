@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	grpccodes "google.golang.org/grpc/codes"
@@ -32,6 +31,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 var _ = Describe("Public clusters", func() {
@@ -51,7 +51,7 @@ var _ = Describe("Public clusters", func() {
 		templatesClient = privatev1.NewClusterTemplatesClient(adminConn)
 
 		// Create a template for testing:
-		templateId = fmt.Sprintf("my_template_%s", uuid.NewString())
+		templateId = fmt.Sprintf("my_template_%s", uuid.New())
 		_, err := templatesClient.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 			Object: privatev1.ClusterTemplate_builder{
 				Id:          templateId,
