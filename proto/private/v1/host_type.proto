@@ -35,10 +35,35 @@ message HostSpec {
 
 message HostStatus {
   // Copies of the public fields.
-  HostPowerState power_state = 1;
+  HostState state = 1;
+  HostPowerState power_state = 2;
+  repeated HostCondition conditions = 3;
 
   // Identifier of the host pool that was selected for this host.
-  string host_pool = 2;
+  string host_pool = 4;
+}
+
+enum HostState {
+  HOST_STATE_UNSPECIFIED = 0;
+  HOST_STATE_PROGRESSING = 1;
+  HOST_STATE_READY = 2;
+  HOST_STATE_FAILED = 3;
+}
+
+message HostCondition {
+  HostConditionType type = 1;
+  shared.v1.ConditionStatus status = 2;
+  google.protobuf.Timestamp last_transition_time = 3;
+  optional string reason = 4;
+  optional string message = 5;
+}
+
+enum HostConditionType {
+  HOST_CONDITION_TYPE_UNSPECIFIED = 0;
+  HOST_CONDITION_TYPE_PROGRESSING = 1;
+  HOST_CONDITION_TYPE_READY = 2;
+  HOST_CONDITION_TYPE_FAILED = 3;
+  HOST_CONDITION_TYPE_DEGRADED = 4;
 }
 
 enum HostPowerState {
