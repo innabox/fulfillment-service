@@ -62,6 +62,7 @@ spec:
           sslrootcert=/secrets/cert/ca.crt"
         - --grpc-listener-network=unix
         - --grpc-listener-address=/run/sockets/server.socket
+        - --grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
         - --grpc-authn-type=external
 
       - name: gateway

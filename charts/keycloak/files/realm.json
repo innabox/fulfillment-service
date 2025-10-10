@@ -1,6 +1,6 @@
 {
   "id" : "01e6c34f-6906-4907-9cbd-2dec7a6a0e1d",
-  "realm" : "my_realm",
+  "realm" : "innabox",
   "notBefore" : 0,
   "defaultSignatureAlgorithm" : "RS256",
   "revokeRefreshToken" : false,
@@ -619,8 +619,8 @@
     "enabled" : true,
     "alwaysDisplayInConsole" : false,
     "clientAuthenticatorType" : "client-secret",
-    "redirectUris" : [ "/*" ],
-    "webOrigins" : [ "/*" ],
+    "redirectUris" : [ "http://localhost" ],
+    "webOrigins" : [ "http://localhost" ],
     "notBefore" : 0,
     "bearerOnly" : false,
     "consentRequired" : false,

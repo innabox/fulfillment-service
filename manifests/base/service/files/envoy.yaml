@@ -90,6 +90,25 @@ static_resources:
                       request_mutations:
                       - remove: authorization
 
+              # For the metadata, reflection and health methods we need to disable authentication, as they need to be
+              # publicly available.
+              - name: public
+                match:
+                  safe_regex:
+                    regex: ^/(metadata|grpc\.(reflection|health))\..*$
+                route:
+                  cluster: server
+                  timeout: 300s
+                typed_per_filter_config:
+                  envoy.filters.http.ext_authz:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                    disabled: true
+                  envoy.filters.http.header_mutation:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutationPerRoute
+                    mutations:
+                      request_mutations:
+                      - remove: authorization
+
               # This route is for gRPC unary requests, which should be quite fast, so we can safely set a timeout
               - name: other
                 match:

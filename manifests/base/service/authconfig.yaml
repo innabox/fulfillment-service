@@ -77,11 +77,13 @@ spec:
           # Get the account name:
           account_name := input.auth.identity.user.username
 
-          # Allow reflection and health to everyone:
+          # Allow metadata, reflection and health to everyone:
+          allow {
+            startswith(grpc_method, "/metadata.")
+          }
           allow {
             startswith(grpc_method, "/grpc.reflection.")
           }
-
           allow {
             startswith(grpc_method, "/grpc.health.")
           }

@@ -35,6 +35,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	metadatav1 "github.com/innabox/fulfillment-service/internal/api/metadata/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -63,14 +64,21 @@ func NewStartServerCommand() *cobra.Command {
 			auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
 		),
 	)
+	flags.StringSliceVar(
+		&runner.grpcAuthnTrustedTokenIssuers,
+		"grpc-authn-trusted-token-issuers",
+		[]string{},
+		"Comma separated list of token issuers that are adversised as trusted by the gRPC server.",
+	)
 	return command
 }
 
 // startServerCommandRunner contains the data and logic needed to run the `start server` command.
 type startServerCommandRunner struct {
-	logger        *slog.Logger
-	flags         *pflag.FlagSet
-	grpcAuthnType string
+	logger                       *slog.Logger
+	flags                        *pflag.FlagSet
+	grpcAuthnType                string
+	grpcAuthnTrustedTokenIssuers []string
 }
 
 // run runs the `start server` command.
@@ -254,6 +262,17 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return fmt.Errorf("failed to create tenancy logic: %w", err)
 	}
 
+	// Create the metadata server:
+	c.logger.InfoContext(ctx, "Creating metadata server")
+	metadataServer, err := servers.NewMetadataServer().
+		SetLogger(c.logger).
+		AddAutnTrustedTokenIssuers(c.grpcAuthnTrustedTokenIssuers...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metadata server: %w")
+	}
+	metadatav1.RegisterMetadataServer(grpcServer, metadataServer)
+
 	// Create the private cluster templates server:
 	c.logger.InfoContext(ctx, "Creating private cluster templates server")
 	privateClusterTemplatesServer, err := servers.NewPrivateClusterTemplatesServer().
@@ -263,7 +282,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private cluster templates server")
+		return fmt.Errorf("failed to create private cluster templates server: %w", err)
 	}
 	privatev1.RegisterClusterTemplatesServer(grpcServer, privateClusterTemplatesServer)
 
@@ -275,7 +294,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create cluster templates server")
+		return fmt.Errorf("failed to create cluster templates server: %w", err)
 	}
 	ffv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
 
@@ -288,7 +307,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private clusters server")
+		return fmt.Errorf("failed to create private clusters server: %w", err)
 	}
 	privatev1.RegisterClustersServer(grpcServer, privateClustersServer)
 
@@ -300,7 +319,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create clusters server")
+		return fmt.Errorf("failed to create clusters server: %w", err)
 	}
 	ffv1.RegisterClustersServer(grpcServer, clustersServer)
 
@@ -313,7 +332,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private host classes server")
+		return fmt.Errorf("failed to create private host classes server: %w", err)
 	}
 	privatev1.RegisterHostClassesServer(grpcServer, privateHostClassesServer)
 
@@ -325,7 +344,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create host classes server")
+		return fmt.Errorf("failed to create host classes server: %w", err)
 	}
 	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
 
@@ -338,7 +357,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private hosts server")
+		return fmt.Errorf("failed to create private hosts server: %w", err)
 	}
 	privatev1.RegisterHostsServer(grpcServer, privateHostsServer)
 
@@ -350,7 +369,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create hosts server")
+		return fmt.Errorf("failed to create hosts server: %w", err)
 	}
 	ffv1.RegisterHostsServer(grpcServer, hostsServer)
 
@@ -363,7 +382,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private host pools server")
+		return fmt.Errorf("failed to create private host pools server: %w", err)
 	}
 	privatev1.RegisterHostPoolsServer(grpcServer, privateHostPoolsServer)
 
@@ -375,7 +394,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create host pools server")
+		return fmt.Errorf("failed to create host pools server: %w", err)
 	}
 	ffv1.RegisterHostPoolsServer(grpcServer, hostPoolsServer)
 
@@ -388,7 +407,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private virtual machine templates server")
+		return fmt.Errorf("failed to create private virtual machine templates server: %w", err)
 	}
 	privatev1.RegisterVirtualMachineTemplatesServer(grpcServer, privateVirtualMachineTemplatesServer)
 
@@ -400,7 +419,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create virtual machine templates server")
+		return fmt.Errorf("failed to create virtual machine templates server: %w", err)
 	}
 	ffv1.RegisterVirtualMachineTemplatesServer(grpcServer, virtualMachineTemplatesServer)
 
@@ -413,7 +432,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create private virtual machines server")
+		return fmt.Errorf("failed to create private virtual machines server: %w", err)
 	}
 	privatev1.RegisterVirtualMachinesServer(grpcServer, privateVirtualMachinesServer)
 
@@ -425,7 +444,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create virtual machines server")
+		return fmt.Errorf("failed to create virtual machines server: %w", err)
 	}
 	ffv1.RegisterVirtualMachinesServer(grpcServer, virtualMachinesServer)
 
@@ -438,7 +457,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create hubs server")
+		return fmt.Errorf("failed to create hubs server: %w", err)
 	}
 	privatev1.RegisterHubsServer(grpcServer, privateHubsServer)
 
@@ -451,7 +470,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "failed to create events server")
+		return fmt.Errorf("failed to create events server: %w", err)
 	}
 	go func() {
 		err := eventsServer.Start(ctx)
@@ -504,6 +523,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	return grpcServer.Serve(listener)
 }
 
-// publicMethodRegex is regular expression for the methods that are considered public, including the reflection and
-// health methods. These will skip authentication and authorization.
-const publicMethodRegex = `^/grpc\.(reflection|health)\..*$`
+// publicMethodRegex is regular expression for the methods that are considered public, including the metadata, and
+// reflection and health methods. These will skip authentication and authorization.
+const publicMethodRegex = `^/(metadata|grpc\.(reflection|health))\..*$`
