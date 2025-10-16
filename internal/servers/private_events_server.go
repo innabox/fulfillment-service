@@ -48,12 +48,12 @@ type PrivateEventsServer struct {
 
 	logger   *slog.Logger
 	listener *database.Listener
-	subs     map[string]eventsServerSubInfo
+	subs     map[string]privateEventsServerSubInfo
 	subsLock *sync.RWMutex
 	celEnv   *cel.Env
 }
 
-type eventsServerSubInfo struct {
+type privateEventsServerSubInfo struct {
 	stream     grpc.ServerStreamingServer[privatev1.EventsWatchResponse]
 	filterSrc  string
 	filterPrg  cel.Program
@@ -100,7 +100,7 @@ func (b *PrivateEventsServerBuilder) Build() (result *PrivateEventsServer, err e
 	// Create the object early so that whe can use its methods as callback functions:
 	s := &PrivateEventsServer{
 		logger:   b.logger,
-		subs:     map[string]eventsServerSubInfo{},
+		subs:     map[string]privateEventsServerSubInfo{},
 		subsLock: &sync.RWMutex{},
 		celEnv:   celEnv,
 	}
@@ -201,7 +201,7 @@ func (s *PrivateEventsServer) Watch(request *privatev1.EventsWatchRequest,
 	logger := s.logger.With(
 		slog.String("subscription", subId),
 	)
-	subInfo := eventsServerSubInfo{
+	subInfo := privateEventsServerSubInfo{
 		stream:     stream,
 		filterSrc:  filterSrc,
 		filterPrg:  filterPrg,
