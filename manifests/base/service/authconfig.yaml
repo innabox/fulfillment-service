@@ -62,10 +62,6 @@ spec:
           import future.keywords.in
 
           # Define service accounts:
-          client_accounts := {
-            "system:serviceaccount:innabox:client",
-          }
-
           admin_accounts := {
             "system:serviceaccount:innabox:admin",
             "system:serviceaccount:innabox:controller",
@@ -76,6 +72,23 @@ spec:
 
           # Get the account name:
           account_name := input.auth.identity.user.username
+
+          # Function to check if an account is a service account:
+          is_service_account {
+            startswith(account_name, "system:serviceaccount:")
+          }
+
+          # Function to check if an account is an admin account:
+          is_admin {
+            is_service_account
+            account_name in admin_accounts
+          }
+
+          # Function to check if an account is a client account:
+          is_client {
+            is_service_account
+            not account_name in admin_accounts
+          }
 
           # Allow metadata, reflection and health to everyone:
           allow {
@@ -123,12 +136,12 @@ spec:
               "/fulfillment.v1.VirtualMachines/List",
               "/fulfillment.v1.VirtualMachines/Update",
             }
-            account_name in client_accounts
+            is_client
           }
 
-          # Allow everything to admin and controller:
+          # Allow everything to admins:
           allow {
-            account_name in admin_accounts
+            is_admin
           }
   response:
     success:

@@ -70,6 +70,12 @@ func NewStartServerCommand() *cobra.Command {
 		[]string{},
 		"Comma separated list of token issuers that are adversised as trusted by the gRPC server.",
 	)
+	flags.StringVar(
+		&runner.tenancyLogic,
+		"tenancy-logic",
+		"default",
+		"Type of tenancy logic to use. Valid values are 'default' and 'serviceaccount'.",
+	)
 	return command
 }
 
@@ -79,6 +85,7 @@ type startServerCommandRunner struct {
 	flags                        *pflag.FlagSet
 	grpcAuthnType                string
 	grpcAuthnTrustedTokenIssuers []string
+	tenancyLogic                 string
 }
 
 // run runs the `start server` command.
@@ -254,12 +261,32 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 
 	// Create the tenancy logic:
-	c.logger.InfoContext(ctx, "Creating tenancy logic")
-	tenancyLogic, err := auth.NewDefaultTenancyLogic().
-		SetLogger(c.logger).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create tenancy logic: %w", err)
+	c.logger.InfoContext(
+		ctx,
+		"Creating tenancy logic",
+		slog.String("type", c.tenancyLogic),
+	)
+	var tenancyLogic auth.TenancyLogic
+	switch strings.ToLower(c.tenancyLogic) {
+	case "default":
+		tenancyLogic, err = auth.NewDefaultTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create default tenancy logic: %w", err)
+		}
+	case "serviceaccount":
+		tenancyLogic, err = auth.NewServiceAccountTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create service account tenancy logic: %w", err)
+		}
+	default:
+		return fmt.Errorf(
+			"unknown tenancy logic '%s', valid values are 'default' and 'serviceaccount'",
+			c.tenancyLogic,
+		)
 	}
 
 	// Create the metadata server:
@@ -269,7 +296,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		AddAutnTrustedTokenIssuers(c.grpcAuthnTrustedTokenIssuers...).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create metadata server: %w")
+		return fmt.Errorf("failed to create metadata server: %w", err)
 	}
 	metadatav1.RegisterMetadataServer(grpcServer, metadataServer)
 

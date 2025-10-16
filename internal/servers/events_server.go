@@ -52,15 +52,16 @@ type EventsServer struct {
 
 	logger       *slog.Logger
 	listener     *database.Listener
-	subs         map[string]privateEventsServerSubInfo
+	subs         map[string]eventsServerSubInfo
 	subsLock     *sync.RWMutex
 	celEnv       *cel.Env
 	mapper       *GenericMapper[*privatev1.Event, *eventsv1.Event]
 	tenancyLogic auth.TenancyLogic
 }
 
-type privateEventsServerSubInfo struct {
+type eventsServerSubInfo struct {
 	stream     grpc.ServerStreamingServer[eventsv1.EventsWatchResponse]
+	subject    *auth.Subject
 	filterSrc  string
 	filterPrg  cel.Program
 	eventsChan chan *eventsv1.Event
@@ -132,7 +133,7 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 	// Create the object early so that whe can use its methods as callback functions:
 	s := &EventsServer{
 		logger:       b.logger,
-		subs:         map[string]privateEventsServerSubInfo{},
+		subs:         map[string]eventsServerSubInfo{},
 		subsLock:     &sync.RWMutex{},
 		celEnv:       celEnv,
 		mapper:       mapper,
@@ -205,6 +206,9 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 	// Get the context:
 	ctx := stream.Context()
 
+	// Get the subject:
+	subject := auth.SubjectFromContext(ctx)
+
 	// Compile the filter expression:
 	var (
 		filterSrc string
@@ -235,8 +239,9 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 	logger := s.logger.With(
 		slog.String("subscription", subId),
 	)
-	subInfo := privateEventsServerSubInfo{
+	subInfo := eventsServerSubInfo{
 		stream:     stream,
+		subject:    subject,
 		filterSrc:  filterSrc,
 		filterPrg:  filterPrg,
 		eventsChan: make(chan *eventsv1.Event),
@@ -322,22 +327,13 @@ func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message
 		return nil
 	}
 
-	// Check if the user has permission to see the event:
-	visible, err := s.checkTenancy(ctx, private)
-	if err != nil {
-		return fmt.Errorf("failed to check tenancy: %w", err)
-	}
-	if !visible {
-		return nil
-	}
-
 	// Translate the private event to a public event and process it:
 	public := &eventsv1.Event{}
-	err = s.mapper.Copy(ctx, private, public)
+	err := s.mapper.Copy(ctx, private, public)
 	if err != nil {
 		return fmt.Errorf("failed to translate event: %w", err)
 	}
-	return s.processEvent(ctx, public)
+	return s.processEvent(ctx, public, private)
 }
 
 // checkTenancy checks if the object is visible to the current user.
@@ -417,21 +413,36 @@ func (s *EventsServer) extractMetadata(ctx context.Context, event *privatev1.Eve
 	}
 }
 
-func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) error {
+func (s *EventsServer) processEvent(ctx context.Context, public *eventsv1.Event, private *privatev1.Event) error {
 	s.subsLock.RLock()
 	defer s.subsLock.RUnlock()
 	for subId, sub := range s.subs {
 		logger := s.logger.With(
 			slog.String("filter", sub.filterSrc),
 			slog.String("sub", subId),
-			slog.Any("event", event),
+			slog.Any("public", public),
+			slog.Any("private", private),
 		)
 		accepted := true
 
-		// Apply user-defined filter - tenant filtering is already done in processPayload
+		// In order to check the tenancy, and maybe for other things as well, we need to have a context that
+		// looks like the context passed to a service method. In particular we need to have the subject of the
+		// user. So we need to create a new context.
+		ctx := auth.ContextWithSubject(ctx, sub.subject)
+
+		// Check if the user has permission to see the event:
+		visible, err := s.checkTenancy(ctx, private)
+		if err != nil {
+			return fmt.Errorf("failed to check tenancy: %w", err)
+		}
+		if !visible {
+			return nil
+		}
+
+		// Apply user-defined filter:
 		if sub.filterPrg != nil {
 			var err error
-			accepted, err = s.evalFilter(ctx, sub.filterPrg, event)
+			accepted, err = s.evalFilter(ctx, sub.filterPrg, public)
 			if err != nil {
 				logger.DebugContext(
 					ctx,
@@ -442,9 +453,10 @@ func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) 
 			}
 		}
 
+		// Forward the event to the subscription:
 		if accepted {
 			logger.DebugContext(ctx, "Event accepted by filter")
-			sub.eventsChan <- event
+			sub.eventsChan <- public
 		} else {
 			logger.DebugContext(ctx, "Event rejected by filter")
 		}
