@@ -24,12 +24,14 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type ClusterTemplatesServerBuilder struct {
-	logger       *slog.Logger
-	private      privatev1.ClusterTemplatesServer
-	tenancyLogic auth.TenancyLogic
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ ffv1.ClusterTemplatesServer = (*ClusterTemplatesServer)(nil)
@@ -38,7 +40,7 @@ type ClusterTemplatesServer struct {
 	ffv1.UnimplementedClusterTemplatesServer
 
 	logger    *slog.Logger
-	private   privatev1.ClusterTemplatesServer
+	delegate  privatev1.ClusterTemplatesServer
 	inMapper  *GenericMapper[*ffv1.ClusterTemplate, *privatev1.ClusterTemplate]
 	outMapper *GenericMapper[*privatev1.ClusterTemplate, *ffv1.ClusterTemplate]
 }
@@ -53,9 +55,15 @@ func (b *ClusterTemplatesServerBuilder) SetLogger(value *slog.Logger) *ClusterTe
 	return b
 }
 
-// SetPrivate sets the private server to use. This is mandatory.
-func (b *ClusterTemplatesServerBuilder) SetPrivate(value privatev1.ClusterTemplatesServer) *ClusterTemplatesServerBuilder {
-	b.private = value
+// SetNotifier sets the notifier to use. This is optional.
+func (b *ClusterTemplatesServerBuilder) SetNotifier(value *database.Notifier) *ClusterTemplatesServerBuilder {
+	b.notifier = value
+	return b
+}
+
+// SetAttributionLogic sets the attribution logic to use. This is optional.
+func (b *ClusterTemplatesServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *ClusterTemplatesServerBuilder {
+	b.attributionLogic = value
 	return b
 }
 
@@ -69,10 +77,6 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-	if b.private == nil {
-		err = errors.New("private server is mandatory")
 		return
 	}
 	if b.tenancyLogic == nil {
@@ -96,10 +100,21 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 		return
 	}
 
+	// Create the private server to delegate to:
+	delegate, err := NewPrivateClusterTemplatesServer().
+		SetLogger(b.logger).
+		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &ClusterTemplatesServer{
 		logger:    b.logger,
-		private:   b.private,
+		delegate:  delegate,
 		inMapper:  inMapper,
 		outMapper: outMapper,
 	}
@@ -115,7 +130,7 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 	privateRequest.SetFilter(request.GetFilter())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.List(ctx, privateRequest)
+	privateResponse, err := s.delegate.List(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +167,7 @@ func (s *ClusterTemplatesServer) Get(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.Get(ctx, privateRequest)
+	privateResponse, err := s.delegate.Get(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +214,7 @@ func (s *ClusterTemplatesServer) Create(ctx context.Context,
 	// Delegate to the private server:
 	privateRequest := &privatev1.ClusterTemplatesCreateRequest{}
 	privateRequest.SetObject(privateClusterTemplate)
-	privateResponse, err := s.private.Create(ctx, privateRequest)
+	privateResponse, err := s.delegate.Create(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +256,7 @@ func (s *ClusterTemplatesServer) Update(ctx context.Context,
 	// Get the existing object from the private server:
 	getRequest := &privatev1.ClusterTemplatesGetRequest{}
 	getRequest.SetId(id)
-	getResponse, err := s.private.Get(ctx, getRequest)
+	getResponse, err := s.delegate.Get(ctx, getRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +277,7 @@ func (s *ClusterTemplatesServer) Update(ctx context.Context,
 	// Delegate to the private server with the merged object:
 	privateRequest := &privatev1.ClusterTemplatesUpdateRequest{}
 	privateRequest.SetObject(existingPrivateClusterTemplate)
-	privateResponse, err := s.private.Update(ctx, privateRequest)
+	privateResponse, err := s.delegate.Update(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +309,7 @@ func (s *ClusterTemplatesServer) Delete(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	_, err = s.private.Delete(ctx, privateRequest)
+	_, err = s.delegate.Delete(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}

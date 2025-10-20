@@ -99,14 +99,8 @@ var _ = Describe("Host pools server", func() {
 
 	Describe("Creation", func() {
 		It("Can be built if all the required parameters are set", func() {
-			privateServer, err := NewPrivateHostPoolsServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostPoolsServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -114,37 +108,16 @@ var _ = Describe("Host pools server", func() {
 		})
 
 		It("Fails if logger is not set", func() {
-			privateServer, err := NewPrivateHostPoolsServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostPoolsServer().
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(server).To(BeNil())
 		})
 
-		It("Fails if private server is not set", func() {
-			server, err := NewHostPoolsServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).To(MatchError("private server is mandatory"))
-			Expect(server).To(BeNil())
-		})
-
 		It("Fails if tenancy logic is not set", func() {
-			privateServer, err := NewPrivateHostPoolsServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostPoolsServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
@@ -157,17 +130,9 @@ var _ = Describe("Host pools server", func() {
 		BeforeEach(func() {
 			var err error
 
-			// Create the private server:
-			privateServer, err := NewPrivateHostPoolsServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
 			// Create the server:
 			server, err = NewHostPoolsServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

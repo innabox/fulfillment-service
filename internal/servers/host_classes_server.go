@@ -24,12 +24,14 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type HostClassesServerBuilder struct {
-	logger       *slog.Logger
-	private      privatev1.HostClassesServer
-	tenancyLogic auth.TenancyLogic
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ ffv1.HostClassesServer = (*HostClassesServer)(nil)
@@ -38,7 +40,7 @@ type HostClassesServer struct {
 	ffv1.UnimplementedHostClassesServer
 
 	logger    *slog.Logger
-	private   privatev1.HostClassesServer
+	delegate  privatev1.HostClassesServer
 	inMapper  *GenericMapper[*ffv1.HostClass, *privatev1.HostClass]
 	outMapper *GenericMapper[*privatev1.HostClass, *ffv1.HostClass]
 }
@@ -53,9 +55,15 @@ func (b *HostClassesServerBuilder) SetLogger(value *slog.Logger) *HostClassesSer
 	return b
 }
 
-// SetPrivate sets the private server to use. This is mandatory.
-func (b *HostClassesServerBuilder) SetPrivate(value privatev1.HostClassesServer) *HostClassesServerBuilder {
-	b.private = value
+// SetNotifier sets the notifier to use. This is optional.
+func (b *HostClassesServerBuilder) SetNotifier(value *database.Notifier) *HostClassesServerBuilder {
+	b.notifier = value
+	return b
+}
+
+// SetAttributionLogic sets the attribution logic to use. This is optional.
+func (b *HostClassesServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *HostClassesServerBuilder {
+	b.attributionLogic = value
 	return b
 }
 
@@ -69,10 +77,6 @@ func (b *HostClassesServerBuilder) Build() (result *HostClassesServer, err error
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-	if b.private == nil {
-		err = errors.New("private server is mandatory")
 		return
 	}
 	if b.tenancyLogic == nil {
@@ -96,10 +100,21 @@ func (b *HostClassesServerBuilder) Build() (result *HostClassesServer, err error
 		return
 	}
 
+	// Create the private server to delegate to:
+	delegate, err := NewPrivateHostClassesServer().
+		SetLogger(b.logger).
+		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &HostClassesServer{
 		logger:    b.logger,
-		private:   b.private,
+		delegate:  delegate,
 		inMapper:  inMapper,
 		outMapper: outMapper,
 	}
@@ -116,7 +131,7 @@ func (s *HostClassesServer) List(ctx context.Context,
 	privateRequest.SetOrder(request.GetOrder())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.List(ctx, privateRequest)
+	privateResponse, err := s.delegate.List(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +168,7 @@ func (s *HostClassesServer) Get(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.Get(ctx, privateRequest)
+	privateResponse, err := s.delegate.Get(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +215,7 @@ func (s *HostClassesServer) Create(ctx context.Context,
 	// Delegate to the private server:
 	privateRequest := &privatev1.HostClassesCreateRequest{}
 	privateRequest.SetObject(privateHostClass)
-	privateResponse, err := s.private.Create(ctx, privateRequest)
+	privateResponse, err := s.delegate.Create(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +257,7 @@ func (s *HostClassesServer) Update(ctx context.Context,
 	// Get the existing object from the private server:
 	getRequest := &privatev1.HostClassesGetRequest{}
 	getRequest.SetId(id)
-	getResponse, err := s.private.Get(ctx, getRequest)
+	getResponse, err := s.delegate.Get(ctx, getRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +278,7 @@ func (s *HostClassesServer) Update(ctx context.Context,
 	// Delegate to the private server with the merged object:
 	privateRequest := &privatev1.HostClassesUpdateRequest{}
 	privateRequest.SetObject(existingPrivateHostClass)
-	privateResponse, err := s.private.Update(ctx, privateRequest)
+	privateResponse, err := s.delegate.Update(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +310,7 @@ func (s *HostClassesServer) Delete(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	_, err = s.private.Delete(ctx, privateRequest)
+	_, err = s.delegate.Delete(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}

@@ -32,6 +32,7 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/jq"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
@@ -39,9 +40,10 @@ import (
 )
 
 type ClustersServerBuilder struct {
-	logger       *slog.Logger
-	private      privatev1.ClustersServer
-	tenancyLogic auth.TenancyLogic
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ ffv1.ClustersServer = (*ClustersServer)(nil)
@@ -50,6 +52,7 @@ type ClustersServer struct {
 	ffv1.UnimplementedClustersServer
 
 	logger          *slog.Logger
+	notifier        *database.Notifier
 	private         privatev1.ClustersServer
 	inMapper        *GenericMapper[*ffv1.Cluster, *privatev1.Cluster]
 	outMapper       *GenericMapper[*privatev1.Cluster, *ffv1.Cluster]
@@ -69,9 +72,15 @@ func (b *ClustersServerBuilder) SetLogger(value *slog.Logger) *ClustersServerBui
 	return b
 }
 
-// SetPrivate sets the private server to use. This is mandatory.
-func (b *ClustersServerBuilder) SetPrivate(value privatev1.ClustersServer) *ClustersServerBuilder {
-	b.private = value
+// SetNotifier sets the notifier to use. This is optional.
+func (b *ClustersServerBuilder) SetNotifier(value *database.Notifier) *ClustersServerBuilder {
+	b.notifier = value
+	return b
+}
+
+// SetAttributionLogic sets the attribution logic to use. This is optional.
+func (b *ClustersServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *ClustersServerBuilder {
+	b.attributionLogic = value
 	return b
 }
 
@@ -85,10 +94,6 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-	if b.private == nil {
-		err = errors.New("private server is mandatory")
 		return
 	}
 	if b.tenancyLogic == nil {
@@ -142,14 +147,26 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 		return
 	}
 
+	// Create the private server to delegate to:
+	delegate, err := NewPrivateClustersServer().
+		SetLogger(b.logger).
+		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &ClustersServer{
 		logger:          b.logger,
+		notifier:        b.notifier,
 		jqTool:          jqTool,
 		hubsDao:         hubsDao,
 		kubeClients:     map[string]clnt.Client{},
 		kubeClientsLock: &sync.Mutex{},
-		private:         b.private,
+		private:         delegate,
 		inMapper:        inMapper,
 		outMapper:       outMapper,
 	}

@@ -25,12 +25,14 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type HostsServerBuilder struct {
-	logger       *slog.Logger
-	private      privatev1.HostsServer
-	tenancyLogic auth.TenancyLogic
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ ffv1.HostsServer = (*HostsServer)(nil)
@@ -39,7 +41,7 @@ type HostsServer struct {
 	ffv1.UnimplementedHostsServer
 
 	logger    *slog.Logger
-	private   privatev1.HostsServer
+	delegate  privatev1.HostsServer
 	inMapper  *GenericMapper[*ffv1.Host, *privatev1.Host]
 	outMapper *GenericMapper[*privatev1.Host, *ffv1.Host]
 }
@@ -54,9 +56,15 @@ func (b *HostsServerBuilder) SetLogger(value *slog.Logger) *HostsServerBuilder {
 	return b
 }
 
-// SetPrivate sets the private server to use. This is mandatory.
-func (b *HostsServerBuilder) SetPrivate(value privatev1.HostsServer) *HostsServerBuilder {
-	b.private = value
+// SetNotifier sets the notifier to use. This is optional.
+func (b *HostsServerBuilder) SetNotifier(value *database.Notifier) *HostsServerBuilder {
+	b.notifier = value
+	return b
+}
+
+// SetAttributionLogic sets the attribution logic to use. This is optional.
+func (b *HostsServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *HostsServerBuilder {
+	b.attributionLogic = value
 	return b
 }
 
@@ -70,10 +78,6 @@ func (b *HostsServerBuilder) Build() (result *HostsServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-	if b.private == nil {
-		err = errors.New("private server is mandatory")
 		return
 	}
 	if b.tenancyLogic == nil {
@@ -109,10 +113,21 @@ func (b *HostsServerBuilder) Build() (result *HostsServer, err error) {
 		return
 	}
 
+	// Create the private server to delegate to:
+	delegate, err := NewPrivateHostsServer().
+		SetLogger(b.logger).
+		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &HostsServer{
 		logger:    b.logger,
-		private:   b.private,
+		delegate:  delegate,
 		inMapper:  inMapper,
 		outMapper: outMapper,
 	}
@@ -129,7 +144,7 @@ func (s *HostsServer) List(ctx context.Context,
 	privateRequest.SetOrder(request.GetOrder())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.List(ctx, privateRequest)
+	privateResponse, err := s.delegate.List(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +181,7 @@ func (s *HostsServer) Get(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.Get(ctx, privateRequest)
+	privateResponse, err := s.delegate.Get(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +228,7 @@ func (s *HostsServer) Create(ctx context.Context,
 	// Delegate to the private server:
 	privateRequest := &privatev1.HostsCreateRequest{}
 	privateRequest.SetObject(privateHost)
-	privateResponse, err := s.private.Create(ctx, privateRequest)
+	privateResponse, err := s.delegate.Create(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +277,7 @@ func (s *HostsServer) Update(ctx context.Context,
 	privateRequest := &privatev1.HostsUpdateRequest{}
 	privateRequest.SetObject(privateHost)
 	privateRequest.SetUpdateMask(request.GetUpdateMask())
-	privateResponse, err := s.private.Update(ctx, privateRequest)
+	privateResponse, err := s.delegate.Update(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +309,7 @@ func (s *HostsServer) Delete(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	_, err = s.private.Delete(ctx, privateRequest)
+	_, err = s.delegate.Delete(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}

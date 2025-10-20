@@ -123,18 +123,10 @@ var _ = Describe("Virtual machines server", func() {
 	})
 
 	Describe("Builder", func() {
-		It("Creates server with logger and private server", func() {
-			// Create a private server:
-			privateServer, err := NewPrivateVirtualMachinesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
+		It("Creates server with logger and tenancy logic", func() {
 			// Create the public server:
 			server, err := NewVirtualMachinesServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -142,26 +134,8 @@ var _ = Describe("Virtual machines server", func() {
 		})
 
 		It("Doesn't create server without logger", func() {
-			// Create a private server:
-			privateServer, err := NewPrivateVirtualMachinesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
 			// Try to create the public server without logger:
 			server, err := NewVirtualMachinesServer().
-				SetPrivate(privateServer).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).To(HaveOccurred())
-			Expect(server).To(BeNil())
-		})
-
-		It("Doesn't create server without private server", func() {
-			// Try to create the public server without private server:
-			server, err := NewVirtualMachinesServer().
-				SetLogger(logger).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(HaveOccurred())
@@ -169,14 +143,8 @@ var _ = Describe("Virtual machines server", func() {
 		})
 
 		It("Fails if tenancy logic is not set", func() {
-			privateServer, err := NewPrivateVirtualMachinesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 			server, err := NewVirtualMachinesServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
@@ -185,24 +153,15 @@ var _ = Describe("Virtual machines server", func() {
 
 	Describe("Behaviour", func() {
 		var (
-			server        *VirtualMachinesServer
-			privateServer *PrivateVirtualMachinesServer
+			server *VirtualMachinesServer
 		)
 
 		BeforeEach(func() {
 			var err error
 
-			// Create the private server:
-			privateServer, err = NewPrivateVirtualMachinesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
 			// Create the public server:
 			server, err = NewVirtualMachinesServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

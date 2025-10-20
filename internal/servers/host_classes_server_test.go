@@ -99,14 +99,8 @@ var _ = Describe("Host classes server", func() {
 
 	Describe("Creation", func() {
 		It("Can be built if all the required parameters are set", func() {
-			privateServer, err := NewPrivateHostClassesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostClassesServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -114,23 +108,18 @@ var _ = Describe("Host classes server", func() {
 		})
 
 		It("Fails if logger is not set", func() {
-			privateServer, err := NewPrivateHostClassesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostClassesServer().
-				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(server).To(BeNil())
 		})
 
-		It("Fails if private server is not set", func() {
+		It("Fails if tenancy logic is not set", func() {
 			server, err := NewHostClassesServer().
 				SetLogger(logger).
 				Build()
-			Expect(err).To(MatchError("private server is mandatory"))
+			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
 		})
 	})
@@ -141,17 +130,9 @@ var _ = Describe("Host classes server", func() {
 		BeforeEach(func() {
 			var err error
 
-			// Create the private server:
-			privateServer, err := NewPrivateHostClassesServer().
-				SetLogger(logger).
-				SetTenancyLogic(tenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
 			// Create the server:
 			server, err = NewHostClassesServer().
 				SetLogger(logger).
-				SetPrivate(privateServer).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

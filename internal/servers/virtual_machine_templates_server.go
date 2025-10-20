@@ -24,12 +24,14 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type VirtualMachineTemplatesServerBuilder struct {
-	logger       *slog.Logger
-	private      privatev1.VirtualMachineTemplatesServer
-	tenancyLogic auth.TenancyLogic
+	logger           *slog.Logger
+	notifier         *database.Notifier
+	attributionLogic auth.AttributionLogic
+	tenancyLogic     auth.TenancyLogic
 }
 
 var _ ffv1.VirtualMachineTemplatesServer = (*VirtualMachineTemplatesServer)(nil)
@@ -38,7 +40,7 @@ type VirtualMachineTemplatesServer struct {
 	ffv1.UnimplementedVirtualMachineTemplatesServer
 
 	logger    *slog.Logger
-	private   privatev1.VirtualMachineTemplatesServer
+	delegate  privatev1.VirtualMachineTemplatesServer
 	inMapper  *GenericMapper[*ffv1.VirtualMachineTemplate, *privatev1.VirtualMachineTemplate]
 	outMapper *GenericMapper[*privatev1.VirtualMachineTemplate, *ffv1.VirtualMachineTemplate]
 }
@@ -53,9 +55,15 @@ func (b *VirtualMachineTemplatesServerBuilder) SetLogger(value *slog.Logger) *Vi
 	return b
 }
 
-// SetPrivate sets the private server to use. This is mandatory.
-func (b *VirtualMachineTemplatesServerBuilder) SetPrivate(value privatev1.VirtualMachineTemplatesServer) *VirtualMachineTemplatesServerBuilder {
-	b.private = value
+// SetNotifier sets the notifier to use. This is optional.
+func (b *VirtualMachineTemplatesServerBuilder) SetNotifier(value *database.Notifier) *VirtualMachineTemplatesServerBuilder {
+	b.notifier = value
+	return b
+}
+
+// SetAttributionLogic sets the attribution logic to use. This is optional.
+func (b *VirtualMachineTemplatesServerBuilder) SetAttributionLogic(value auth.AttributionLogic) *VirtualMachineTemplatesServerBuilder {
+	b.attributionLogic = value
 	return b
 }
 
@@ -69,10 +77,6 @@ func (b *VirtualMachineTemplatesServerBuilder) Build() (result *VirtualMachineTe
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-	if b.private == nil {
-		err = errors.New("private server is mandatory")
 		return
 	}
 	if b.tenancyLogic == nil {
@@ -96,10 +100,21 @@ func (b *VirtualMachineTemplatesServerBuilder) Build() (result *VirtualMachineTe
 		return
 	}
 
+	// Create the private server to delegate to:
+	delegate, err := NewPrivateVirtualMachineTemplatesServer().
+		SetLogger(b.logger).
+		SetNotifier(b.notifier).
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &VirtualMachineTemplatesServer{
 		logger:    b.logger,
-		private:   b.private,
+		delegate:  delegate,
 		inMapper:  inMapper,
 		outMapper: outMapper,
 	}
@@ -115,7 +130,7 @@ func (s *VirtualMachineTemplatesServer) List(ctx context.Context,
 	privateRequest.SetFilter(request.GetFilter())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.List(ctx, privateRequest)
+	privateResponse, err := s.delegate.List(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +167,7 @@ func (s *VirtualMachineTemplatesServer) Get(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	privateResponse, err := s.private.Get(ctx, privateRequest)
+	privateResponse, err := s.delegate.Get(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +214,7 @@ func (s *VirtualMachineTemplatesServer) Create(ctx context.Context,
 	// Delegate to the private server:
 	privateRequest := &privatev1.VirtualMachineTemplatesCreateRequest{}
 	privateRequest.SetObject(privateVirtualMachineTemplate)
-	privateResponse, err := s.private.Create(ctx, privateRequest)
+	privateResponse, err := s.delegate.Create(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +256,7 @@ func (s *VirtualMachineTemplatesServer) Update(ctx context.Context,
 	// Get the existing object from the private server:
 	getRequest := &privatev1.VirtualMachineTemplatesGetRequest{}
 	getRequest.SetId(id)
-	getResponse, err := s.private.Get(ctx, getRequest)
+	getResponse, err := s.delegate.Get(ctx, getRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +277,7 @@ func (s *VirtualMachineTemplatesServer) Update(ctx context.Context,
 	// Delegate to the private server with the merged object:
 	privateRequest := &privatev1.VirtualMachineTemplatesUpdateRequest{}
 	privateRequest.SetObject(existingPrivateVirtualMachineTemplate)
-	privateResponse, err := s.private.Update(ctx, privateRequest)
+	privateResponse, err := s.delegate.Update(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +309,7 @@ func (s *VirtualMachineTemplatesServer) Delete(ctx context.Context,
 	privateRequest.SetId(request.GetId())
 
 	// Delegate to private server:
-	_, err = s.private.Delete(ctx, privateRequest)
+	_, err = s.delegate.Delete(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
