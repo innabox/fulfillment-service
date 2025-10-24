@@ -16,6 +16,7 @@ package dao
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -525,6 +526,14 @@ var _ = Describe("Generic DAO", func() {
 				"my_string": "your value",
 				"my_int32": 456
 			}`))
+		})
+
+		It("Returns not found error when deleting object that doesn't exist", func() {
+			err := generic.Delete(ctx, "does_not_exist")
+			Expect(err).To(HaveOccurred())
+			var notFoundErr *ErrNotFound
+			Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+			Expect(notFoundErr.ID).To(Equal("does_not_exist"))
 		})
 
 		Describe("Finalizers", func() {
@@ -1386,9 +1395,12 @@ var _ = Describe("Generic DAO", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(exists).To(BeFalse())
 
-				// Try to delete the invisible object - should not affect any rows
+				// Try to delete the invisible object - should return not found error
 				err = restrictedDAO.Delete(ctx, "invisible_object")
-				Expect(err).ToNot(HaveOccurred()) // Delete doesn't error, but doesn't delete anything
+				Expect(err).To(HaveOccurred())
+				var notFoundErr *ErrNotFound
+				Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+				Expect(notFoundErr.ID).To(Equal("invisible_object"))
 
 				// Verify the object still exists in the database (using direct SQL)
 				var count int

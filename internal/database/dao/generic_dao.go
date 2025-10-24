@@ -877,7 +877,9 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 		&data,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = nil
+		err = &ErrNotFound{
+			ID: id,
+		}
 		return
 	}
 	if err != nil {

@@ -839,6 +839,17 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
 		})
 
+		It("Returns not found error when deleting object that doesn't exist", func() {
+			response, err := server.Delete(ctx, ffv1.ClustersDeleteRequest_builder{
+				Id: "does_not_exist",
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+		})
+
 		It("Preserves private data during update", func() {
 			// Use the DAO directly to create an object with private data:
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().

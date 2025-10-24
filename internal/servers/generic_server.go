@@ -489,6 +489,10 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 	}
 	err := s.dao.Delete(ctx, id)
 	if err != nil {
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to delete object",
