@@ -16,7 +16,6 @@ package it
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -267,8 +266,32 @@ var _ = BeforeSuite(func() {
 	err = applyCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Wait till the CA certificate has been issued, and fetch it. We need it to configure gRPC and HTTP clients
-	// so that they trust it.
+	// This will contain all the CA files that we need to trust in order to connect to the service:
+	var caFiles []string
+
+	// Load the certificates of the CA bundle of the cluster:
+	caBundleKey := crclient.ObjectKey{
+		Namespace: "default",
+		Name:      "ca-bundle",
+	}
+	caBundleMap := &corev1.ConfigMap{}
+	Eventually(
+		func(g Gomega) {
+			err := kubeClient.Get(ctx, caBundleKey, caBundleMap)
+			g.Expect(err).ToNot(HaveOccurred())
+		},
+		time.Minute,
+		time.Second,
+	).Should(Succeed())
+	for caBundleKey, caBundleText := range caBundleMap.Data {
+		caBundleFile := filepath.Join(tmpDir, caBundleKey)
+		err = os.WriteFile(caBundleFile, []byte(caBundleText), 0400)
+		Expect(err).ToNot(HaveOccurred())
+		caFiles = append(caFiles, caBundleFile)
+	}
+
+	// Load the certificates of the internal CA used by the service. This internal CA will be removed in the
+	// future, and replaced by the CA bundle of the cluster, but we need to keep it for now.
 	caKey := crclient.ObjectKey{
 		Namespace: "innabox",
 		Name:      "ca-key",
@@ -282,14 +305,19 @@ var _ = BeforeSuite(func() {
 		time.Minute,
 		time.Second,
 	).Should(Succeed())
-	caBytes := caSecret.Data["ca.crt"]
-	Expect(caBytes).ToNot(BeEmpty())
+	caCert := caSecret.Data["ca.crt"]
+	Expect(caCert).ToNot(BeEmpty())
 	caFile := filepath.Join(tmpDir, "ca.crt")
-	err = os.WriteFile(caFile, caBytes, 0400)
+	err = os.WriteFile(caFile, caCert, 0400)
 	Expect(err).ToNot(HaveOccurred())
-	caPool := x509.NewCertPool()
-	ok := caPool.AppendCertsFromPEM(caBytes)
-	Expect(ok).To(BeTrue())
+	caFiles = append(caFiles, caFile)
+
+	// Create the CA pool:
+	caPool, err := network.NewCertPool().
+		SetLogger(logger).
+		AddFiles(caFiles...).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
 
 	// Create a client token:
 	makeToken := func(sa string) string {
@@ -306,6 +334,8 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 		return response.Status.Token
 	}
+
+	// Create the tokens:
 	clientToken := makeToken("client")
 	adminToken := makeToken("admin")
 
@@ -313,9 +343,9 @@ var _ = BeforeSuite(func() {
 	makeConn := func(token string) *grpc.ClientConn {
 		conn, err := network.NewClient().
 			SetLogger(logger).
+			SetCaPool(caPool).
 			SetServerNetwork("tcp").
 			SetServerAddress("localhost:8000").
-			AddCaFile(caFile).
 			SetToken(token).
 			Build()
 		Expect(err).ToNot(HaveOccurred())

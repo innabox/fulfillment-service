@@ -50,6 +50,12 @@ func NewStartControllerCommand() *cobra.Command {
 		RunE:  runner.run,
 	}
 	flags := command.Flags()
+	flags.StringArrayVar(
+		&runner.args.caFiles,
+		"ca-file",
+		[]string{},
+		"File or directory containing trusted CA certificates.",
+	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	return command
 }
@@ -58,6 +64,9 @@ func NewStartControllerCommand() *cobra.Command {
 type startControllerRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
+	args   struct {
+		caFiles []string
+	}
 	client *grpc.ClientConn
 }
 
@@ -80,10 +89,20 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	// Save the flags:
 	r.flags = cmd.Flags()
 
+	// Load the trusted CA certificates:
+	caPool, err := network.NewCertPool().
+		SetLogger(r.logger).
+		AddFiles(r.args.caFiles...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
+	}
+
 	// Create the gRPC client:
 	r.client, err = network.NewClient().
 		SetLogger(r.logger).
 		SetFlags(r.flags, network.GrpcClientName).
+		SetCaPool(caPool).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)

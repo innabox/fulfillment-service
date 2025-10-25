@@ -56,7 +56,7 @@ func NewStartServerCommand() *cobra.Command {
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	database.AddFlags(flags)
 	flags.StringVar(
-		&runner.grpcAuthnType,
+		&runner.args.grpcAuthnType,
 		"grpc-authn-type",
 		auth.GrpcGuestAuthnType,
 		fmt.Sprintf(
@@ -65,13 +65,13 @@ func NewStartServerCommand() *cobra.Command {
 		),
 	)
 	flags.StringSliceVar(
-		&runner.grpcAuthnTrustedTokenIssuers,
+		&runner.args.grpcAuthnTrustedTokenIssuers,
 		"grpc-authn-trusted-token-issuers",
 		[]string{},
 		"Comma separated list of token issuers that are adversised as trusted by the gRPC server.",
 	)
 	flags.StringVar(
-		&runner.tenancyLogic,
+		&runner.args.tenancyLogic,
 		"tenancy-logic",
 		"default",
 		"Type of tenancy logic to use. Valid values are 'default' and 'serviceaccount'.",
@@ -81,11 +81,14 @@ func NewStartServerCommand() *cobra.Command {
 
 // startServerCommandRunner contains the data and logic needed to run the `start server` command.
 type startServerCommandRunner struct {
-	logger                       *slog.Logger
-	flags                        *pflag.FlagSet
-	grpcAuthnType                string
-	grpcAuthnTrustedTokenIssuers []string
-	tenancyLogic                 string
+	logger *slog.Logger
+	flags  *pflag.FlagSet
+	args   struct {
+		caFiles                      []string
+		grpcAuthnType                string
+		grpcAuthnTrustedTokenIssuers []string
+		tenancyLogic                 string
+	}
 }
 
 // run runs the `start server` command.
@@ -155,10 +158,10 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(
 		ctx,
 		"Creating authentication interceptor",
-		slog.String("type", c.grpcAuthnType),
+		slog.String("type", c.args.grpcAuthnType),
 	)
 	var authnFunc auth.GrpcAuthnFunc
-	switch strings.ToLower(c.grpcAuthnType) {
+	switch strings.ToLower(c.args.grpcAuthnType) {
 	case auth.GrpcGuestAuthnType:
 		authnFunc, err = auth.NewGrpcGuestAuthnFunc().
 			SetLogger(c.logger).
@@ -179,7 +182,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	default:
 		return fmt.Errorf(
 			"unknown gRPC authentication type '%s', valid values are '%s' and '%s'",
-			c.grpcAuthnType, auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
+			c.args.grpcAuthnType, auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
 		)
 	}
 	authnInterceptor, err := auth.NewGrpcAuthnInterceptor().
@@ -264,10 +267,10 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(
 		ctx,
 		"Creating public tenancy logic",
-		slog.String("type", c.tenancyLogic),
+		slog.String("type", c.args.tenancyLogic),
 	)
 	var publicTenancyLogic auth.TenancyLogic
-	switch strings.ToLower(c.tenancyLogic) {
+	switch strings.ToLower(c.args.tenancyLogic) {
 	case "default":
 		publicTenancyLogic, err = auth.NewDefaultTenancyLogic().
 			SetLogger(c.logger).
@@ -285,7 +288,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	default:
 		return fmt.Errorf(
 			"unknown tenancy logic '%s', valid values are 'default' and 'serviceaccount'",
-			c.tenancyLogic,
+			c.args.tenancyLogic,
 		)
 	}
 
@@ -311,7 +314,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(ctx, "Creating metadata server")
 	metadataServer, err := servers.NewMetadataServer().
 		SetLogger(c.logger).
-		AddAutnTrustedTokenIssuers(c.grpcAuthnTrustedTokenIssuers...).
+		AddAutnTrustedTokenIssuers(c.args.grpcAuthnTrustedTokenIssuers...).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create metadata server: %w", err)
