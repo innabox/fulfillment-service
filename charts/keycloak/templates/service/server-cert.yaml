@@ -18,7 +18,8 @@ metadata:
   name: keycloak-tls
 spec:
   issuerRef:
-    name: keycloak-issuer
+    kind: {{ .Values.issuerRef.kind }}
+    name: {{ .Values.issuerRef.name }}
   dnsNames:
   - localhost
   - keycloak

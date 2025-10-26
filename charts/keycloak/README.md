@@ -19,6 +19,40 @@ To uninstall it:
 $ helm uninstall keycloak --namespace keycloak
 ```
 
+Note that this chart requires a _cert-manager_ issuer to generate the necessary
+TLS certificates for _Keycloak_ and its _PostgreSQL_ database. By default, the
+chart uses the `default-ca` cluster issuer, which is automatically available in
+the integration tests environment.
+
+When installing to a plain vanilla Kind cluster or any other Kubernetes cluster,
+you will need to:
+
+1. Install _cert-manager_ if not already present.
+
+2. Create a cluster issuer.
+
+3. Configure the chart to use your issuer by setting the `issuerRef` values:
+
+    ```bash
+    $ helm install keycloak charts/keycloak \
+    --namespace keycloak \
+    --create-namespace \
+    --set issuerRef.name=my-issuer \
+    --wait
+    ```
+
+    You can also use an issuer in the same namespace. In that case you will also
+    need to change the `issuerRef.kind` value to `Issuer`:
+
+    ```bash
+    $ helm install keycloak charts/keycloak \
+      --namespace keycloak \
+      --create-namespace \
+      --set issuerRef.kind=Issuer \
+      --set issuerRef.name=my-issuer \
+      --wait
+    ```
+
 ## Accessing the console
 
 The Keycloak console will be available at

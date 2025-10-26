@@ -18,7 +18,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   issuerRef:
-    name: keycloak-issuer
+    kind: {{ .Values.issuerRef.kind }}
+    name: {{ .Values.issuerRef.name }}
   dnsNames:
   - localhost
   - keycloak-database
