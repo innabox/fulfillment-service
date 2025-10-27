@@ -55,6 +55,9 @@ spec:
         # abbreviation.
         - https://kubernetes.default.svc
         - https://kubernetes.default.svc.cluster.local
+    "keycloak-jwt":
+      jwt:
+        issuerUrl: https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
   authorization:
     "fulfillment-api":
       opa:
