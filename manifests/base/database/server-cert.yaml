@@ -17,7 +17,8 @@ metadata:
   name: fulfillment-database-server
 spec:
   issuerRef:
-    name: issuer
+    kind: ClusterIssuer
+    name: default-ca
   dnsNames:
   - fulfillment-database
   secretName: fulfillment-database-server-cert

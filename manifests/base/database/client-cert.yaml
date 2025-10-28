@@ -17,7 +17,8 @@ metadata:
   name: fulfillment-database-client
 spec:
   issuerRef:
-    name: issuer
+    kind: ClusterIssuer
+    name: default-ca
   usages:
   - client auth
   commonName: client

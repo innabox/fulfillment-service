@@ -43,6 +43,24 @@ spec:
 .
 ```
 
+Install the _trust-manager_ operator:
+
+```shell
+$ helm install trust-manager oci://quay.io/jetstack/charts/trust-manager \
+--version v0.20.0 \
+--namespace cert-manager-operator \
+--set app.trust.namespace=cert-manager \
+--set defaultPackage.enabled=false \
+--wait
+```
+
+Create the default CA:
+
+```shell
+$ helm install default-ca charts/ca \
+--namespace cert-manager
+```
+
 Install the _Authorino_ operator:
 
 ```shell
@@ -69,7 +87,7 @@ $ oc apply -k manifests/overlays/openshift
 
 ## Kind
 
-To create the Kind cluster create use a command like this:
+To create the Kind cluster use a command like this:
 
 ```yaml
 $ kind create cluster --config - <<.
@@ -91,9 +109,30 @@ nodes:
 Install the _cert-manager_ operator:
 
 ```shell
-$ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
+$ helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+--version v1.19.1 \
+--namespace cert-manager \
+--create-namespace \
+--set crds.enabled=true \
+--wait
 ```
 
+Install the _trust-manager_ operator:
+
+```shell
+$ helm install trust-manager oci://quay.io/jetstack/charts/trust-manager \
+--version v0.20.0 \
+--namespace cert-manager \
+--set defaultPackage.enabled=false \
+--wait
+```
+
+Create the default CA:
+
+```shell
+$ helm install default-ca charts/ca \
+--namespace cert-manager
+```
 
 Install the _Authorino_ operator. Due to an issue with the configuration of custom CA certificates in the Authorino
 operator (see [here](https://github.com/Kuadrant/authorino-operator/pull/282)) it is necessary to replace the operator

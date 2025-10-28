@@ -23,7 +23,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -130,146 +129,80 @@ var _ = BeforeSuite(func() {
 	_, err = exec.LookPath(podmanCmd)
 	Expect(err).ToNot(HaveOccurred())
 
-	// We will create the kind cluster and build the container image in parallel, and will use this
-	// to wait for both to complete.
-	var wg sync.WaitGroup
-
-	// We will store the kubeconfig here:
-	var kcFile string
-
-	// Start the kind cluster:
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer GinkgoRecover()
-
-		// Create the kind cluster, and start it:
-		var err error
-		kind, err = NewKind().
-			SetLogger(logger).
-			SetName("it").
-			AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
-			AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		err = kind.Start(ctx)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Remember to stop the kind cluster:
-		if !config.KeepKind {
-			DeferCleanup(func() {
-				err := kind.Stop(ctx)
-				Expect(err).ToNot(HaveOccurred())
-			})
-		}
-
-		// Get the kubeconfig:
-		kcFile = filepath.Join(tmpDir, "kubeconfig")
-		err = os.WriteFile(kcFile, kind.Kubeconfig(), 0400)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Install Keycloak:
-		logger.DebugContext(ctx, "Installing Keycloak chart")
-		installCmd, err := NewCommand().
-			SetLogger(logger).
-			SetDir(projectDir).
-			SetName(helmCmd).
-			SetArgs(
-				"install",
-				"keycloak",
-				"charts/keycloak",
-				"--kubeconfig", kcFile,
-				"--namespace", "keycloak",
-				"--create-namespace",
-				"--wait",
-				"--set", "variant=kind",
-			).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		err = installCmd.Execute(ctx)
-		Expect(err).ToNot(HaveOccurred())
-	}()
-
 	// In the GitHub actions environment, the image is already built and available in the 'image.tar'
 	// file in the project directory. If it is not there, we build it and save it to the temporary
 	// directory.
 	imageTar := filepath.Join(projectDir, "image.tar")
 	_, err = os.Stat(imageTar)
 	if err != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			defer GinkgoRecover()
+		// Build the container image:
+		buildCmd, err := NewCommand().
+			SetLogger(logger).
+			SetDir(projectDir).
+			SetName("podman").
+			SetArgs(
+				"build",
+				"--tag", fmt.Sprintf("%s:%s", imageName, imageTag),
+				"--file", "Containerfile",
+			).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		err = buildCmd.Execute(ctx)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Build the container image:
-			buildCmd, err := NewCommand().
-				SetLogger(logger).
-				SetDir(projectDir).
-				SetName("podman").
-				SetArgs(
-					"build",
-					"--tag", fmt.Sprintf("%s:%s", imageName, imageTag),
-					"--file", "Containerfile",
-				).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-			err = buildCmd.Execute(ctx)
-			Expect(err).ToNot(HaveOccurred())
+		// Save the container image to the tar file:
+		imageTar = filepath.Join(tmpDir, "image.tar")
+		saveCmd, err := NewCommand().
+			SetLogger(logger).
+			SetDir(projectDir).
+			SetName("podman").
+			SetArgs(
+				"save",
+				"--output", imageTar,
+				imageRef,
+			).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		err = saveCmd.Execute(ctx)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Save the container image to the tar file:
-			imageTar = filepath.Join(tmpDir, "image.tar")
-			saveCmd, err := NewCommand().
-				SetLogger(logger).
-				SetDir(projectDir).
-				SetName("podman").
-				SetArgs(
-					"save",
-					"--output", imageTar,
-					imageRef,
-				).
-				Build()
+		// Clean up the container image tar file:
+		DeferCleanup(func() {
+			err := os.Remove(imageTar)
 			Expect(err).ToNot(HaveOccurred())
-			err = saveCmd.Execute(ctx)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Clean up the container image tar file:
-			DeferCleanup(func() {
-				err := os.Remove(imageTar)
-				Expect(err).ToNot(HaveOccurred())
-			})
-		}()
+		})
 	}
 
-	// Wait for the kind cluster to be started and the container image to be built:
-	wg.Wait()
+	// Create the kind cluster, and start it:
+	kind, err = NewKind().
+		SetLogger(logger).
+		SetName("it").
+		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
+		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = kind.Start(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Remember to stop the kind cluster:
+	if !config.KeepKind {
+		DeferCleanup(func() {
+			err := kind.Stop(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	}
+
+	// Get the kubeconfig:
+	kcFile := filepath.Join(tmpDir, "kubeconfig")
+	err = os.WriteFile(kcFile, kind.Kubeconfig(), 0400)
+	Expect(err).ToNot(HaveOccurred())
 
 	// Get the client:
 	kubeClient := kind.Client()
 	kubeClientSet := kind.ClientSet()
 
-	// Load the image:
-	err = kind.LoadArchive(ctx, imageTar)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Deploy the application:
-	applyCmd, err := NewCommand().
-		SetLogger(logger).
-		SetDir(projectDir).
-		SetName(kubectlCmd).
-		SetArgs(
-			"apply",
-			"--kubeconfig", kcFile,
-			"--kustomize", filepath.Join("manifests", "overlays", "kind"),
-		).
-		Build()
-	Expect(err).ToNot(HaveOccurred())
-	err = applyCmd.Execute(ctx)
-	Expect(err).ToNot(HaveOccurred())
-
-	// This will contain all the CA files that we need to trust in order to connect to the service:
-	var caFiles []string
-
 	// Load the certificates of the CA bundle of the cluster:
+	var caFiles []string
 	caBundleKey := crclient.ObjectKey{
 		Namespace: "default",
 		Name:      "ca-bundle",
@@ -290,33 +223,51 @@ var _ = BeforeSuite(func() {
 		caFiles = append(caFiles, caBundleFile)
 	}
 
-	// Load the certificates of the internal CA used by the service. This internal CA will be removed in the
-	// future, and replaced by the CA bundle of the cluster, but we need to keep it for now.
-	caKey := crclient.ObjectKey{
-		Namespace: "innabox",
-		Name:      "ca-key",
-	}
-	caSecret := &corev1.Secret{}
-	Eventually(
-		func(g Gomega) {
-			err := kubeClient.Get(ctx, caKey, caSecret)
-			g.Expect(err).ToNot(HaveOccurred())
-		},
-		time.Minute,
-		time.Second,
-	).Should(Succeed())
-	caCert := caSecret.Data["ca.crt"]
-	Expect(caCert).ToNot(BeEmpty())
-	caFile := filepath.Join(tmpDir, "ca.crt")
-	err = os.WriteFile(caFile, caCert, 0400)
-	Expect(err).ToNot(HaveOccurred())
-	caFiles = append(caFiles, caFile)
-
 	// Create the CA pool:
 	caPool, err := network.NewCertPool().
 		SetLogger(logger).
 		AddFiles(caFiles...).
 		Build()
+	Expect(err).ToNot(HaveOccurred())
+
+	// Install Keycloak:
+	logger.DebugContext(ctx, "Installing Keycloak chart")
+	installCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName(helmCmd).
+		SetArgs(
+			"install",
+			"keycloak",
+			"charts/keycloak",
+			"--kubeconfig", kcFile,
+			"--namespace", "keycloak",
+			"--create-namespace",
+			"--wait",
+			"--set", "variant=kind",
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = installCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Load the image:
+	err = kind.LoadArchive(ctx, imageTar)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Deploy the application:
+	applyCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName(kubectlCmd).
+		SetArgs(
+			"apply",
+			"--kubeconfig", kcFile,
+			"--kustomize", filepath.Join("manifests", "overlays", "kind"),
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = applyCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Create a client token:

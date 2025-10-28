@@ -21,7 +21,6 @@ labels:
 resources:
 - namespace.yaml
 - bundle.yaml
-- ca
 - database
 - authorino
 - service

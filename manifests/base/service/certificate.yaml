@@ -17,7 +17,8 @@ metadata:
   name: fulfillment-api
 spec:
   issuerRef:
-    name: issuer
+    kind: ClusterIssuer
+    name: default-ca
   dnsNames:
   - localhost
   - fulfillment-api

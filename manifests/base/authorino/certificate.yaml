@@ -17,7 +17,8 @@ metadata:
   name: authorino
 spec:
   issuerRef:
-    name: issuer
+    kind: ClusterIssuer
+    name: default-ca
   dnsNames:
   - authorino-authorino-authorization
   secretName: authorino-tls
