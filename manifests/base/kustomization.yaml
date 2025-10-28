@@ -38,7 +38,7 @@ images:
   newTag: v1.33.0
 - name: fulfillment-service
   newName: ghcr.io/innabox/fulfillment-service
-  newTag: latest
+  newTag: main
 - name: postgres
   newName: quay.io/sclorg/postgresql-15-c9s
   newTag: latest
