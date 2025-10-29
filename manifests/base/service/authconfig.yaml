@@ -55,9 +55,15 @@ spec:
         # abbreviation.
         - https://kubernetes.default.svc
         - https://kubernetes.default.svc.cluster.local
+      overrides:
+        authnMethod:
+          value: serviceaccount
     "keycloak-jwt":
       jwt:
         issuerUrl: https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
+      overrides:
+        authnMethod:
+          value: jwt
   authorization:
     "fulfillment-api":
       opa:
