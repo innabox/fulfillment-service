@@ -32,6 +32,7 @@ import (
 	. "github.com/innabox/fulfillment-common/testing"
 	"github.com/kelseyhightower/envconfig"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
+	. "github.com/onsi/ginkgo/v2/dsl/decorators"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
 	"google.golang.org/grpc"
@@ -366,6 +367,17 @@ var _ = BeforeSuite(func() {
 		}.Build(),
 	}.Build())
 	Expect(err).ToNot(HaveOccurred())
+})
+
+var _ = Describe("Integration", func() {
+	It("Only", Label("setup"), func() {
+		// This is a dummy test to have a mechanism to run the setup of the integration tests without running
+		// any actual tests, with a command like this:
+		//
+		// ginkgo run --label-filter setup it
+		//
+		// This will create the kind cluster, install the dependencies, and deploy the application.
+	})
 })
 
 // Names of the command line tools:

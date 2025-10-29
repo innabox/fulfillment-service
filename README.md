@@ -246,6 +246,16 @@ When `IT_KEEP_KIND=true`, the cluster will remain running after the tests finish
 - Debug test failures manually.
 - Examine logs and cluster state.
 
+The `setup` label can be combined with this to get a fresh integration environment where you can then
+run your manual tests:
+
+```bash
+$ IT_KEEP_KIND=true ginkgo run --label-filter setup it
+```
+
+That will create the Kind cluster, install the dependencies and deploy the application, but will not
+run any actual test.
+
 To clean up a preserved cluster manually:
 
 ```bash
