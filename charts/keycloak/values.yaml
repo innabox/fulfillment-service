@@ -14,6 +14,10 @@
 # This indicates if the chart is being deployed to an OpenShift or Kind cluster. Valid values are `openshift` and `kind`
 variant: kind
 
+# This defines the hostname that Keycloak uses to refer to itself. If not set, the default value will be
+# 'keycloak.<namespace>.svc.cluster.local' which is usually valid only inside the cluster.
+# hostname: keycloak.example.com
+
 # This defines the cert-manager issuer that will be used for the certificates used by Keycloak. The default is to use
 # the cluster issuer that is automatically created for the Kind cluster used for integration tests.
 issuerRef:

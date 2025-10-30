@@ -82,7 +82,7 @@ spec:
         - name: KC_HTTPS_CERTIFICATE_KEY_FILE
           value: "/secrets/tls/tls.key"
         - name: KC_HOSTNAME
-          value: "keycloak.{{ .Release.Namespace }}.svc.cluster.local"
+          value: {{ if .Values.hostname }}"{{ .Values.hostname }}"{{ else }}"keycloak.{{ .Release.Namespace }}.svc.cluster.local"{{ end }}
         - name: KC_HOSTNAME_PORT
           value: "8001"
         - name: KC_DB

@@ -46,12 +46,25 @@ you will need to:
 
     ```bash
     $ helm install keycloak charts/keycloak \
-      --namespace keycloak \
-      --create-namespace \
-      --set issuerRef.kind=Issuer \
-      --set issuerRef.name=my-issuer \
-      --wait
+    --namespace keycloak \
+    --create-namespace \
+    --set issuerRef.kind=Issuer \
+    --set issuerRef.name=my-issuer \
+    --wait
     ```
+
+By default the hostname is `keycloak.keycloak.svc.cluster.local`, which is fine
+for use from within the cluster. If you want to use the chart in some other
+development or testing scenario where a different hostname is needed or
+convenient, you can use the `hostname` variable:
+
+```bash
+$ helm install keycloak charts/keycloak \
+--namespace keycloak \
+--create-namespace \
+--set hostname=keycloak.example.com \
+--wait
+```
 
 ## Accessing the console
 
@@ -68,7 +81,7 @@ using the DNS name add the following to your `/etc/hosts` file:
 The go to `https://keycloak.keycloak.svc.cluster.local:8001` from your
 local machine.
 
-# Exporting the realm
+## Exporting the realm
 
 To export the realm configuration to a JSON file, you need to find the Keycloak
 pod and execute the `export` command inside it. The exported data can be written
