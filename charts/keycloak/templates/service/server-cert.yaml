@@ -21,8 +21,12 @@ spec:
     kind: {{ .Values.issuerRef.kind }}
     name: {{ .Values.issuerRef.name }}
   dnsNames:
+  {{- if .Values.hostname }}
+  - {{ .Values.hostname }}
+  {{- else }}
   - localhost
   - keycloak
   - keycloak.{{ .Release.Namespace }}
   - keycloak.{{ .Release.Namespace }}.svc.cluster.local
+  {{- end }}
   secretName: keycloak-tls-cert
