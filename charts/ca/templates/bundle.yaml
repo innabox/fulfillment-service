@@ -18,7 +18,7 @@ apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: {{ .Values.issuerName }}
+  name: {{ .Values.bundleName }}
 spec:
   sources:
   - secret:

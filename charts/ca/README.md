@@ -29,10 +29,11 @@ $ helm install default-ca charts/ca \
 
 The following table lists the configurable parameters of the CA chart and their default values:
 
-| Parameter    | Description                               | Default      |
-|--------------|-------------------------------------------|--------------|
-| `issuerName` | The name of the `ClusterIssuer` to create | `default-ca` |
-| `commonName` | The common name for the CA certificate    | `Innabox CA` |
+| Parameter    | Description                               | Default       |
+|--------------|-------------------------------------------|---------------|
+| `issuerName` | The name of the `ClusterIssuer` to create | `default-ca`  |
+| `bundleName` | The name of the bundle to create          | `ca-bundle`   |
+| `commonName` | The common name for the CA certificate    | `Innabox CA`  |
 
 The namespace can also be changed using the `--namespace` flag, but it must match the namespace
 where _cert-manager_ stores the secrets for cluster issuers, which is usually `cert-manager`.

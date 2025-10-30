@@ -14,5 +14,8 @@
 # The name of the issuer to create:
 issuerName: default-ca
 
-# The common name for the CA certificate
+# The name of the bundle to create:
+bundleName: ca-bundle
+
+# The common name for the CA certificate:
 commonName: Innabox CA
