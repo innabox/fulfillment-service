@@ -3,7 +3,12 @@
 This Helm chart creates a self-signed CA certificate and a `ClusterIssuer` named `default-ca` that can be used by other
 components in the _Innabox_ project.
 
+The CA certificate is copied to a config map named `ca-bundle` into all the namespaces of the cluster, in the
+`bundle.pem` key.
+
 ## Installation
+
+Before installing this chart you will need to install the _cert-manager_ and _trust-manager_ operators.
 
 To install the chart with the default configuration:
 
@@ -24,10 +29,10 @@ $ helm install default-ca charts/ca \
 
 The following table lists the configurable parameters of the CA chart and their default values:
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
+| Parameter    | Description                               | Default      |
+|--------------|-------------------------------------------|--------------|
 | `issuerName` | The name of the `ClusterIssuer` to create | `default-ca` |
-| `commonName` | The common name for the CA certificate | `Innabox CA` |
+| `commonName` | The common name for the CA certificate    | `Innabox CA` |
 
 The namespace can also be changed using the `--namespace` flag, but it must match the namespace
 where _cert-manager_ stores the secrets for cluster issuers, which is usually `cert-manager`.
