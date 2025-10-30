@@ -70,8 +70,8 @@ spec:
         rego: |
           import future.keywords.in
 
-          # Define service accounts:
-          admin_accounts := {
+          # Define admin subjects:
+          admin_subjects := {
             "system:serviceaccount:innabox:admin",
             "system:serviceaccount:innabox:controller",
           }
@@ -79,24 +79,22 @@ spec:
           # Get the gRPC method:
           grpc_method := input.context.request.http.path
 
-          # Get the account name:
-          account_name := input.auth.identity.user.username
-
-          # Function to check if an account is a service account:
-          is_service_account {
-            startswith(account_name, "system:serviceaccount:")
+          # Get the subject name:
+          subject_name = input.auth.identity.user.username {
+            input.auth.identity.authnMethod == "serviceaccount"
+          }
+          subject_name = input.auth.identity.user.preferred_username {
+            input.auth.identity.authnMethod == "jwt"
           }
 
           # Function to check if an account is an admin account:
           is_admin {
-            is_service_account
-            account_name in admin_accounts
+            subject_name in admin_subjects
           }
 
           # Function to check if an account is a client account:
           is_client {
-            is_service_account
-            not account_name in admin_accounts
+            not is_admin
           }
 
           # Allow metadata, reflection and health to everyone:
@@ -112,6 +110,7 @@ spec:
 
           # Allow specific methods to clients:
           allow {
+            is_client
             grpc_method in {
               "/events.v1/Watch",
               "/fulfillment.v1.ClusterTemplates/Get",
@@ -145,7 +144,6 @@ spec:
               "/fulfillment.v1.VirtualMachines/List",
               "/fulfillment.v1.VirtualMachines/Update",
             }
-            is_client
           }
 
           # Allow everything to admins:
@@ -158,7 +156,12 @@ spec:
         "x-subject":
           json:
             properties:
+              source:
+                expression: |
+                  auth.identity.authnMethod
               user:
-                selector: auth.identity.user.username
+                expression: |
+                  auth.identity.authnMethod == "serviceaccount"? auth.identity.user.username: auth.identity.username
               groups:
-                selector: auth.identity.user.groups
+                expression: |
+                  auth.identity.authnMethod == "serviceaccount"? auth.identity.user.groups: auth.identity.groups

@@ -53,7 +53,8 @@ var _ = Describe("Service account tenancy logic", func() {
 	Describe("Determine assigned tenants", func() {
 		It("Returns the namespace for a valid service account", func() {
 			subject := &Subject{
-				User: "system:serviceaccount:my-ns:my-sa",
+				User:   "system:serviceaccount:my-ns:my-sa",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
@@ -63,7 +64,8 @@ var _ = Describe("Service account tenancy logic", func() {
 
 		It("Fails if the subject is not a service account", func() {
 			subject := &Subject{
-				User: "my_user",
+				User:   "my_user",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
@@ -75,7 +77,8 @@ var _ = Describe("Service account tenancy logic", func() {
 
 		It("Fails if the subject has the wrong prefix", func() {
 			subject := &Subject{
-				User: "system:junk:my-ns:my-sa",
+				User:   "system:junk:my-ns:my-sa",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
@@ -86,7 +89,8 @@ var _ = Describe("Service account tenancy logic", func() {
 
 		It("Fails if the subject has the wrong number of parts", func() {
 			subject := &Subject{
-				User: "system:serviceaccount:my-ns:my-sa:junk",
+				User:   "system:serviceaccount:my-ns:my-sa:junk",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
@@ -99,7 +103,8 @@ var _ = Describe("Service account tenancy logic", func() {
 	Describe("Determine visible tenants", func() {
 		It("Returns the namespace and shared for a valid service account", func() {
 			subject := &Subject{
-				User: "system:serviceaccount:my-ns:my-sa",
+				User:   "system:serviceaccount:my-ns:my-sa",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
@@ -109,7 +114,8 @@ var _ = Describe("Service account tenancy logic", func() {
 
 		It("Fails if the subject is not a service account", func() {
 			subject := &Subject{
-				User: "regular_user",
+				User:   "regular_user",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
@@ -120,7 +126,8 @@ var _ = Describe("Service account tenancy logic", func() {
 
 		It("Fails if the subject has the wrong number of parts", func() {
 			subject := &Subject{
-				User: "system:serviceaccount:my-ns:my-sa:junk",
+				User:   "system:serviceaccount:my-ns:my-sa:junk",
+				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)

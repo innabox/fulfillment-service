@@ -61,6 +61,7 @@ var _ = Describe("gRPC external authentication function", func() {
 				"my_first_group",
 				"my_second_group",
 			},
+			Source: SubjectSourceJwt,
 		}
 		value, err := json.Marshal(subject)
 		Expect(err).ToNot(HaveOccurred())
@@ -77,6 +78,7 @@ var _ = Describe("gRPC external authentication function", func() {
 			Expect(subject).ToNot(BeNil())
 			Expect(subject.User).To(Equal("my_user"))
 			Expect(subject.Groups).To(ConsistOf("my_first_group", "my_second_group"))
+			Expect(subject.Source).To(Equal(SubjectSourceJwt))
 		}).ToNot(Panic())
 	})
 

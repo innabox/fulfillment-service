@@ -24,10 +24,13 @@ type DefaultTenancyLogicBuilder struct {
 	logger *slog.Logger
 }
 
-// DefaultTenancyLogic is the default implementation of TenancyLogic that extracts the subject from the context
-// and returns the subject name as the tenant.
+// DefaultTenancyLogic is the default implementation of TenancyLogic that supports both service accounts and regular
+// users authenticated with JWT. It checks the user name prefix to determine the type and delegates to the appropriate
+// logic.
 type DefaultTenancyLogic struct {
-	logger *slog.Logger
+	logger      *slog.Logger
+	saDelegate  TenancyLogic
+	jwtDelegate TenancyLogic
 }
 
 // NewDefaultTenancyLogic creates a new builder for default tenancy logic.
@@ -50,30 +53,59 @@ func (b *DefaultTenancyLogicBuilder) Build() (result *DefaultTenancyLogic, err e
 		return
 	}
 
+	// Create the delegates:
+	saDelegate, err := NewServiceAccountTenancyLogic().
+		SetLogger(b.logger).
+		Build()
+	if err != nil {
+		return
+	}
+	jwtDelegate, err := NewJwtTenancyLogic().
+		SetLogger(b.logger).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create the tenancy logic:
 	result = &DefaultTenancyLogic{
-		logger: b.logger,
+		logger:      b.logger,
+		saDelegate:  saDelegate,
+		jwtDelegate: jwtDelegate,
 	}
 	return
 }
 
 // DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
 func (p *DefaultTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result []string, err error) {
-	// TODO: This should be extracted from the subject. For now, assign objects to the 'shared' tenant, which
-	// represents resources accessible to all users.
-	result = defaultTenants
-	return
+	subject := SubjectFromContext(ctx)
+	delegate, err := p.selectDelegate(subject)
+	if err != nil {
+		return
+	}
+	return delegate.DetermineAssignedTenants(ctx)
 }
 
 // DetermineVisibleTenants extracts the subject from the auth context and returns the identifiers of the tenants
 // that the current user has permission to see.
 func (p *DefaultTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result []string, err error) {
-	// TODO: This should be extracted from the subject. For now, allow users to see the 'shared' tenant, which
-	// represents resources accessible to all users.
-	result = defaultTenants
-	return
+	subject := SubjectFromContext(ctx)
+	delegate, err := p.selectDelegate(subject)
+	if err != nil {
+		return
+	}
+	return delegate.DetermineVisibleTenants(ctx)
 }
 
-var defaultTenants = []string{
-	"shared",
+// selectDelegate selects the appropriate tenancy logic delegate based on the subject source.
+func (p *DefaultTenancyLogic) selectDelegate(subject *Subject) (result TenancyLogic, err error) {
+	switch subject.Source {
+	case SubjectSourceServiceAccount:
+		result = p.saDelegate
+	case SubjectSourceJwt, SubjectSourceNone:
+		result = p.jwtDelegate
+	default:
+		err = fmt.Errorf("unknown subject source '%s'", subject.Source)
+	}
+	return
 }

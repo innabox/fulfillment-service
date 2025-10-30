@@ -83,7 +83,7 @@ var _ = Describe("Authorization rules", func() {
 		Expect(module.Rules).ToNot(BeEmpty())
 	})
 
-	It("Allows client to use the public API", func() {
+	It("Allows service account clients to use the public API", func() {
 		// Create a rego query to evaluate the rules:
 		query, err := rego.New(
 			rego.Query("data.authz.allow"),
@@ -102,6 +102,7 @@ var _ = Describe("Authorization rules", func() {
 			},
 			"auth": map[string]any{
 				"identity": map[string]any{
+					"authnMethod": "serviceaccount",
 					"user": map[string]any{
 						"username": "system:serviceaccount:innabox:client",
 					},
@@ -120,7 +121,45 @@ var _ = Describe("Authorization rules", func() {
 		Expect(allow).To(BeTrue())
 	})
 
-	It("Doesn't allow clients to use the private API", func() {
+	It("Allows JWT clients to use the public API", func() {
+		// Create a rego query to evaluate the rules:
+		query, err := rego.New(
+			rego.Query("data.authz.allow"),
+			rego.Module("authz.rego", rules),
+		).PrepareForEval(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create input that simulates a request from the JWT client to create a cluster:
+		input := map[string]any{
+			"context": map[string]any{
+				"request": map[string]any{
+					"http": map[string]any{
+						"path": "/fulfillment.v1.Clusters/Create",
+					},
+				},
+			},
+			"auth": map[string]any{
+				"identity": map[string]any{
+					"authnMethod": "jwt",
+					"user": map[string]any{
+						"preferred_username": "my_user",
+					},
+				},
+			},
+		}
+
+		// Evaluate the rules:
+		results, err := query.Eval(ctx, rego.EvalInput(input))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(results).To(HaveLen(1))
+
+		// Check that the result allows the request:
+		allow, ok := results[0].Expressions[0].Value.(bool)
+		Expect(ok).To(BeTrue())
+		Expect(allow).To(BeTrue())
+	})
+
+	It("Doesn't allow service account clients to use the private API", func() {
 		// Create a rego query to evaluate the rules:
 		query, err := rego.New(
 			rego.Query("data.authz.allow"),
@@ -139,6 +178,7 @@ var _ = Describe("Authorization rules", func() {
 			},
 			"auth": map[string]any{
 				"identity": map[string]any{
+					"authnMethod": "serviceaccount",
 					"user": map[string]any{
 						"username": "system:serviceaccount:innabox:client",
 					},
@@ -151,7 +191,45 @@ var _ = Describe("Authorization rules", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(results).To(HaveLen(1))
 
-		// Check that the result allows the request:
+		// Check that the result doesn't allow the request:
+		allow, ok := results[0].Expressions[0].Value.(bool)
+		Expect(ok).To(BeTrue())
+		Expect(allow).To(BeFalse())
+	})
+
+	It("Doesn't allow JWT clients to use the private API", func() {
+		// Create a rego query to evaluate the rules:
+		query, err := rego.New(
+			rego.Query("data.authz.allow"),
+			rego.Module("authz.rego", rules),
+		).PrepareForEval(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create input that simulates a request from the JWT client to create a cluster:
+		input := map[string]any{
+			"context": map[string]any{
+				"request": map[string]any{
+					"http": map[string]any{
+						"path": "/private.v1.Clusters/Create",
+					},
+				},
+			},
+			"auth": map[string]any{
+				"identity": map[string]any{
+					"authnMethod": "jwt",
+					"user": map[string]any{
+						"preferred_username": "my_user",
+					},
+				},
+			},
+		}
+
+		// Evaluate the rules:
+		results, err := query.Eval(ctx, rego.EvalInput(input))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(results).To(HaveLen(1))
+
+		// Check that the result doesn't allow the request:
 		allow, ok := results[0].Expressions[0].Value.(bool)
 		Expect(ok).To(BeTrue())
 		Expect(allow).To(BeFalse())

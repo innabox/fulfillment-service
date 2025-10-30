@@ -67,3 +67,34 @@ using the DNS name add the following to your `/etc/hosts` file:
 
 The go to `https://keycloak.keycloak.svc.cluster.local:8001` from your
 local machine.
+
+# Exporting the realm
+
+To export the realm configuration to a JSON file, you need to find the Keycloak
+pod and execute the `export` command inside it. The exported data can be written
+to a local JSON file using the following steps:
+
+1. First, find the name of the Keycloak pod:
+
+    ```bash
+    $ pod=$(kubectl get pods -n keycloak -l app=keycloak-service -o json | jq -r '.items[].metadata.name')
+    ```
+
+2. Run the `export` command inside the pod to write the ream to a temporary file:
+
+    ```bash
+    $ kubectl exec -n keycloak "${pod}" -- /opt/keycloak/bin/kc.sh export --realm innabox --file /tmp/realm.json
+    ```
+
+3. Copy the temporary file to a local file:
+
+    ```bash
+    $ kubectl exec -n keycloak "${pod}" -- cat /tmp/realm.json > realm.json
+    ```
+
+4. Optionally, if you want to replace the realm used by the chart, overwrite the
+   `realm.json` file:
+
+   ```bash
+   $ cp realm.json charts/keycloak/files/ream.json
+   ```
