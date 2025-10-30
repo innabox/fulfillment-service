@@ -14,7 +14,7 @@ specific language governing permissions and limitations under the License.
 # This is a trust-manager bundle that will copy the CA certificate to a 'ca-bundle' config map in all the namespaces.
 # The certificate will be in the 'bundle.pem' key.
 
-apiVersion: trust.cert-manager.io/v1alpha
+apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
   namespace: {{ .Release.Namespace }}
