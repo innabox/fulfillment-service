@@ -1,0 +1,168 @@
+{{/*
+Copyright (c) 2025 Red Hat Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+*/}}
+
+apiVersion: authorino.kuadrant.io/v1beta3
+kind: AuthConfig
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: fulfillment-service
+spec:
+  hosts:
+  - "*"
+  authentication:
+    "fulfillment-api":
+      kubernetesTokenReview:
+        audiences:
+        # TODO: This is the default audience for the Kubernetes API server. We should probably create a custom audience,
+        # for example `fulfillment-api`, but then the users will need to create tokens for that audience. For example:
+        #
+        # $ kubectl create token -n innabox --audience=fulfillment-api client
+        #
+        # It is not clear to me if we can also use that audience for the tokens generated automatically for the service
+        # accounts of other pods, for example for the `controller` pods. It may be possible using a projected service
+        # account token, something like this:
+        #
+        # apiVersion: v1
+        # kind: Pod
+        # metadata:
+        #   name: my
+        # spec:
+        #   containers:
+        #   - volumeMounts:
+        #     - mountPath: /var/run/secrets/tokens
+        #       name: api-token
+        #   volumes:
+        #   - name: api-token
+        #     projected:
+        #       sources:
+        #       - serviceAccountToken:
+        #           path: api-token
+        #           audience: fulfillment-api
+        #
+        # But that needs to be tested.
+        #
+        # Note also that different flavours of Kubernetes use different audicences for the service account tokens. Kind
+        # uses the full DNS name `kubernetes.default.svc.cluster.local`, but OpenShift uses the `kubernetes.default.svc`
+        # abbreviation.
+        - https://kubernetes.default.svc
+        - https://kubernetes.default.svc.cluster.local
+      overrides:
+        authnMethod:
+          value: serviceaccount
+    "keycloak-jwt":
+      jwt:
+        issuerUrl: {{ required "auth.issuerUrl is required" .Values.auth.issuerUrl }}
+      overrides:
+        authnMethod:
+          value: jwt
+  authorization:
+    "fulfillment-api":
+      opa:
+        rego: |
+          import future.keywords.in
+
+          # Define admin subjects:
+          admin_subjects := {
+            "system:serviceaccount:{{ .Release.Namespace }}:admin",
+            "system:serviceaccount:{{ .Release.Namespace }}:controller",
+          }
+
+          # Get the gRPC method:
+          grpc_method := input.context.request.http.path
+
+          # Get the subject name:
+          subject_name = input.auth.identity.user.username {
+            input.auth.identity.authnMethod == "serviceaccount"
+          }
+          subject_name = input.auth.identity.user.preferred_username {
+            input.auth.identity.authnMethod == "jwt"
+          }
+
+          # Function to check if an account is an admin account:
+          is_admin {
+            subject_name in admin_subjects
+          }
+
+          # Function to check if an account is a client account:
+          is_client {
+            not is_admin
+          }
+
+          # Allow metadata, reflection and health to everyone:
+          allow {
+            startswith(grpc_method, "/metadata.")
+          }
+          allow {
+            startswith(grpc_method, "/grpc.reflection.")
+          }
+          allow {
+            startswith(grpc_method, "/grpc.health.")
+          }
+
+          # Allow specific methods to clients:
+          allow {
+            is_client
+            grpc_method in {
+              "/events.v1/Watch",
+              "/fulfillment.v1.ClusterTemplates/Get",
+              "/fulfillment.v1.ClusterTemplates/List",
+              "/fulfillment.v1.Clusters/Create",
+              "/fulfillment.v1.Clusters/Delete",
+              "/fulfillment.v1.Clusters/Get",
+              "/fulfillment.v1.Clusters/GetKubeconfig",
+              "/fulfillment.v1.Clusters/GetKubeconfigViaHttp",
+              "/fulfillment.v1.Clusters/GetPassword",
+              "/fulfillment.v1.Clusters/GetPasswordViaHttp",
+              "/fulfillment.v1.Clusters/List",
+              "/fulfillment.v1.Clusters/Update",
+              "/fulfillment.v1.HostClasses/Get",
+              "/fulfillment.v1.HostClasses/List",
+              "/fulfillment.v1.HostPools/Create",
+              "/fulfillment.v1.HostPools/Delete",
+              "/fulfillment.v1.HostPools/Get",
+              "/fulfillment.v1.HostPools/List",
+              "/fulfillment.v1.HostPools/Update",
+              "/fulfillment.v1.Hosts/Create",
+              "/fulfillment.v1.Hosts/Delete",
+              "/fulfillment.v1.Hosts/Get",
+              "/fulfillment.v1.Hosts/List",
+              "/fulfillment.v1.Hosts/Update",
+              "/fulfillment.v1.VirtualMachineTemplates/Get",
+              "/fulfillment.v1.VirtualMachineTemplates/List",
+              "/fulfillment.v1.VirtualMachines/Create",
+              "/fulfillment.v1.VirtualMachines/Delete",
+              "/fulfillment.v1.VirtualMachines/Get",
+              "/fulfillment.v1.VirtualMachines/List",
+              "/fulfillment.v1.VirtualMachines/Update",
+            }
+          }
+
+          # Allow everything to admins:
+          allow {
+            is_admin
+          }
+  response:
+    success:
+      headers:
+        "x-subject":
+          json:
+            properties:
+              source:
+                expression: |
+                  auth.identity.authnMethod
+              user:
+                expression: |
+                  auth.identity.authnMethod == "serviceaccount"? auth.identity.user.username: auth.identity.username
+              groups:
+                expression: |
+                  auth.identity.authnMethod == "serviceaccount"? auth.identity.user.groups: auth.identity.groups

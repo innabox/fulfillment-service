@@ -1,0 +1,65 @@
+#
+# Copyright (c) 2025 Red Hat Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+# specific language governing permissions and limitations under the License.
+#
+
+# This indicates if the chart is being deployed to an OpenShift or Kind cluster. Valid values are `openshift` and `kind`.
+variant: kind
+
+# Certificate configuration:
+certs:
+
+  # This defines the cert-manager issuer that will be used for the certificates used by the service. The default is to
+  # use a cluster wide issuer, but there is no default value for the name, so it must be set.
+  issuerRef:
+    kind: ClusterIssuer
+    name:
+
+  # This defines the trusted CA certificates bundle. It should be the name of a configmap in the release namespace
+  # that contains trusted CA certificates in PEM format. If not set or empty, no CA bundle will be used.
+  caBundle:
+    configMap:
+
+# Authentication and authorization configuration:
+auth:
+
+  # This defines the URL of the OAuth issuer used for authentication. This parameter is mandatory.
+  issuerUrl:
+
+# Logging configuration:
+log:
+
+  # This defines the log level for all components. Valid values are 'debug', 'info', 'warn', and 'error'.
+  #
+  # Note that setting this to 'debug' will significantly increase the size of logs and may impact service performance.
+  level: info
+
+  # This controls whether HTTP/gRPC headers are logged.
+  #
+  # Note that setting this to 'true' may result in sensitive information being logged, avoid doing this in production
+  # environments.
+  headers: false
+
+  # This controls whether HTTP/gRPC request and response bodies are logged.
+  #
+  # Note that setting this to 'true' may result in sensitive information being logged, avoid doing this in production
+  # environments.
+  bodies: false
+
+# Image configuration:
+images:
+  service: ghcr.io/innabox/fulfillment-service:main
+  postgres: quay.io/sclorg/postgresql-15-c9s:latest
+  envoy: docker.io/envoyproxy/envoy:v1.33.0
+
+# Database configuration:
+database:
+  storageSize: 10Gi

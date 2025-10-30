@@ -119,7 +119,7 @@ var _ = Describe("Cluster reconciler", func() {
 		})
 
 		// Check that the Kubernetes object is eventually created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var kubeObject *unstructured.Unstructured
@@ -174,7 +174,7 @@ var _ = Describe("Cluster reconciler", func() {
 		object := createResponse.GetObject()
 
 		// Wait for the corresponding Kubernetes object to be created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -244,7 +244,7 @@ var _ = Describe("Cluster reconciler", func() {
 		})
 
 		// Wait for the corresponding Kubernetes object to be created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured

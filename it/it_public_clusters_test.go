@@ -268,7 +268,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -370,7 +370,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -472,7 +472,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -574,7 +574,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := kind.Client()
+		kubeClient := cluster.Client()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured

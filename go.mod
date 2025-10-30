@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2
-	github.com/innabox/fulfillment-common v0.0.13
+	github.com/innabox/fulfillment-common v0.0.14
 	github.com/json-iterator/go v1.1.12
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/open-policy-agent/opa v1.4.0

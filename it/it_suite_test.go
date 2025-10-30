@@ -40,6 +40,7 @@ import (
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
@@ -55,12 +56,16 @@ type Config struct {
 	// KeepKind indicates whether to preserve the kind cluster after tests complete.
 	// By default, the kind cluster is deleted after running the tests.
 	KeepKind bool `json:"keep_kind" envconfig:"keep_kind" default:"false"`
+
+	// KeepService indicates whether to preserve the application chart after tests complete.
+	// By default, the application chart is uninstalled after running the tests.
+	KeepService bool `json:"keep_service" envconfig:"keep_service" default:"false"`
 }
 
 var (
 	logger      *slog.Logger
 	config      *Config
-	kind        *Kind
+	cluster     *Kind
 	clientConn  *grpc.ClientConn
 	adminConn   *grpc.ClientConn
 	userClient  *http.Client
@@ -130,17 +135,25 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	_, err = exec.LookPath(podmanCmd)
 	Expect(err).ToNot(HaveOccurred())
+	_, err = exec.LookPath(helmCmd)
+	Expect(err).ToNot(HaveOccurred())
 
-	// Create the kind cluster, and start it:
-	kind, err = NewKind().
+	// Start the cluster, and remember to stop it:
+	cluster, err = NewKind().
 		SetLogger(logger).
 		SetName("it").
 		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
 		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
-	err = kind.Start(ctx)
+	err = cluster.Start(ctx)
 	Expect(err).ToNot(HaveOccurred())
+	if !config.KeepKind {
+		DeferCleanup(func() {
+			err := cluster.Stop(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	}
 
 	// Build the container image:
 	imageTag := time.Now().Format("20060102150405")
@@ -174,25 +187,17 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	err = saveCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
-	err = kind.LoadArchive(ctx, imageTar)
+	err = cluster.LoadArchive(ctx, imageTar)
 	Expect(err).ToNot(HaveOccurred())
-
-	// Remember to stop the kind cluster:
-	if !config.KeepKind {
-		DeferCleanup(func() {
-			err := kind.Stop(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
-	}
 
 	// Get the kubeconfig:
 	kcFile := filepath.Join(tmpDir, "kubeconfig")
-	err = os.WriteFile(kcFile, kind.Kubeconfig(), 0400)
+	err = os.WriteFile(kcFile, cluster.Kubeconfig(), 0400)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Get the client:
-	kubeClient := kind.Client()
-	kubeClientSet := kind.ClientSet()
+	kubeClient := cluster.Client()
+	kubeClientSet := cluster.ClientSet()
 
 	// Load the certificates of the CA bundle of the cluster:
 	var caFiles []string
@@ -230,66 +235,69 @@ var _ = BeforeSuite(func() {
 		SetDir(projectDir).
 		SetName(helmCmd).
 		SetArgs(
-			"install",
+			"upgrade",
+			"--install",
 			"keycloak",
 			"charts/keycloak",
 			"--kubeconfig", kcFile,
 			"--namespace", "keycloak",
 			"--create-namespace",
-			"--wait",
 			"--set", "variant=kind",
+			"--wait",
 		).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 	err = installCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
-	// In order to deploy the application we need to edit the manifests to use the image that we just built, and
-	// we don't want to accidentally commit that change to the repository, so we copy the manifests to a temporary
-	// directory and we do the edit there:
-	manifestsDir := filepath.Join(projectDir, "manifests")
-	copyCmd, err := NewCommand().
+	// Deploy the service, and remember to uninstall it:
+	logger.DebugContext(ctx, "Installing service")
+	installCmd, err = NewCommand().
 		SetLogger(logger).
 		SetDir(projectDir).
-		SetName("cp").
+		SetName(helmCmd).
 		SetArgs(
-			"-r", manifestsDir,
-			tmpDir,
-		).
-		Build()
-	Expect(err).ToNot(HaveOccurred())
-	err = copyCmd.Execute(ctx)
-	Expect(err).ToNot(HaveOccurred())
-	manifestsTmp := filepath.Join(tmpDir, "manifests")
-	baseTmp := filepath.Join(manifestsTmp, "base")
-	editCmd, err := NewCommand().
-		SetLogger(logger).
-		SetDir(baseTmp).
-		SetName(kustomizeCmd).
-		SetArgs(
-			"edit", "set", "image",
-			fmt.Sprintf("fulfillment-service=%s", imageRef),
-		).
-		Build()
-	Expect(err).ToNot(HaveOccurred())
-	err = editCmd.Execute(ctx)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Deploy the application:
-	overlayTmp := filepath.Join(manifestsTmp, "overlays", "kind")
-	applyCmd, err := NewCommand().
-		SetLogger(logger).
-		SetDir(projectDir).
-		SetName(kubectlCmd).
-		SetArgs(
-			"apply",
+			"upgrade",
+			"--install",
+			"fulfillment-service",
+			"charts/service",
 			"--kubeconfig", kcFile,
-			"--kustomize", overlayTmp,
+			"--namespace", "innabox",
+			"--create-namespace",
+			"--set", "log.level=debug",
+			"--set", "log.headers=true",
+			"--set", "log.bodies=true",
+			"--set", "variant=kind",
+			"--set", fmt.Sprintf("images.service=%s", imageRef),
+			"--set", "certs.issuerRef.kind=ClusterIssuer",
+			"--set", "certs.issuerRef.name=default-ca",
+			"--set", "certs.caBundle.configMap=ca-bundle",
+			"--set", "auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox",
+			"--wait",
 		).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
-	err = applyCmd.Execute(ctx)
+	err = installCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
+	if config.KeepKind && !config.KeepService {
+		DeferCleanup(func() {
+			logger.InfoContext(ctx, "Uninstalling service")
+			uninstallCmd, err := NewCommand().
+				SetLogger(logger).
+				SetDir(projectDir).
+				SetName(helmCmd).
+				SetArgs(
+					"uninstall",
+					"fulfillment-service",
+					"--kubeconfig", kcFile,
+					"--namespace", "innabox",
+				).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			err = uninstallCmd.Execute(ctx)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	}
 
 	// Helper function to create a token source from a service account:
 	makeTokenSource := func(sa string) auth.TokenSource {
@@ -375,11 +383,13 @@ var _ = BeforeSuite(func() {
 		},
 	}
 	err = kubeClient.Create(ctx, hubNamespaceObject)
-	Expect(err).ToNot(HaveOccurred())
+	if !apierrors.IsAlreadyExists(err) {
+		Expect(err).ToNot(HaveOccurred())
+	}
 
 	// Register the kind cluster as a hub. Note that in order to do this we need to replace the 127.0.0.1 IP
 	// with the internal DNS name of the API server, as otherwise the controller will not be able to connect.
-	hubKubeconfigBytes := kind.Kubeconfig()
+	hubKubeconfigBytes := cluster.Kubeconfig()
 	hubKubeconfigObject, err := clientcmd.Load(hubKubeconfigBytes)
 	Expect(err).ToNot(HaveOccurred())
 	for clusterKey := range hubKubeconfigObject.Clusters {
@@ -411,10 +421,9 @@ var _ = Describe("Integration", func() {
 
 // Names of the command line tools:
 const (
-	helmCmd      = "helm"
-	kubectlCmd   = "kubectl"
-	kustomizeCmd = "kustomize"
-	podmanCmd    = "podman"
+	helmCmd    = "helm"
+	kubectlCmd = "kubectl"
+	podmanCmd  = "podman"
 )
 
 // Name and namespace of the hub:

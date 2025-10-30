@@ -1,0 +1,55 @@
+#
+# Copyright (c) 2025 Red Hat Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License
+# is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+# or implied. See the License for the specific language governing permissions and limitations under
+# the License.
+#
+
+name: Publish chart
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+
+  publish-chart:
+    name: Publish chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+    - id: run
+      run: |
+        # Login to the registry:
+        export registry="ghcr.io"
+        echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login --username "${{ github.actor }}" --password-stdin "${registry}"
+
+        # Get the git version:
+        export git_version="$(git describe --tags)"
+
+        # Update the image reference in the chart:
+        export app_version="${git_version}"
+        export app_image="${registry}/${{ github.repository }}:${app_version}"
+        yq -i '.images.service = strenv(app_image)' charts/service/values.yaml
+
+        # Package the chart:
+        export chart_version="${git_version#v}"
+        helm package charts/service --version "${chart_version}" --app-version "${app_version}"
+
+        # Push the chart to the registry:
+        export chart_name="$(yq -r '.name' charts/service/Chart.yaml)"
+        export chart_file="${chart_name}-${chart_version}.tgz"
+        helm push "${chart_file}" "oci://${registry}/${{ github.repository_owner }}/charts"
