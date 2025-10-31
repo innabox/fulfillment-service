@@ -28,15 +28,8 @@ spec:
       serviceAccountName: controller
       volumes:
       - name: cas
-        projected:
-          sources:
-          - secret:
-              name: fulfillment-service-tls
-              items:
-              - key: ca.crt
-                path: service-ca.crt
-          - configMap:
-              name: ca-bundle
+        configMap:
+          name: ca-bundle
       containers:
       - name: controller
         image: fulfillment-service
@@ -52,7 +45,7 @@ spec:
         - --log-headers=true
         - --log-bodies=true
         - --ca-file=/etc/fulfillment-controller/tls/cas
+        - --token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
         - --grpc-server-network=tcp
         - --grpc-server-address=fulfillment-api:8000
-        - --grpc-token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
         - --grpc-keep-alive=5m

@@ -26,6 +26,9 @@ spec:
         app: fulfillment-service
     spec:
       volumes:
+      - name: cas
+        configMap:
+          name: ca-bundle
       - name: sockets
         emptyDir:
           medium: Memory
@@ -72,6 +75,8 @@ spec:
         volumeMounts:
         - name: sockets
           mountPath: /run/sockets
+        - name: cas
+          mountPath: /etc/fulfillment-gateway/tls/cas
         command:
         - /usr/local/bin/fulfillment-service
         - start
@@ -79,6 +84,7 @@ spec:
         - --log-level=debug
         - --log-headers=true
         - --log-bodies=true
+        - --ca-file=/etc/fulfillment-gateway/tls/cas
         - --http-listener-network=unix
         - --http-listener-address=/run/sockets/gateway.socket
         - --grpc-server-network=unix

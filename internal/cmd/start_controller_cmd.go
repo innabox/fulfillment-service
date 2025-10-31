@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/innabox/fulfillment-common/auth"
 	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -56,6 +57,12 @@ func NewStartControllerCommand() *cobra.Command {
 		[]string{},
 		"File or directory containing trusted CA certificates.",
 	)
+	flags.StringVar(
+		&runner.args.tokenFile,
+		"token-file",
+		"",
+		"File containing the token to use for authentication.",
+	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	return command
 }
@@ -65,7 +72,8 @@ type startControllerRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
-		caFiles []string
+		caFiles   []string
+		tokenFile string
 	}
 	client *grpc.ClientConn
 }
@@ -98,11 +106,21 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
 	}
 
+	// Create the token source:
+	tokenSource, err := auth.NewFileTokenSource().
+		SetLogger(r.logger).
+		SetFile(r.args.tokenFile).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create token source: %w", err)
+	}
+
 	// Create the gRPC client:
-	r.client, err = network.NewClient().
+	r.client, err = network.NewGrpcClient().
 		SetLogger(r.logger).
 		SetFlags(r.flags, network.GrpcClientName).
 		SetCaPool(caPool).
+		SetTokenSource(tokenSource).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)

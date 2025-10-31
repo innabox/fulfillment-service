@@ -61,31 +61,11 @@ jobs:
     - run: |
         ginkgo run -r internal
 
-  build-image:
-    name: Build image
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-    - run: |
-        image="ghcr.io/innabox/fulfillment-service:latest"
-        podman build --tag "${image}" .
-        podman save --output image.tar "${image}"
-    - uses: actions/upload-artifact@v5
-      with:
-        name: image
-        path: image.tar
-
   run-integration-tests:
     name: Run integration tests
     runs-on: ubuntu-latest
-    needs:
-    - build-image
     steps:
     - uses: actions/checkout@v5
     - uses: ./.github/actions/setup-go
-    - uses: actions/download-artifact@v6
-      with:
-        name: image
-        path: .
     - run: |
         ginkgo run -v it

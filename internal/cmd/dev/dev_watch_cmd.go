@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/innabox/fulfillment-common/auth"
 	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -29,7 +30,6 @@ import (
 
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
-	apiclient "github.com/innabox/fulfillment-service/internal/clients/api"
 )
 
 // NewWatchCommand creates and returns the `listen` command.
@@ -44,10 +44,22 @@ func NewWatchCommand() *cobra.Command {
 	flags := command.Flags()
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	flags.StringVar(
-		&runner.filter,
+		&runner.args.filter,
 		"filter",
 		"",
 		"Event filter",
+	)
+	flags.StringArrayVar(
+		&runner.args.caFiles,
+		"ca-file",
+		[]string{},
+		"File or directory containing trusted CA certificates.",
+	)
+	flags.StringVar(
+		&runner.args.tokenFile,
+		"token-file",
+		"",
+		"File containing the token to use for authentication.",
 	)
 	return command
 }
@@ -56,7 +68,11 @@ func NewWatchCommand() *cobra.Command {
 type watchCommandRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
-	filter string
+	args   struct {
+		caFiles   []string
+		tokenFile string
+		filter    string
+	}
 }
 
 // run runs the `listen` command.
@@ -71,16 +87,36 @@ func (c *watchCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	// Save the flags:
 	c.flags = cmd.Flags()
 
-	// Create the client:
-	client, err := apiclient.NewClient().
+	// Load the trusted CA certificates:
+	caPool, err := network.NewCertPool().
+		SetLogger(c.logger).
+		AddFiles(c.args.caFiles...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
+	}
+
+	// Create the token source:
+	tokenSource, err := auth.NewFileTokenSource().
+		SetLogger(c.logger).
+		SetFile(c.args.tokenFile).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create token source: %w", err)
+	}
+
+	// Create the grpcClient:
+	grpcClient, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
+		SetCaPool(caPool).
+		SetTokenSource(tokenSource).
 		Build()
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err := client.Close()
+		err := grpcClient.Close()
 		if err != nil {
 			c.logger.InfoContext(
 				ctx,
@@ -91,14 +127,15 @@ func (c *watchCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	}()
 
 	// Start watching events:
-	stream, err := client.Events().Watch(ctx, &eventsv1.EventsWatchRequest{
-		Filter: proto.String(c.filter),
+	eventsClient := eventsv1.NewEventsClient(grpcClient)
+	eventsStream, err := eventsClient.Watch(ctx, &eventsv1.EventsWatchRequest{
+		Filter: proto.String(c.args.filter),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to start stream: %w", err)
 	}
 	for {
-		response, err := stream.Recv()
+		response, err := eventsStream.Recv()
 		if errors.Is(err, io.EOF) {
 			break
 		}

@@ -131,50 +131,6 @@ var _ = BeforeSuite(func() {
 	_, err = exec.LookPath(podmanCmd)
 	Expect(err).ToNot(HaveOccurred())
 
-	// In the GitHub actions environment, the image is already built and available in the 'image.tar'
-	// file in the project directory. If it is not there, we build it and save it to the temporary
-	// directory.
-	imageTar := filepath.Join(projectDir, "image.tar")
-	_, err = os.Stat(imageTar)
-	if err != nil {
-		// Build the container image:
-		buildCmd, err := NewCommand().
-			SetLogger(logger).
-			SetDir(projectDir).
-			SetName("podman").
-			SetArgs(
-				"build",
-				"--tag", fmt.Sprintf("%s:%s", imageName, imageTag),
-				"--file", "Containerfile",
-			).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		err = buildCmd.Execute(ctx)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Save the container image to the tar file:
-		imageTar = filepath.Join(tmpDir, "image.tar")
-		saveCmd, err := NewCommand().
-			SetLogger(logger).
-			SetDir(projectDir).
-			SetName("podman").
-			SetArgs(
-				"save",
-				"--output", imageTar,
-				imageRef,
-			).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		err = saveCmd.Execute(ctx)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Clean up the container image tar file:
-		DeferCleanup(func() {
-			err := os.Remove(imageTar)
-			Expect(err).ToNot(HaveOccurred())
-		})
-	}
-
 	// Create the kind cluster, and start it:
 	kind, err = NewKind().
 		SetLogger(logger).
@@ -184,6 +140,41 @@ var _ = BeforeSuite(func() {
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 	err = kind.Start(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Build the container image:
+	imageTag := time.Now().Format("20060102150405")
+	imageRef := fmt.Sprintf("%s:%s", imageName, imageTag)
+	buildCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName("podman").
+		SetArgs(
+			"build",
+			"--tag", imageRef,
+			"--file", "Containerfile",
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = buildCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Save the container image to the tar file and load it into the cluster:
+	imageTar := filepath.Join(tmpDir, "image.tar")
+	saveCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName(podmanCmd).
+		SetArgs(
+			"save",
+			"--output", imageTar,
+			imageRef,
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = saveCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+	err = kind.LoadArchive(ctx, imageTar)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Remember to stop the kind cluster:
@@ -253,11 +244,39 @@ var _ = BeforeSuite(func() {
 	err = installCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Load the image:
-	err = kind.LoadArchive(ctx, imageTar)
+	// In order to deploy the application we need to edit the manifests to use the image that we just built, and
+	// we don't want to accidentally commit that change to the repository, so we copy the manifests to a temporary
+	// directory and we do the edit there:
+	manifestsDir := filepath.Join(projectDir, "manifests")
+	copyCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName("cp").
+		SetArgs(
+			"-r", manifestsDir,
+			tmpDir,
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = copyCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+	manifestsTmp := filepath.Join(tmpDir, "manifests")
+	baseTmp := filepath.Join(manifestsTmp, "base")
+	editCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(baseTmp).
+		SetName(kustomizeCmd).
+		SetArgs(
+			"edit", "set", "image",
+			fmt.Sprintf("fulfillment-service=%s", imageRef),
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = editCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Deploy the application:
+	overlayTmp := filepath.Join(manifestsTmp, "overlays", "kind")
 	applyCmd, err := NewCommand().
 		SetLogger(logger).
 		SetDir(projectDir).
@@ -265,7 +284,7 @@ var _ = BeforeSuite(func() {
 		SetArgs(
 			"apply",
 			"--kubeconfig", kcFile,
-			"--kustomize", filepath.Join("manifests", "overlays", "kind"),
+			"--kustomize", overlayTmp,
 		).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
@@ -302,10 +321,9 @@ var _ = BeforeSuite(func() {
 
 	// Create the gRPC clients:
 	makeConn := func(tokenSource auth.TokenSource) *grpc.ClientConn {
-		conn, err := network.NewClient().
+		conn, err := network.NewGrpcClient().
 			SetLogger(logger).
 			SetCaPool(caPool).
-			SetNetwork("tcp").
 			SetAddress("localhost:8000").
 			SetTokenSource(tokenSource).
 			Build()
@@ -381,7 +399,7 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = Describe("Integration", func() {
-	It("Only", Label("setup"), func() {
+	It("Setup", Label("setup"), func() {
 		// This is a dummy test to have a mechanism to run the setup of the integration tests without running
 		// any actual tests, with a command like this:
 		//
@@ -393,9 +411,10 @@ var _ = Describe("Integration", func() {
 
 // Names of the command line tools:
 const (
-	kubectlCmd = "kubectl"
-	podmanCmd  = "podman"
-	helmCmd    = "helm"
+	helmCmd      = "helm"
+	kubectlCmd   = "kubectl"
+	kustomizeCmd = "kustomize"
+	podmanCmd    = "podman"
 )
 
 // Name and namespace of the hub:
@@ -404,6 +423,3 @@ const hubNamespace = "cloudkit-operator-system"
 
 // Image details:
 const imageName = "ghcr.io/innabox/fulfillment-service"
-const imageTag = "latest"
-
-var imageRef = fmt.Sprintf("%s:%s", imageName, imageTag)

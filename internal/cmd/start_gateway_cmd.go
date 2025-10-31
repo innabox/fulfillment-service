@@ -43,6 +43,12 @@ func NewStartGatewayCommand() *cobra.Command {
 	network.AddListenerFlags(flags, network.HttpListenerName, network.DefaultHttpAddress)
 	network.AddCorsFlags(flags, network.HttpListenerName)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
+	flags.StringArrayVar(
+		&runner.args.caFiles,
+		"ca-file",
+		[]string{},
+		"File or directory containing trusted CA certificates.",
+	)
 	return command
 }
 
@@ -50,6 +56,10 @@ func NewStartGatewayCommand() *cobra.Command {
 type startGatewayCommandRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
+	args   struct {
+		caFiles   []string
+		tokenFile string
+	}
 }
 
 // run runs the `start gateway` command.
@@ -73,11 +83,21 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 		return err
 	}
 
-	// Create the network client:
-	c.logger.InfoContext(ctx, "Creating network client")
-	grpcClient, err := network.NewClient().
+	// Load the trusted CA certificates:
+	caPool, err := network.NewCertPool().
+		SetLogger(c.logger).
+		AddFiles(c.args.caFiles...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
+	}
+
+	// Create the gRPC client:
+	c.logger.InfoContext(ctx, "Creating gRPC client")
+	grpcClient, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
+		SetCaPool(caPool).
 		Build()
 	if err != nil {
 		return err
