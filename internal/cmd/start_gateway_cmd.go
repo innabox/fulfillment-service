@@ -119,6 +119,10 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 	if err != nil {
 		return err
 	}
+	err = api.RegisterVirtualMachinesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
 
 	// Add the CORS support:
 	corsMiddleware, err := network.NewCorsMiddleware().
