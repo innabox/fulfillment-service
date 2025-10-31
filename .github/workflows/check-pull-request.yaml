@@ -67,7 +67,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - run: |
-        image="ghcr.io/innabox/fulfillment-service:latest"
+        image="ghcr.io/innabox/fulfillment-service:main"
         podman build --tag "${image}" .
         podman save --output image.tar "${image}"
     - uses: actions/upload-artifact@v5
