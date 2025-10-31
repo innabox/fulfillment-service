@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/innabox/fulfillment-common/auth"
 	"github.com/innabox/fulfillment-common/logging"
 	"github.com/innabox/fulfillment-common/network"
 	. "github.com/innabox/fulfillment-common/testing"
@@ -271,8 +272,8 @@ var _ = BeforeSuite(func() {
 	err = applyCmd.Execute(ctx)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Create a client token:
-	makeToken := func(sa string) string {
+	// Helper function to create a token source from a service account:
+	makeTokenSource := func(sa string) auth.TokenSource {
 		response, err := kubeClientSet.CoreV1().ServiceAccounts("innabox").CreateToken(
 			ctx,
 			sa,
@@ -284,30 +285,38 @@ var _ = BeforeSuite(func() {
 			metav1.CreateOptions{},
 		)
 		Expect(err).ToNot(HaveOccurred())
-		return response.Status.Token
+		token := &auth.Token{
+			Access: response.Status.Token,
+		}
+		source, err := auth.NewStaticTokenSource().
+			SetLogger(logger).
+			SetToken(token).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		return source
 	}
 
-	// Create the tokens:
-	clientToken := makeToken("client")
-	adminToken := makeToken("admin")
+	// Create the token sources:
+	clientTokenSource := makeTokenSource("client")
+	adminTokenSource := makeTokenSource("admin")
 
 	// Create the gRPC clients:
-	makeConn := func(token string) *grpc.ClientConn {
+	makeConn := func(tokenSource auth.TokenSource) *grpc.ClientConn {
 		conn, err := network.NewClient().
 			SetLogger(logger).
 			SetCaPool(caPool).
-			SetServerNetwork("tcp").
-			SetServerAddress("localhost:8000").
-			SetToken(token).
+			SetNetwork("tcp").
+			SetAddress("localhost:8000").
+			SetTokenSource(tokenSource).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		return conn
 	}
-	clientConn = makeConn(clientToken)
-	adminConn = makeConn(adminToken)
+	clientConn = makeConn(clientTokenSource)
+	adminConn = makeConn(adminTokenSource)
 
-	// Create the HTTP clients:
-	makeClient := func(token string) *http.Client {
+	// Helper function to create an HTTP client from a token source:
+	makeClient := func(tokenSource auth.TokenSource) *http.Client {
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{
 				RootCAs: caPool,
@@ -316,15 +325,17 @@ var _ = BeforeSuite(func() {
 		return &http.Client{
 			Transport: ghttp.RoundTripperFunc(
 				func(request *http.Request) (response *http.Response, err error) {
-					request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+					token, err := tokenSource.Token(request.Context())
+					Expect(err).ToNot(HaveOccurred())
+					request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.Access))
 					response, err = transport.RoundTrip(request)
 					return
 				},
 			),
 		}
 	}
-	userClient = makeClient(clientToken)
-	adminClient = makeClient(adminToken)
+	userClient = makeClient(clientTokenSource)
+	adminClient = makeClient(adminTokenSource)
 
 	// Wait till the application is healthy:
 	healthClient := healthv1.NewHealthClient(adminConn)
