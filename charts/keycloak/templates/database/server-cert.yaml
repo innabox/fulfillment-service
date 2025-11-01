@@ -18,8 +18,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   issuerRef:
-    kind: {{ .Values.issuerRef.kind }}
-    name: {{ .Values.issuerRef.name }}
+    kind: {{ .Values.certs.issuerRef.kind }}
+    name: {{ required "certs.issuerRef.name is required" .Values.certs.issuerRef.name }}
   dnsNames:
   - localhost
   - keycloak-database
