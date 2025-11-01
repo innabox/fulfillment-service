@@ -1,16 +1,35 @@
 # Keycloak Helm chart
 
-This Keycloak Helm chart is intended for use in the integration tests of the
-fulfillment service inside a _kind_ cluster. It provides a pre-configured
-Keycloak instance with the necessary realm and client configurations for testing
-authentication and authorization workflows.
+This Keycloak Helm chart is intended for use in the integration tests of the fulfillment service
+inside a _kind_ cluster. It provides a pre-configured Keycloak instance with the necessary realm and
+client configurations for testing authentication and authorization workflows.
 
 ## Installation
 
-To install the Keycloak chart, run the following command:
+Before installing this chart you will need a working installation of _cert-manager_ and at least one
+issuer defined.
+
+The following table lists the configurable parameters of the Keycloak chart:
+
+| Parameter              | Description                                                   | Required | Default         |
+|------------------------|---------------------------------------------------------------|----------|-----------------|
+| `variant`              | Deployment variant (`openshift` or `kind`)                    | No       | `kind`          |
+| `hostname`             | The hostname that Keycloak uses to refer to itself            | **Yes**  | None            |
+| `certs.issuerRef.kind` | The kind of cert-manager issuer (`ClusterIssuer` or `Issuer`) | No       | `ClusterIssuer` |
+| `certs.issuerRef.name` | The name of the cert-manager issuer for TLS certificates      | **Yes**  | None            |
+| `images.keycloak`      | The Keycloak container image                                  | No       | `26.3`          |
+| `images.postgres`      | The PostgreSQL container image                                | No       | `15`            |
+
+Note specially that the `hostname` and `certs.issuerRef.name` parameters are required. For example,
+in the integration tests environment the chart is installed like this:
 
 ```bash
-$ helm install keycloak charts/keycloak --namespace keycloak --create-namespace --wait
+$ helm install keycloak charts/keycloak \
+--namespace keycloak \
+--create-namespace \
+--set hostname=keycloak.keycloak.svc.cluster.local \
+--set certs.issuerRef.name=default-ca \
+--wait
 ```
 
 To uninstall it:
@@ -19,73 +38,34 @@ To uninstall it:
 $ helm uninstall keycloak --namespace keycloak
 ```
 
-Note that this chart requires a _cert-manager_ issuer to generate the necessary
-TLS certificates for _Keycloak_ and its _PostgreSQL_ database. By default, the
-chart uses the `default-ca` cluster issuer, which is automatically available in
-the integration tests environment.
+Here's an example `values.yaml` file for installing the chart:
 
-When installing to a plain vanilla Kind cluster or any other Kubernetes cluster,
-you will need to:
+```yaml
+variant: kind
 
-1. Install _cert-manager_ if not already present.
+hostname: keycloak.innabox
 
-2. Create a cluster issuer.
+certs:
+  issuerRef:
+    kind: ClusterIssuer
+    name: default-ca
+```
 
-3. Configure the chart to use your issuer by setting the `issuerRef` values:
-
-    ```bash
-    $ helm install keycloak charts/keycloak \
-    --namespace keycloak \
-    --create-namespace \
-    --set issuerRef.name=my-issuer \
-    --wait
-    ```
-
-    You can also use an issuer in the same namespace. In that case you will also
-    need to change the `issuerRef.kind` value to `Issuer`:
-
-    ```bash
-    $ helm install keycloak charts/keycloak \
-    --namespace keycloak \
-    --create-namespace \
-    --set issuerRef.kind=Issuer \
-    --set issuerRef.name=my-issuer \
-    --wait
-    ```
-
-By default the hostname is `keycloak.keycloak.svc.cluster.local`, which is fine
-for use from within the cluster. If you want to use the chart in some other
-development or testing scenario where a different hostname is needed or
-convenient, you can use the `hostname` variable:
+Install using a values file:
 
 ```bash
 $ helm install keycloak charts/keycloak \
 --namespace keycloak \
 --create-namespace \
---set hostname=keycloak.example.com \
+--values values.yaml \
 --wait
 ```
 
-## Accessing the console
-
-The Keycloak console will be available at
-`https://keycloak.keycloak.svc.cluster.local:8001`, but this address is not
-resolvable via DNS from outside the cluster. For external access, the console is
-available at the localhost IP address, and port 8001. To access it directly
-using the DNS name add the following to your `/etc/hosts` file:
-
-```
-127.0.0.1 keycloak.keycloak.svc.cluster.local
-```
-
-The go to `https://keycloak.keycloak.svc.cluster.local:8001` from your
-local machine.
-
 ## Exporting the realm
 
-To export the realm configuration to a JSON file, you need to find the Keycloak
-pod and execute the `export` command inside it. The exported data can be written
-to a local JSON file using the following steps:
+To export the realm configuration to a JSON file, you need to find the Keycloak pod and execute the
+`export` command inside it. The exported data can be written to a local JSON file using the
+following steps:
 
 1. First, find the name of the Keycloak pod:
 
@@ -109,5 +89,5 @@ to a local JSON file using the following steps:
    `realm.json` file:
 
    ```bash
-   $ cp realm.json charts/keycloak/files/ream.json
+   $ cp realm.json charts/keycloak/files/realm.json
    ```

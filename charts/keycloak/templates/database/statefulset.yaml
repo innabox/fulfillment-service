@@ -40,7 +40,7 @@ spec:
           claimName: keycloak-database
       containers:
       - name: server
-        image: "quay.io/sclorg/postgresql-15-c9s:latest"
+        image: "{{ .Values.images.postgres }}"
         imagePullPolicy: IfNotPresent
         env:
         - name: POSTGRESQL_USER

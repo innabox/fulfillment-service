@@ -38,7 +38,7 @@ spec:
           secretName: keycloak-tls-cert
       initContainers:
       - name: wait-for-database
-        image: "quay.io/sclorg/postgresql-15-c9s:latest"
+        image: "{{ .Values.images.postgres }}"
         imagePullPolicy: IfNotPresent
         command:
         - /bin/bash
@@ -50,7 +50,7 @@ spec:
           done
       containers:
       - name: keycloak
-        image: "quay.io/keycloak/keycloak:26.3"
+        image: "{{ .Values.images.keycloak }}"
         imagePullPolicy: IfNotPresent
         volumeMounts:
         - name: realm
@@ -82,7 +82,7 @@ spec:
         - name: KC_HTTPS_CERTIFICATE_KEY_FILE
           value: "/secrets/tls/tls.key"
         - name: KC_HOSTNAME
-          value: {{ if .Values.hostname }}"{{ .Values.hostname }}"{{ else }}"keycloak.{{ .Release.Namespace }}.svc.cluster.local"{{ end }}
+          value: "{{ required "hostname is required" .Values.hostname }}"
         - name: KC_HOSTNAME_PORT
           value: "8001"
         - name: KC_DB

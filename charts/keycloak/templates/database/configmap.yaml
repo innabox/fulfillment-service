@@ -14,22 +14,8 @@ specific language governing permissions and limitations under the License.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: keycloak-database-config
   namespace: {{ .Release.Namespace }}
+  name: keycloak-database-config
 data:
-  server.conf: |
-    # Enable TLS:
-    ssl = on
-    ssl_ca_file = '/secrets/cert/ca.crt'
-    ssl_cert_file = '/secrets/cert/tls.crt'
-    ssl_key_file = '/secrets/cert/tls.key'
-
-    # Use our custom access file:
-    hba_file = '/config/access/access.conf'
-  access.conf: |
-    # This is needed by the scripts that setup the database.
-    local all all peer
-
-    # For any other user we only allow access with certificates.
-    hostssl all all 0.0.0.0/0 cert
-    hostssl all all ::0/0 cert
+  server.conf: {{ .Files.Get "files/database/server.conf" | quote }}
+  access.conf: {{ .Files.Get "files/database/access.conf" | quote }}

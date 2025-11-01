@@ -243,7 +243,8 @@ var _ = BeforeSuite(func() {
 			"--namespace", "keycloak",
 			"--create-namespace",
 			"--set", "variant=kind",
-			"--wait",
+			"--set", "hostname=keycloak.keycloak.svc.cluster.local",
+			"--set", "certs.issuerRef.name=default-ca",
 		).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
