@@ -18,15 +18,8 @@ metadata:
   name: keycloak-tls
 spec:
   issuerRef:
-    kind: {{ .Values.issuerRef.kind }}
-    name: {{ .Values.issuerRef.name }}
+    kind: {{ .Values.certs.issuerRef.kind }}
+    name: {{ required "certs.issuerRef.name is required" .Values.certs.issuerRef.name }}
   dnsNames:
-  {{- if .Values.hostname }}
-  - {{ .Values.hostname }}
-  {{- else }}
-  - localhost
-  - keycloak
-  - keycloak.{{ .Release.Namespace }}
-  - keycloak.{{ .Release.Namespace }}.svc.cluster.local
-  {{- end }}
+  - {{ required "hostname is required" .Values.hostname }}
   secretName: keycloak-tls-cert
