@@ -245,6 +245,7 @@ var _ = BeforeSuite(func() {
 			"--set", "variant=kind",
 			"--set", "hostname=keycloak.keycloak.svc.cluster.local",
 			"--set", "certs.issuerRef.name=default-ca",
+			"--wait",
 		).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
