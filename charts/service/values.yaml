@@ -28,6 +28,10 @@ certs:
   caBundle:
     configMap:
 
+# Hostname used to access the service from outside the cluster. If set, this will be added to the service certificate
+# as a DNS name.
+hostname:
+
 # Authentication and authorization configuration:
 auth:
 

@@ -25,4 +25,7 @@ spec:
   - fulfillment-api
   - fulfillment-api.{{ .Release.Namespace }}
   - fulfillment-api.{{ .Release.Namespace }}.svc.cluster.local
+  {{- if .Values.hostname }}
+  - {{ .Values.hostname }}
+  {{- end }}
   secretName: fulfillment-service-tls
