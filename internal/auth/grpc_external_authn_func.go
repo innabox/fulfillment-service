@@ -128,7 +128,11 @@ func (f *grpcExternalAuthnFunc) call(ctx context.Context, method string) (result
 			"Expected exactly one value for the subject header",
 			slog.Any("values", values),
 		)
-		err = errors.New("too many values for authentication header")
+		if count == 0 {
+			err = errors.New("missing authentication header")
+		} else {
+			err = errors.New("too many values for authentication header")
+		}
 		return
 	}
 	value := values[0]

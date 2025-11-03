@@ -154,6 +154,18 @@ var _ = Describe("gRPC external authentication function", func() {
 		Expect(err).To(MatchError("missing authentication header"))
 	})
 
+	It("Fails if header is missing", func() {
+		// Create the function:
+		function, err := NewGrpcExternalAuthnFunc().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify the results:
+		ctx, err = function(ctx, "/my_package/MyMethod")
+		Expect(err).To(MatchError("missing authentication header"))
+	})
+
 	It("Fails header has multiple values", func() {
 		// Create the function:
 		function, err := NewGrpcExternalAuthnFunc().
