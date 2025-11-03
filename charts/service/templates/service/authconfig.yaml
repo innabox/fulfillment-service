@@ -84,7 +84,7 @@ spec:
           subject_name = input.auth.identity.user.username {
             input.auth.identity.authnMethod == "serviceaccount"
           }
-          subject_name = input.auth.identity.user.preferred_username {
+          subject_name = input.auth.identity.username {
             input.auth.identity.authnMethod == "jwt"
           }
 
