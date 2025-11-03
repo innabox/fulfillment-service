@@ -29,6 +29,7 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
@@ -82,6 +83,7 @@ var _ = Describe("Clusters server", func() {
 			`
 			create table clusters (
 				id text not null primary key,
+				name text not null default '',
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
 				finalizers text[] not null default array ['default'],
@@ -92,6 +94,7 @@ var _ = Describe("Clusters server", func() {
 
 			create table archived_clusters (
 				id text not null,
+				name text not null default '',
 				creation_timestamp timestamp with time zone not null,
 				deletion_timestamp timestamp with time zone not null,
 				archival_timestamp timestamp with time zone not null default now(),
@@ -102,6 +105,7 @@ var _ = Describe("Clusters server", func() {
 
 			create table cluster_templates (
 				id text not null primary key,
+				name text not null default '',
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
 				finalizers text[] not null default array ['default'],
@@ -112,6 +116,7 @@ var _ = Describe("Clusters server", func() {
 
 			create table archived_clusters_templates (
 				id text not null,
+				name text not null default '',
 				creation_timestamp timestamp with time zone not null,
 				deletion_timestamp timestamp with time zone not null,
 				archival_timestamp timestamp with time zone not null default now(),
@@ -1012,5 +1017,178 @@ var _ = Describe("Clusters server", func() {
 			object = getResponse.GetObject()
 			verify(object)
 		})
+
+		It("Sets name when creating", func() {
+			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Metadata: sharedv1.Metadata_builder{
+						Name: "my-cluster",
+					}.Build(),
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.GetObject().GetMetadata().GetName()).To(Equal("my-cluster"))
+
+			// Get and verify:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: response.GetObject().GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetMetadata().GetName()).To(Equal("my-cluster"))
+		})
+
+		It("Updates name", func() {
+			// Create the object with an initial name:
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Metadata: sharedv1.Metadata_builder{
+						Name: "my-name",
+					}.Build(),
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createResponse.GetObject().GetMetadata().GetName()).To(Equal("my-name"))
+
+			// Update the name:
+			updateResponse, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: createResponse.GetObject().GetId(),
+					Metadata: sharedv1.Metadata_builder{
+						Name: "your-name",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updateResponse.GetObject().GetMetadata().GetName()).To(Equal("your-name"))
+
+			// Get and verify:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: createResponse.GetObject().GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetMetadata().GetName()).To(Equal("your-name"))
+		})
+
+		DescribeTable(
+			"Rejects creation with invalid name",
+			func(name, expectedError string) {
+				response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+					Object: ffv1.Cluster_builder{
+						Metadata: sharedv1.Metadata_builder{
+							Name: name,
+						}.Build(),
+						Spec: ffv1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				Expect(response).To(BeNil())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(ContainSubstring(expectedError))
+			},
+			Entry(
+				"Too long",
+				"a234567890123456789012345678901234567890123456789012345678901234",
+				"must be at most 63 characters long",
+			),
+			Entry(
+				"Contains uppercase letters",
+				"MyCluster",
+				"must only contain lowercase letters",
+			),
+			Entry(
+				"Contains special characters",
+				"my_cluster",
+				"must only contain lowercase letters",
+			),
+			Entry(
+				"Starts with hyphen",
+				"-mycluster",
+				"cannot start with a hyphen",
+			),
+			Entry(
+				"Ends with hyphen",
+				"mycluster-",
+				"cannot end with a hyphen",
+			),
+		)
+
+		It("Rejects update with invalid name", func() {
+			// Create the object with a valid name:
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Metadata: sharedv1.Metadata_builder{
+						Name: "valid-name",
+					}.Build(),
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Try to update with an invalid name:
+			updateResponse, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: createResponse.GetObject().GetId(),
+					Metadata: sharedv1.Metadata_builder{
+						Name: "Invalid_Name",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(updateResponse).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(ContainSubstring("must only contain lowercase letters"))
+		})
+
+		DescribeTable(
+			"Accepts creation with valid names",
+			func(name string) {
+				response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+					Object: ffv1.Cluster_builder{
+						Metadata: sharedv1.Metadata_builder{
+							Name: name,
+						}.Build(),
+						Spec: ffv1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetObject().GetMetadata().GetName()).To(Equal(name))
+			},
+			Entry(
+				"Simple name",
+				"simple",
+			),
+			Entry(
+				"With hyphens",
+				"with-hyphens",
+			),
+			Entry(
+				"With numbers",
+				"with123numbers",
+			),
+			Entry(
+				"Single character",
+				"a",
+			),
+			Entry(
+				"Maximum length",
+				"a23456789012345678901234567890123456789012345678901234567890123",
+			),
+		)
 	})
 })

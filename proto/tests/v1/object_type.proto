@@ -58,6 +58,7 @@ message Metadata {
   repeated string finalizers = 3;
   repeated string creators = 4;
   repeated string tenants = 5;
+  string name = 6;
 }
 
 message Spec {

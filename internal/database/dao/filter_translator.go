@@ -655,6 +655,16 @@ func (t *FilterTranslator[O]) translateSelectThisField(fieldName string, testOnl
 func (t *FilterTranslator[O]) translateSelectThisMdField(fieldName string,
 	testOnly bool) (result filterTranslatorResult, err error) {
 	switch fieldName {
+	case "name":
+		if testOnly {
+			result.sql = "true"
+			result.kind = filterTranslatorBooleanKind
+			result.precedence = filterTranslatorMaxPrecedence
+		} else {
+			result.sql = fieldName
+			result.kind = filterTranslatorStringKind
+			result.precedence = filterTranslatorMaxPrecedence
+		}
 	case "creation_timestamp":
 		// Note that we don't need to worry about this being null, because it will never be.
 		if testOnly {

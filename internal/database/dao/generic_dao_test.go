@@ -200,6 +200,7 @@ var _ = Describe("Generic DAO", func() {
 				`
 				create table objects (
 					id text not null primary key,
+					name text not null default '',
 					creation_timestamp timestamp with time zone not null default now(),
 					deletion_timestamp timestamp with time zone not null default 'epoch',
 					finalizers text[] not null default '{}',
@@ -210,6 +211,7 @@ var _ = Describe("Generic DAO", func() {
 
 				create table archived_objects (
 					id text not null,
+					name text not null default '',
 					creation_timestamp timestamp with time zone not null,
 					deletion_timestamp timestamp with time zone not null,
 					archival_timestamp timestamp with time zone not null default now(),
@@ -293,6 +295,23 @@ var _ = Describe("Generic DAO", func() {
 			Expect(object).ToNot(BeNil())
 			Expect(object.Metadata).ToNot(BeNil())
 			Expect(object.Metadata.DeletionTimestamp).To(BeNil())
+		})
+
+		It("Sets name when creating", func() {
+			// Create the object with a name and verify that the result has the name set:
+			object := &testsv1.Object{
+				Metadata: &testsv1.Metadata{
+					Name: "my-name",
+				},
+			}
+			object, err := generic.Create(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetName()).To(Equal("my-name"))
+
+			// Get the object and verify that the result has the name set:
+			object, err = generic.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetName()).To(Equal("my-name"))
 		})
 
 		It("Generates non empty identifiers", func() {
@@ -800,6 +819,28 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object).ToNot(BeNil())
 			Expect(object.GetMyString()).To(Equal("your_value"))
+		})
+
+		It("Updates name", func() {
+			// Create an object with an initial name:
+			object, err := generic.Create(ctx, &testsv1.Object{
+				Metadata: &testsv1.Metadata{
+					Name: "my-name",
+				},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetName()).To(Equal("my-name"))
+
+			// Update the name:
+			object.GetMetadata().SetName("your-name")
+			object, err = generic.Update(ctx, object)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetName()).To(Equal("your-name"))
+
+			// Get the object and verify the name was updated:
+			object, err = generic.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetMetadata().GetName()).To(Equal("your-name"))
 		})
 
 		Describe("Filtering", func() {

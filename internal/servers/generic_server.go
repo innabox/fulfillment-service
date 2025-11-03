@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"strings"
 	"sync"
 
 	grpccodes "google.golang.org/grpc/codes"
@@ -54,6 +55,8 @@ type GenericServer[O dao.Object] struct {
 	service        string
 	dao            *dao.GenericDAO[O]
 	template       proto.Message
+	metadataField  protoreflect.FieldDescriptor
+	nameField      protoreflect.FieldDescriptor
 	listRequest    proto.Message
 	listResponse   proto.Message
 	getRequest     proto.Message
@@ -68,6 +71,11 @@ type GenericServer[O dao.Object] struct {
 	pathCompiler   *masks.PathCompiler[O]
 	pathCache      map[string]*masks.Path[O]
 	pathCacheLock  *sync.Mutex
+}
+
+type metadataIface interface {
+	proto.Message
+	GetName() string
 }
 
 // NewGenericServer creates a builder that can then be used to configure and create a new generic server.
@@ -190,7 +198,17 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 
 	// Prepare the template for the object:
 	var object O
-	s.template = object.ProtoReflect().New().Interface()
+	reflect := object.ProtoReflect()
+	s.template = reflect.New().Interface()
+
+	// Find the metadata field:
+	descriptor := reflect.Descriptor()
+	fields := descriptor.Fields()
+	s.metadataField = fields.ByName("metadata")
+	if s.metadataField == nil {
+		err = fmt.Errorf("object of type '%s' doesn't have a 'metadata' field", descriptor.FullName())
+		return
+	}
 
 	// Prepare templates for the request and response types. These are empty messages that will be cloned when
 	// it is necessary to create new instances.
@@ -352,6 +370,13 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 	if s.isNil(object) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
+	metadata := s.getMetadata(object)
+	if metadata != nil {
+		err := s.validateMetadata(metadata)
+		if err != nil {
+			return err
+		}
+	}
 	object, err := s.dao.Create(ctx, object)
 	if err != nil {
 		s.logger.ErrorContext(
@@ -425,6 +450,15 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 		}
 	} else {
 		object = input
+	}
+
+	// Validate the metadata:
+	metadata := s.getMetadata(object)
+	if metadata != nil {
+		err = s.validateMetadata(metadata)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Save the result:
@@ -556,4 +590,67 @@ func (s *GenericServer[O]) isNil(object proto.Message) bool {
 
 func (s *GenericServer[O]) setPointer(pointer any, value any) {
 	reflect.ValueOf(pointer).Elem().Set(reflect.ValueOf(value))
+}
+
+func (s *GenericServer[O]) validateMetadata(metadata metadataIface) error {
+	name := metadata.GetName()
+	if name != "" {
+		return s.validateName(name)
+	}
+	return nil
+}
+
+// validateName validates that the 'metadata.name' field follows DNS label restrictions as defined in RFC 1035:
+//
+// - Must be between 1 and 63 characters long
+// - Must only contain lowercase letters (a-z), digits (0-9) and hyphens (-)
+// - Cannot start or end with a hyphen
+func (s *GenericServer[O]) validateName(name string) error {
+	// Max length:
+	if len(name) > 63 {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field 'metadata.name' must be at most 63 characters long, but it has %d characters",
+			len(name),
+		)
+	}
+
+	// Validate characters, only a-z, 0-9, and hyphen:
+	for i, c := range name {
+		isLower := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		isHyphen := c == '-'
+		if !isLower && !isDigit && !isHyphen {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"field 'metadata.name' must only contain lowercase letters (a-z), digits (0-9) and "+
+					"hyphens (-), but contains '%c' at position %d",
+				c, i,
+			)
+		}
+	}
+
+	// Cannot start or end with hyphen:
+	if strings.HasPrefix(name, "-") {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field 'metadata.name' cannot start with a hyphen",
+		)
+	}
+	if strings.HasSuffix(name, "-") {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field 'metadata.name' cannot end with a hyphen",
+		)
+	}
+
+	return nil
+}
+
+func (s *GenericServer[O]) getMetadata(object O) metadataIface {
+	objectReflect := object.ProtoReflect()
+	if !objectReflect.Has(s.metadataField) {
+		return nil
+	}
+	return objectReflect.Get(s.metadataField).Message().Interface().(metadataIface)
 }

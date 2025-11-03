@@ -34,4 +34,15 @@ message Metadata {
 
   // Tenants contains the identifiers of the tenants that the object belongs to.
   repeated string tenants = 5;
+
+  // Human friendly name of the object.
+  //
+  // Has the same restrictions than DNS labels, as described in RFC 1035:
+  //
+  // - Must be between 1 and 63 characters long.
+  // - Must only contain letters (a-z), digits (0-9) and hyphens (-).
+  // - It isn't case sensitive.
+  //
+  // It is optional and not unique, so multiple objecs, even created by the same user or tenant, can have the same name.
+  string name = 6;
 }

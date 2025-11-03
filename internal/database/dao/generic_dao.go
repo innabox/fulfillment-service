@@ -57,10 +57,12 @@ type GenericDAOBuilder[O Object] struct {
 // stored in tables with the following columns:
 //
 //   - `id` - The unique identifier of the object.
+//   - `name` - The human friendly name of the object.
 //   - `creation_timestamp` - The time the object was created.
 //   - `deletion_timestamp` - The time the object was deleted.
 //   - `finalizers` - The list of finalizers for the object.
 //   - `creators` - The list of creators for the object.
+//   - `tenants` - The list of tenants for the object.
 //   - `data` - The serialized object, using the protocol buffers JSON serialization.
 //
 // Objects must have field named `id` of string type.
@@ -84,6 +86,8 @@ type GenericDAO[O Object] struct {
 
 type metadataIface interface {
 	proto.Message
+	GetName() string
+	SetName(string)
 	GetCreationTimestamp() *timestamppb.Timestamp
 	SetCreationTimestamp(*timestamppb.Timestamp)
 	GetDeletionTimestamp() *timestamppb.Timestamp
@@ -366,6 +370,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		`
 		select
 			id,
+			name,
 			creation_timestamp,
 			deletion_timestamp,
 			finalizers,
@@ -420,6 +425,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 	for itemsRows.Next() {
 		var (
 			id         string
+			name       string
 			creationTs time.Time
 			deletionTs time.Time
 			finalizers []string
@@ -429,6 +435,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		)
 		err = itemsRows.Scan(
 			&id,
+			&name,
 			&creationTs,
 			&deletionTs,
 			&finalizers,
@@ -444,7 +451,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		if err != nil {
 			return
 		}
-		md := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
+		md := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
 		item.SetId(id)
 		d.setMetadata(item, md)
 		items = append(items, item)
@@ -496,6 +503,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		sqlBuffer,
 		`
 		select
+			name,
 			creation_timestamp,
 			deletion_timestamp,
 			finalizers,
@@ -521,6 +529,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 	)
 	row := tx.QueryRow(ctx, sql, parameters...)
 	var (
+		name       string
 		creationTs time.Time
 		deletionTs time.Time
 		finalizers []string
@@ -529,6 +538,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		data       []byte
 	)
 	err = row.Scan(
+		&name,
 		&creationTs,
 		&deletionTs,
 		&finalizers,
@@ -548,7 +558,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 	if err != nil {
 		return
 	}
-	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
+	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 	result = object
@@ -634,6 +644,10 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	// Get the metadata:
 	metadata := d.getMetadata(object)
 	finalizers := d.getFinalizers(metadata)
+	name := ""
+	if metadata != nil {
+		name = metadata.GetName()
+	}
 	creators, err := d.attributionLogic.DetermineAssignedCreators(ctx)
 	if err != nil {
 		return
@@ -658,6 +672,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		`
 		insert into %s (
 			id,
+			name,
 			finalizers,
 			creators,
 			tenants,
@@ -667,7 +682,8 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		 	$2,
 			$3,
 			$4,
-			$5
+			$5,
+			$6
 		)
 		returning
 			creation_timestamp,
@@ -675,7 +691,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, id, finalizers, creators, tenants, data)
+	row := tx.QueryRow(ctx, sql, id, name, finalizers, creators, tenants, data)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -688,7 +704,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 	created := d.cloneObject(object)
-	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
+	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
 	created.SetId(id)
 	d.setMetadata(created, metadata)
 
@@ -736,6 +752,10 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	// Get the metadata:
 	metadata := d.getMetadata(object)
 	finalizers := d.getFinalizers(metadata)
+	name := ""
+	if metadata != nil {
+		name = metadata.GetName()
+	}
 
 	// Save the object:
 	data, err := d.marshalData(object)
@@ -745,10 +765,11 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	sql := fmt.Sprintf(
 		`
 		update %s set
-			finalizers = $1,
-			data = $2
+			name = $1,
+			finalizers = $2,
+			data = $3
 		where
-			id = $3
+			id = $4
 		returning
 			creation_timestamp,
 			deletion_timestamp,
@@ -757,7 +778,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, finalizers, data, id)
+	row := tx.QueryRow(ctx, sql, name, finalizers, data, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -774,7 +795,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 	object = d.cloneObject(object)
-	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
+	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
@@ -789,7 +810,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 
 	// If the object has been deleted and there are no finalizers we can now archive the object and delete the row:
 	if deletionTs.Unix() != 0 && len(finalizers) == 0 {
-		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, data)
+		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, name, data)
 		if err != nil {
 			return
 		}
@@ -840,6 +861,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 		where
 			%s
 		returning
+			name,
 			creation_timestamp,
 			deletion_timestamp,
 			finalizers,
@@ -861,6 +883,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	)
 	row := tx.QueryRow(ctx, sql, parameters...)
 	var (
+		name       string
 		creationTs time.Time
 		deletionTs time.Time
 		finalizers []string
@@ -869,6 +892,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 		data       []byte
 	)
 	err = row.Scan(
+		&name,
 		&creationTs,
 		&deletionTs,
 		&finalizers,
@@ -890,7 +914,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	if err != nil {
 		return
 	}
-	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants)
+	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
@@ -905,7 +929,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 
 	// If there are no finalizers we can now archive the object and delete the row:
 	if len(finalizers) == 0 {
-		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, data)
+		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, name, data)
 		if err != nil {
 			return
 		}
@@ -915,11 +939,12 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 }
 
 func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, creationTs, deletionTs time.Time,
-	creators []string, tenants []string, data []byte) error {
+	creators []string, tenants []string, name string, data []byte) error {
 	sql := fmt.Sprintf(
 		`
 		insert into archived_%s (
 			id,
+			name,
 			creation_timestamp,
 			deletion_timestamp,
 			creators,
@@ -931,12 +956,13 @@ func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, 
 			$3,
 			$4,
 			$5,
-			$6
+			$6,
+			$7
 		)
 		`,
 		d.table,
 	)
-	_, err := tx.Exec(ctx, sql, id, creationTs, deletionTs, creators, tenants, data)
+	_, err := tx.Exec(ctx, sql, id, name, creationTs, deletionTs, creators, tenants, data)
 	if err != nil {
 		return err
 	}
@@ -974,8 +1000,9 @@ func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
 }
 
 func (d *GenericDAO[O]) makeMetadata(creationTs, deletionTs time.Time, finalizers []string,
-	creators []string, tenants []string) metadataIface {
+	creators []string, tenants []string, name string) metadataIface {
 	result := d.metadataTemplate.New().Interface().(metadataIface)
+	result.SetName(name)
 	if creationTs.Unix() != 0 {
 		result.SetCreationTimestamp(timestamppb.New(creationTs))
 	}

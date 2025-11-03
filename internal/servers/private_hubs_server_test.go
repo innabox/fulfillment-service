@@ -75,6 +75,7 @@ var _ = Describe("Private hubs server", func() {
 			`
 			create table hubs (
 				id text not null primary key,
+				name text not null default '',
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
 				finalizers text[] not null default '{}',
@@ -85,6 +86,7 @@ var _ = Describe("Private hubs server", func() {
 
 			create table archived_hubs (
 				id text not null,
+				name text not null default '',
 				creation_timestamp timestamp with time zone not null,
 				deletion_timestamp timestamp with time zone not null,
 				archival_timestamp timestamp with time zone not null default now(),

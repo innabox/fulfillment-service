@@ -88,6 +88,16 @@ var _ = Describe("Filter translator", func() {
 			`data->'spec'->>'spec_string' = 'my_value'`,
 		),
 		Entry(
+			"Name equals value",
+			`this.metadata.name == 'my_name'`,
+			`name = 'my_name'`,
+		),
+		Entry(
+			"Name not equals value",
+			`this.metadata.name != 'my_name'`,
+			`name != 'my_name'`,
+		),
+		Entry(
 			"Creation timestamp is null",
 			`this.metadata.creation_timestamp == null`,
 			`creation_timestamp is null`,
@@ -130,6 +140,11 @@ var _ = Describe("Filter translator", func() {
 		Entry(
 			"Check presence of identifier",
 			`has(this.id)`,
+			`true`,
+		),
+		Entry(
+			"Check presence of name",
+			`has(this.metadata.name)`,
 			`true`,
 		),
 		Entry(
