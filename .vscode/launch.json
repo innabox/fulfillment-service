@@ -23,7 +23,24 @@
                         "processId": "${command:pickGoProcess}"
                 },
                 {
-                        "name": "start server",
+                        "name": "start server (empty tenancy)",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "start",
+                                "server",
+                                "--log-level=debug",
+                                "--log-headers=true",
+                                "--log-bodies=true",
+                                "--grpc-listener-address=localhost:8000",
+                                "--db-url=postgres://service:service123@localhost:5432/service",
+                                "--tenancy-logic=empty"
+                        ]
+                },
+                {
+                        "name": "start server (default tenancy)",
                         "type": "go",
                         "request": "launch",
                         "mode": "auto",
@@ -36,7 +53,8 @@
                                 "--log-bodies=true",
                                 "--grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox",
                                 "--grpc-listener-address=localhost:8000",
-                                "--db-url=postgres://service:service123@localhost:5432/service"
+                                "--db-url=postgres://service:service123@localhost:5432/service",
+                                "--tenancy-logic=default"
                         ]
                 },
                 {
