@@ -21,6 +21,7 @@ import (
 	"math/rand/v2"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,6 +109,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error {
+	oldVM := proto.Clone(vm).(*privatev1.VirtualMachine)
 	t := task{
 		r:  r,
 		vm: vm,
@@ -121,9 +123,13 @@ func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error 
 	if err != nil {
 		return err
 	}
-	_, err = r.vmsClient.Update(ctx, privatev1.VirtualMachinesUpdateRequest_builder{
-		Object: vm,
-	}.Build())
+
+	if !proto.Equal(vm, oldVM) {
+		_, err = r.vmsClient.Update(ctx, privatev1.VirtualMachinesUpdateRequest_builder{
+			Object: vm,
+		}.Build())
+	}
+
 	return err
 }
 
