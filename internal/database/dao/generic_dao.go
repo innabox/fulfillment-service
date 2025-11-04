@@ -476,11 +476,11 @@ func (d *GenericDAO[O]) Get(ctx context.Context, id string) (result O, err error
 		return
 	}
 	defer tx.ReportError(&err)
-	result, err = d.get(ctx, tx, id)
+	result, err = d.get(ctx, tx, id, false)
 	return
 }
 
-func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (result O, err error) {
+func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string, forUpdate bool) (result O, err error) {
 	// Add the id parameter:
 	if id == "" {
 		err = errors.New("object identifier is mandatory")
@@ -518,6 +518,9 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string) (res
 		d.table,
 		filterBuffer.String(),
 	)
+	if forUpdate {
+		sqlBuffer.WriteString(" for update")
+	}
 
 	// Execute the SQL statement:
 	sql := sqlBuffer.String()
@@ -739,7 +742,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		err = errors.New("object identifier is mandatory")
 		return
 	}
-	current, err := d.get(ctx, tx, id)
+	current, err := d.get(ctx, tx, id, true)
 	if err != nil {
 		return
 	}
