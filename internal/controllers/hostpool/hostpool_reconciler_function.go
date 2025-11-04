@@ -21,6 +21,7 @@ import (
 	"math/rand/v2"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -107,6 +108,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, hostPool *privatev1.HostPool) error {
+	oldHostPool := proto.Clone(hostPool).(*privatev1.HostPool)
 	t := task{
 		r:        r,
 		hostPool: hostPool,
@@ -120,9 +122,11 @@ func (r *function) run(ctx context.Context, hostPool *privatev1.HostPool) error 
 	if err != nil {
 		return err
 	}
-	_, err = r.hostPoolsClient.Update(ctx, privatev1.HostPoolsUpdateRequest_builder{
-		Object: hostPool,
-	}.Build())
+	if !proto.Equal(hostPool, oldHostPool) {
+		_, err = r.hostPoolsClient.Update(ctx, privatev1.HostPoolsUpdateRequest_builder{
+			Object: hostPool,
+		}.Build())
+	}
 	return err
 }
 

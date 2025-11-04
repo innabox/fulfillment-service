@@ -20,6 +20,7 @@ import (
 	"log/slog"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -107,6 +108,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, host *privatev1.Host) error {
+	oldHost := proto.Clone(host).(*privatev1.Host)
 	t := task{
 		r:    r,
 		host: host,
@@ -120,9 +122,11 @@ func (r *function) run(ctx context.Context, host *privatev1.Host) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
-		Object: host,
-	}.Build())
+	if !proto.Equal(host, oldHost) {
+		_, err = r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+			Object: host,
+		}.Build())
+	}
 	return err
 }
 

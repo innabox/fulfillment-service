@@ -21,6 +21,7 @@ import (
 	"math/rand/v2"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,6 +109,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
+	oldCluster := proto.Clone(cluster).(*privatev1.Cluster)
 	t := task{
 		r:       r,
 		cluster: cluster,
@@ -121,9 +123,11 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-		Object: cluster,
-	}.Build())
+	if !proto.Equal(cluster, oldCluster) {
+		_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+			Object: cluster,
+		}.Build())
+	}
 	return err
 }
 
