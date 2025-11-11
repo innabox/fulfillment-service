@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "google/protobuf/field_mask.proto";
 import "private/v1/virtual_machine_type.proto";
 
@@ -62,9 +63,34 @@ message VirtualMachinesUpdateResponse {
 }
 
 service VirtualMachines {
-  rpc List(VirtualMachinesListRequest) returns (VirtualMachinesListResponse) {}
-  rpc Get(VirtualMachinesGetRequest) returns (VirtualMachinesGetResponse) {}
-  rpc Create(VirtualMachinesCreateRequest) returns (VirtualMachinesCreateResponse) {}
-  rpc Delete(VirtualMachinesDeleteRequest) returns (VirtualMachinesDeleteResponse) {}
-  rpc Update(VirtualMachinesUpdateRequest) returns (VirtualMachinesUpdateResponse) {}
+  rpc List(VirtualMachinesListRequest) returns (VirtualMachinesListResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/virtual_machines"
+    };
+  }
+  rpc Get(VirtualMachinesGetRequest) returns (VirtualMachinesGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/virtual_machines/{id}"
+      response_body: "object"
+    };
+  }
+  rpc Create(VirtualMachinesCreateRequest) returns (VirtualMachinesCreateResponse) {
+    option (google.api.http) = {
+      post: "/api/private/v1/virtual_machines"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Delete(VirtualMachinesDeleteRequest) returns (VirtualMachinesDeleteResponse) {
+    option (google.api.http) = {
+      delete: "/api/private/v1/virtual_machines/{id}"
+    };
+  }
+  rpc Update(VirtualMachinesUpdateRequest) returns (VirtualMachinesUpdateResponse) {
+    option (google.api.http) = {
+      patch: "/api/private/v1/virtual_machines/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
 }

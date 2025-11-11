@@ -118,4 +118,95 @@ var _ = Describe("REST gateway", func() {
 		// Verify field names:
 		Expect(body).To(HaveKey("node_sets"))
 	})
+
+	It("Should be possible to fetch cluster templates via private REST API", func() {
+		// Create a couple of host classes for the node sets:
+		computeHostClassID := fmt.Sprintf("compute_%s", uuid.New())
+		gpuHostClassID := fmt.Sprintf("gpus_%s", uuid.New())
+		_, err := hostClassesClient.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+			Object: privatev1.HostClass_builder{
+				Id:          computeHostClassID,
+				Title:       "Compute",
+				Description: "Compute.",
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() {
+			_, err := hostClassesClient.Delete(ctx, privatev1.HostClassesDeleteRequest_builder{
+				Id: computeHostClassID,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+		_, err = hostClassesClient.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+			Object: privatev1.HostClass_builder{
+				Id:          gpuHostClassID,
+				Title:       "GPU",
+				Description: "GPU.",
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() {
+			_, err := hostClassesClient.Delete(ctx, privatev1.HostClassesDeleteRequest_builder{
+				Id: gpuHostClassID,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		// Create a cluster template:
+		templateID := fmt.Sprintf("my_%s", uuid.New())
+		nodeSets := map[string]*privatev1.ClusterTemplateNodeSet{
+			"compute": privatev1.ClusterTemplateNodeSet_builder{
+				HostClass: computeHostClassID,
+				Size:      3,
+			}.Build(),
+			"gpu": privatev1.ClusterTemplateNodeSet_builder{
+				HostClass: gpuHostClassID,
+				Size:      2,
+			}.Build(),
+		}
+		_, err = templatesClient.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+			Object: privatev1.ClusterTemplate_builder{
+				Id:          templateID,
+				Title:       "My private template",
+				Description: "My private template.",
+				NodeSets:    nodeSets,
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() {
+			_, err := templatesClient.Delete(ctx, privatev1.ClusterTemplatesDeleteRequest_builder{
+				Id: templateID,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		// Retrieve the template via private REST API:
+		url := fmt.Sprintf("https://localhost:8000/api/private/v1/cluster_templates/%s", templateID)
+		request, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		Expect(err).ToNot(HaveOccurred())
+		response, err := adminClient.Do(request)
+		Expect(err).ToNot(HaveOccurred())
+		defer response.Body.Close()
+		Expect(response.StatusCode).To(Equal(http.StatusOK))
+		data, err := io.ReadAll(response.Body)
+		Expect(err).ToNot(HaveOccurred())
+		var body map[string]any
+		err = json.Unmarshal(data, &body)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify the response contains the expected fields:
+		Expect(body).To(HaveKey("id"))
+		Expect(body).To(HaveKey("title"))
+		Expect(body).To(HaveKey("description"))
+		Expect(body).To(HaveKey("node_sets"))
+		Expect(body["id"]).To(Equal(templateID))
+		Expect(body["title"]).To(Equal("My private template"))
+		Expect(body["description"]).To(Equal("My private template."))
+
+		// Verify node_sets structure:
+		nodeSetsMap, ok := body["node_sets"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(nodeSetsMap).To(HaveKey("compute"))
+		Expect(nodeSetsMap).To(HaveKey("gpu"))
+	})
 })

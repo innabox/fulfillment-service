@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "private/v1/hub_type.proto";
 import "google/protobuf/field_mask.proto";
 
@@ -62,9 +63,34 @@ message HubsUpdateResponse {
 }
 
 service Hubs {
-  rpc List(HubsListRequest) returns (HubsListResponse) {}
-  rpc Get(HubsGetRequest) returns (HubsGetResponse) {}
-  rpc Create(HubsCreateRequest) returns (HubsCreateResponse) {}
-  rpc Delete(HubsDeleteRequest) returns (HubsDeleteResponse) {}
-  rpc Update(HubsUpdateRequest) returns (HubsUpdateResponse) {}
+  rpc List(HubsListRequest) returns (HubsListResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/hubs"
+    };
+  }
+  rpc Get(HubsGetRequest) returns (HubsGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/hubs/{id}"
+      response_body: "object"
+    };
+  }
+  rpc Create(HubsCreateRequest) returns (HubsCreateResponse) {
+    option (google.api.http) = {
+      post: "/api/private/v1/hubs"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Delete(HubsDeleteRequest) returns (HubsDeleteResponse) {
+    option (google.api.http) = {
+      delete: "/api/private/v1/hubs/{id}"
+    };
+  }
+  rpc Update(HubsUpdateRequest) returns (HubsUpdateResponse) {
+    option (google.api.http) = {
+      patch: "/api/private/v1/hubs/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
 }

@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "google/protobuf/field_mask.proto";
 import "private/v1/host_pool_type.proto";
 
@@ -63,9 +64,34 @@ message HostPoolsUpdateResponse {
 }
 
 service HostPools {
-  rpc List(HostPoolsListRequest) returns (HostPoolsListResponse) {}
-  rpc Get(HostPoolsGetRequest) returns (HostPoolsGetResponse) {}
-  rpc Create(HostPoolsCreateRequest) returns (HostPoolsCreateResponse) {}
-  rpc Delete(HostPoolsDeleteRequest) returns (HostPoolsDeleteResponse) {}
-  rpc Update(HostPoolsUpdateRequest) returns (HostPoolsUpdateResponse) {}
+  rpc List(HostPoolsListRequest) returns (HostPoolsListResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/host_pools"
+    };
+  }
+  rpc Get(HostPoolsGetRequest) returns (HostPoolsGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/host_pools/{id}"
+      response_body: "object"
+    };
+  }
+  rpc Create(HostPoolsCreateRequest) returns (HostPoolsCreateResponse) {
+    option (google.api.http) = {
+      post: "/api/private/v1/host_pools"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Delete(HostPoolsDeleteRequest) returns (HostPoolsDeleteResponse) {
+    option (google.api.http) = {
+      delete: "/api/private/v1/host_pools/{id}"
+    };
+  }
+  rpc Update(HostPoolsUpdateRequest) returns (HostPoolsUpdateResponse) {
+    option (google.api.http) = {
+      patch: "/api/private/v1/host_pools/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
 }

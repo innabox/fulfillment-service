@@ -27,6 +27,7 @@ import (
 
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privateapi "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -140,6 +141,44 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 		return err
 	}
 	err = api.RegisterVirtualMachinesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+
+	// Register the private API service handlers:
+	err = privateapi.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterClustersHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterEventsHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterHostClassesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterHostPoolsHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterHostsHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterHubsHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privateapi.RegisterVirtualMachinesHandler(ctx, gatewayMux, grpcClient)
 	if err != nil {
 		return err
 	}

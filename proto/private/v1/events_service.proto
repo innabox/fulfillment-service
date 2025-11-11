@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "private/v1/event_type.proto";
 
 message EventsWatchRequest {
@@ -26,5 +27,9 @@ message EventsWatchResponse {
 }
 
 service Events {
-  rpc Watch(EventsWatchRequest) returns (stream EventsWatchResponse) {}
+  rpc Watch(EventsWatchRequest) returns (stream EventsWatchResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/events/watch"
+    };
+  }
 }

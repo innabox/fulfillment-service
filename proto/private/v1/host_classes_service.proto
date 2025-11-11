@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "private/v1/host_class_type.proto";
 import "google/protobuf/field_mask.proto";
 
@@ -63,9 +64,34 @@ message HostClassesDeleteRequest {
 message HostClassesDeleteResponse {}
 
 service HostClasses {
-  rpc List(HostClassesListRequest) returns (HostClassesListResponse) {}
-  rpc Get(HostClassesGetRequest) returns (HostClassesGetResponse) {}
-  rpc Create(HostClassesCreateRequest) returns (HostClassesCreateResponse) {}
-  rpc Update(HostClassesUpdateRequest) returns (HostClassesUpdateResponse) {}
-  rpc Delete(HostClassesDeleteRequest) returns (HostClassesDeleteResponse) {}
+  rpc List(HostClassesListRequest) returns (HostClassesListResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/host_classes"
+    };
+  }
+  rpc Get(HostClassesGetRequest) returns (HostClassesGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/host_classes/{id}"
+      response_body: "object"
+    };
+  }
+  rpc Create(HostClassesCreateRequest) returns (HostClassesCreateResponse) {
+    option (google.api.http) = {
+      post: "/api/private/v1/host_classes"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Update(HostClassesUpdateRequest) returns (HostClassesUpdateResponse) {
+    option (google.api.http) = {
+      patch: "/api/private/v1/host_classes/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Delete(HostClassesDeleteRequest) returns (HostClassesDeleteResponse) {
+    option (google.api.http) = {
+      delete: "/api/private/v1/host_classes/{id}"
+    };
+  }
 }

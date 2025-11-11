@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "google/protobuf/field_mask.proto";
 import "private/v1/virtual_machine_template_type.proto";
 
@@ -62,9 +63,34 @@ message VirtualMachineTemplatesUpdateResponse {
 }
 
 service VirtualMachineTemplates {
-  rpc List(VirtualMachineTemplatesListRequest) returns (VirtualMachineTemplatesListResponse) {}
-  rpc Get(VirtualMachineTemplatesGetRequest) returns (VirtualMachineTemplatesGetResponse) {}
-  rpc Create(VirtualMachineTemplatesCreateRequest) returns (VirtualMachineTemplatesCreateResponse) {}
-  rpc Delete(VirtualMachineTemplatesDeleteRequest) returns (VirtualMachineTemplatesDeleteResponse) {}
-  rpc Update(VirtualMachineTemplatesUpdateRequest) returns (VirtualMachineTemplatesUpdateResponse) {}
+  rpc List(VirtualMachineTemplatesListRequest) returns (VirtualMachineTemplatesListResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/virtual_machine_templates"
+    };
+  }
+  rpc Get(VirtualMachineTemplatesGetRequest) returns (VirtualMachineTemplatesGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/virtual_machine_templates/{id}"
+      response_body: "object"
+    };
+  }
+  rpc Create(VirtualMachineTemplatesCreateRequest) returns (VirtualMachineTemplatesCreateResponse) {
+    option (google.api.http) = {
+      post: "/api/private/v1/virtual_machine_templates"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Delete(VirtualMachineTemplatesDeleteRequest) returns (VirtualMachineTemplatesDeleteResponse) {
+    option (google.api.http) = {
+      delete: "/api/private/v1/virtual_machine_templates/{id}"
+    };
+  }
+  rpc Update(VirtualMachineTemplatesUpdateRequest) returns (VirtualMachineTemplatesUpdateResponse) {
+    option (google.api.http) = {
+      patch: "/api/private/v1/virtual_machine_templates/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
 }

@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/api/annotations.proto";
 import "private/v1/cluster_type.proto";
 import "google/protobuf/field_mask.proto";
 
@@ -62,9 +63,34 @@ message ClustersUpdateResponse {
 }
 
 service Clusters {
-  rpc List(ClustersListRequest) returns (ClustersListResponse) {}
-  rpc Get(ClustersGetRequest) returns (ClustersGetResponse) {}
-  rpc Create(ClustersCreateRequest) returns (ClustersCreateResponse) {}
-  rpc Delete(ClustersDeleteRequest) returns (ClustersDeleteResponse) {}
-  rpc Update(ClustersUpdateRequest) returns (ClustersUpdateResponse) {}
+  rpc List(ClustersListRequest) returns (ClustersListResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/clusters"
+    };
+  }
+  rpc Get(ClustersGetRequest) returns (ClustersGetResponse) {
+    option (google.api.http) = {
+      get: "/api/private/v1/clusters/{id}"
+      response_body: "object"
+    };
+  }
+  rpc Create(ClustersCreateRequest) returns (ClustersCreateResponse) {
+    option (google.api.http) = {
+      post: "/api/private/v1/clusters"
+      body: "object"
+      response_body: "object"
+    };
+  }
+  rpc Delete(ClustersDeleteRequest) returns (ClustersDeleteResponse) {
+    option (google.api.http) = {
+      delete: "/api/private/v1/clusters/{id}"
+    };
+  }
+  rpc Update(ClustersUpdateRequest) returns (ClustersUpdateResponse) {
+    option (google.api.http) = {
+      patch: "/api/private/v1/clusters/{object.id}"
+      body: "object"
+      response_body: "object"
+    };
+  }
 }
