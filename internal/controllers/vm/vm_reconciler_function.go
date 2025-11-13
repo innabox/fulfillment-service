@@ -175,6 +175,7 @@ func (t *task) update(ctx context.Context) error {
 		object.SetGenerateName(objectPrefix)
 		object.SetLabels(map[string]string{
 			labels.VirtualMachineUuid: t.vm.GetId(),
+			labels.TenantId:           utils.ListAsDNSName(t.vm.GetMetadata().Tenants),
 		})
 		err = unstructured.SetNestedField(object.Object, spec, "spec")
 		if err != nil {
