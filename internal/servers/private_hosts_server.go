@@ -109,6 +109,7 @@ func (s *PrivateHostsServer) Get(ctx context.Context,
 
 func (s *PrivateHostsServer) Create(ctx context.Context,
 	request *privatev1.HostsCreateRequest) (response *privatev1.HostsCreateResponse, err error) {
+	s.setDefaults(request.GetObject())
 	err = s.generic.Create(ctx, request, &response)
 	return
 }
@@ -123,4 +124,10 @@ func (s *PrivateHostsServer) Delete(ctx context.Context,
 	request *privatev1.HostsDeleteRequest) (response *privatev1.HostsDeleteResponse, err error) {
 	err = s.generic.Delete(ctx, request, &response)
 	return
+}
+
+func (s *PrivateHostsServer) setDefaults(host *privatev1.Host) {
+	if !host.HasStatus() {
+		host.SetStatus(&privatev1.HostStatus{})
+	}
 }

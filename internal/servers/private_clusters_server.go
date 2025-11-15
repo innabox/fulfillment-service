@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/dustin/go-humanize/english"
@@ -44,9 +45,10 @@ var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
 
 type PrivateClustersServer struct {
 	privatev1.UnimplementedClustersServer
-	logger       *slog.Logger
-	templatesDao *dao.GenericDAO[*privatev1.ClusterTemplate]
-	generic      *GenericServer[*privatev1.Cluster]
+	logger         *slog.Logger
+	templatesDao   *dao.GenericDAO[*privatev1.ClusterTemplate]
+	hostClassesDao *dao.GenericDAO[*privatev1.HostClass]
+	generic        *GenericServer[*privatev1.Cluster]
 }
 
 func NewPrivateClustersServer() *PrivateClustersServerBuilder {
@@ -95,6 +97,17 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		return
 	}
 
+	// Create the host classes DAO:
+	hostClassesDao, err := dao.NewGenericDAO[*privatev1.HostClass]().
+		SetLogger(b.logger).
+		SetTable("host_classes").
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create the generic server:
 	generic, err := NewGenericServer[*privatev1.Cluster]().
 		SetLogger(b.logger).
@@ -110,9 +123,10 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 
 	// Create and populate the object:
 	result = &PrivateClustersServer{
-		logger:       b.logger,
-		templatesDao: templatesDao,
-		generic:      generic,
+		logger:         b.logger,
+		templatesDao:   templatesDao,
+		hostClassesDao: hostClassesDao,
+		generic:        generic,
 	}
 	return
 }
@@ -131,6 +145,31 @@ func (s *PrivateClustersServer) Get(ctx context.Context,
 
 func (s *PrivateClustersServer) Create(ctx context.Context,
 	request *privatev1.ClustersCreateRequest) (response *privatev1.ClustersCreateResponse, err error) {
+	// Ensure sane defaults:
+	s.setDefaults(request.GetObject())
+
+	// Get the spec:
+	spec := request.GetObject().GetSpec()
+
+	// The user may have specified the template by name, but we want to save the identifier, so we
+	// need to look it up:
+	template, err := s.lookupTemplate(ctx, spec.GetTemplate())
+	if err != nil {
+		return
+	}
+	spec.SetTemplate(template.GetId())
+
+	// The user may have specified the host classes of th enode sets by name, but we want to save the
+	// identifiers, so we need to look them up:
+	for _, nodeSet := range spec.GetNodeSets() {
+		var hostClass *privatev1.HostClass
+		hostClass, err = s.lookupHostClass(ctx, nodeSet.GetHostClass())
+		if err != nil {
+			return
+		}
+		nodeSet.SetHostClass(hostClass.GetId())
+	}
+
 	// Validate duplicate conditions first:
 	err = s.validateNoDuplicateConditions(request.GetObject())
 	if err != nil {
@@ -160,6 +199,79 @@ func (s *PrivateClustersServer) Update(ctx context.Context,
 func (s *PrivateClustersServer) Delete(ctx context.Context,
 	request *privatev1.ClustersDeleteRequest) (response *privatev1.ClustersDeleteResponse, err error) {
 	err = s.generic.Delete(ctx, request, &response)
+	return
+}
+
+func (s *PrivateClustersServer) setDefaults(cluster *privatev1.Cluster) {
+	if !cluster.HasSpec() {
+		cluster.SetSpec(&privatev1.ClusterSpec{})
+	}
+	if !cluster.HasStatus() {
+		cluster.SetStatus(&privatev1.ClusterStatus{})
+	}
+}
+
+func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
+	key string) (result *privatev1.ClusterTemplate, err error) {
+	if key == "" {
+		return
+	}
+	key = strconv.Quote(key)
+	response, err := s.templatesDao.List(ctx, dao.ListRequest{
+		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", key),
+		Limit:  1,
+	})
+	if err != nil {
+		return
+	}
+	switch response.Size {
+	case 0:
+		err = grpcstatus.Errorf(
+			grpccodes.NotFound,
+			"there is no template with identifier or name '%s'",
+			key,
+		)
+	case 1:
+		result = response.Items[0]
+	default:
+		err = grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"there are multiple templates with identifier or name '%s'",
+			key,
+		)
+	}
+	return
+}
+
+func (s *PrivateClustersServer) lookupHostClass(ctx context.Context,
+	key string) (result *privatev1.HostClass, err error) {
+	if key == "" {
+		return
+	}
+	key = strconv.Quote(key)
+	response, err := s.hostClassesDao.List(ctx, dao.ListRequest{
+		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", key),
+		Limit:  1,
+	})
+	if err != nil {
+		return
+	}
+	switch response.Size {
+	case 0:
+		err = grpcstatus.Errorf(
+			grpccodes.NotFound,
+			"there is no host class with identifier or name '%s'",
+			key,
+		)
+	case 1:
+		result = response.Items[0]
+	default:
+		err = grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"there are multiple host classes with identifier or name '%s'",
+			key,
+		)
+	}
 	return
 }
 

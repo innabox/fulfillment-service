@@ -124,6 +124,28 @@ var _ = Describe("Clusters server", func() {
 				tenants text[] not null default '{}',
 				data jsonb not null
 			);
+
+			create table host_classes (
+				id text not null primary key,
+				name text not null default '',
+				creation_timestamp timestamp with time zone not null default now(),
+				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default array ['default'],
+				creators text[] not null default '{}',
+				tenants text[] not null default '{}',
+				data jsonb not null
+			);
+
+			create table archived_host_classes (
+				id text not null,
+				name text not null default '',
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
+				creators text[] not null default '{}',
+				tenants text[] not null default '{}',
+				data jsonb not null
+			);
 			`,
 		)
 		Expect(err).ToNot(HaveOccurred())
@@ -175,12 +197,39 @@ var _ = Describe("Clusters server", func() {
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Create the host classes DAO:
+			hostClassesDao, err := dao.NewGenericDAO[*privatev1.HostClass]().
+				SetLogger(logger).
+				SetTable("host_classes").
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
 			// Create the templates DAO:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 				SetLogger(logger).
 				SetTable("cluster_templates").
 				SetTenancyLogic(tenancy).
 				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create the the host classes:
+			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+				Id:          "acme_1tib",
+				Title:       "ACME 1TiB",
+				Description: "ACME 1TiB.",
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+				Id:          "acme_gpu",
+				Title:       "ACME GPU",
+				Description: "ACME GPU.",
+			}.Build())
+			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+				Id:          "hal_9000",
+				Title:       "HAL 9000",
+				Description: "Heuristically programmed ALgorithmic computer.",
+			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a usable template:
@@ -297,7 +346,7 @@ var _ = Describe("Clusters server", func() {
 						Template: "my_template",
 						NodeSets: map[string]*ffv1.ClusterNodeSet{
 							"junk": ffv1.ClusterNodeSet_builder{
-								HostClass: "junk",
+								HostClass: "acme_1tib",
 								Size:      1000,
 							}.Build(),
 						},
@@ -322,7 +371,7 @@ var _ = Describe("Clusters server", func() {
 						Template: "my_template",
 						NodeSets: map[string]*ffv1.ClusterNodeSet{
 							"compute": ffv1.ClusterNodeSet_builder{
-								HostClass: "junk",
+								HostClass: "hal_9000",
 								Size:      1000,
 							}.Build(),
 						},
@@ -336,7 +385,7 @@ var _ = Describe("Clusters server", func() {
 			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
 			Expect(status.Message()).To(Equal(
 				"host class for node set 'compute' should be empty or 'acme_1tib', like in " +
-					"template 'my_template', but it is 'junk'",
+					"template 'my_template', but it is 'hal_9000'",
 			))
 		})
 
