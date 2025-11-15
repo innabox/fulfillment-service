@@ -379,6 +379,14 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 	}
 	object, err := s.dao.Create(ctx, object)
 	if err != nil {
+		var alreadyExistsErr *dao.ErrAlreadyExists
+		if errors.As(err, &alreadyExistsErr) {
+			return grpcstatus.Errorf(
+				grpccodes.AlreadyExists,
+				"object with identifier '%s' already exists",
+				alreadyExistsErr.ID,
+			)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to create",

@@ -27,3 +27,14 @@ type ErrNotFound struct {
 func (e *ErrNotFound) Error() string {
 	return fmt.Sprintf("object with identifier '%s' not found", e.ID)
 }
+
+// ErrAlreadyExists is an error type that indicates that an object can't be created because it already exists.
+type ErrAlreadyExists struct {
+	// ID is the identifier of the object that already exists.
+	ID string
+}
+
+// Error returns the error message.
+func (e *ErrAlreadyExists) Error() string {
+	return fmt.Sprintf("object with identifier '%s' already exists", e.ID)
+}

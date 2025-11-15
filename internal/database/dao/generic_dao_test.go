@@ -335,6 +335,24 @@ var _ = Describe("Generic DAO", func() {
 			Expect(object.Metadata).To(BeNil())
 		})
 
+		It("Returns 'already exists' when creating object with existing identifier", func() {
+			// Create an object with a specific identifier:
+			id := uuid.New()
+			_, err := generic.Create(ctx, testsv1.Object_builder{
+				Id: id,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Try to create another object with the same identifier:
+			_, err = generic.Create(ctx, testsv1.Object_builder{
+				Id: id,
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			var alreadyExistsErr *ErrAlreadyExists
+			Expect(errors.As(err, &alreadyExistsErr)).To(BeTrue())
+			Expect(alreadyExistsErr.ID).To(Equal(id))
+		})
+
 		It("Gets object", func() {
 			object, err := generic.Create(ctx, &testsv1.Object{})
 			Expect(err).ToNot(HaveOccurred())

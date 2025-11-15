@@ -23,7 +23,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -704,6 +706,12 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		&deletionTs,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			err = &ErrAlreadyExists{
+				ID: id,
+			}
+		}
 		return
 	}
 	created := d.cloneObject(object)
