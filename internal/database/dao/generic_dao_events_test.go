@@ -53,40 +53,20 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(pool.Close)
 
-		// Create the table:
-		_, err = pool.Exec(
-			ctx,
-			`
-			create table clusters (
-				id text not null primary key,
-				name text not null default '',
-				creation_timestamp timestamp with time zone not null default now(),
-				deletion_timestamp timestamp with time zone not null default 'epoch',
-				finalizers text[] not null default '{}',
-				creators text[] not null default '{}',
-				tenants text[] not null default '{}',
-				data jsonb not null
-			);
-
-			create table archived_clusters (
-				id text not null,
-				name text not null default '',
-				creation_timestamp timestamp with time zone not null,
-				deletion_timestamp timestamp with time zone not null,
-				archival_timestamp timestamp with time zone not null default now(),
-				creators text[] not null default '{}',
-				tenants text[] not null default '{}',
-				data jsonb not null
-			);
-			`,
-		)
-		Expect(err).ToNot(HaveOccurred())
-
 		// Prepare the transaction manager:
 		tm, err = database.NewTxManager().
 			SetLogger(logger).
 			SetPool(pool).
 			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create the tables:
+		tx, err := tm.Begin(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		txCtx := database.TxIntoContext(ctx, tx)
+		err = CreateTables(txCtx, "clusters")
+		Expect(err).ToNot(HaveOccurred())
+		err = tm.End(ctx, tx)
 		Expect(err).ToNot(HaveOccurred())
 	})
 

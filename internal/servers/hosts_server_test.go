@@ -25,6 +25,7 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Hosts server", func() {
@@ -69,33 +70,8 @@ var _ = Describe("Hosts server", func() {
 		})
 		ctx = database.TxIntoContext(ctx, tx)
 
-		// Create the hosts table:
-		_, err = tx.Exec(
-			ctx,
-			`
-			create table hosts (
-				id text not null primary key,
-				name text not null default '',
-				creation_timestamp timestamp with time zone not null default now(),
-				deletion_timestamp timestamp with time zone not null default 'epoch',
-				finalizers text[] not null default '{}',
-				creators text[] not null default '{}',
-				tenants text[] not null default '{}',
-				data jsonb not null
-			);
-
-			create table archived_hosts (
-				id text not null,
-				name text not null default '',
-				creation_timestamp timestamp with time zone not null,
-				deletion_timestamp timestamp with time zone not null,
-				archival_timestamp timestamp with time zone not null default now(),
-				creators text[] not null default '{}',
-				tenants text[] not null default '{}',
-				data jsonb not null
-			);
-			`,
-		)
+		// Create the tables:
+		err = dao.CreateTables(ctx, "hosts")
 		Expect(err).ToNot(HaveOccurred())
 	})
 

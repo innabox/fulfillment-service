@@ -194,33 +194,8 @@ var _ = Describe("Generic DAO", func() {
 		var generic *GenericDAO[*testsv1.Object]
 
 		BeforeEach(func() {
-			// Create the table:
-			_, err := tx.Exec(
-				ctx,
-				`
-				create table objects (
-					id text not null primary key,
-					name text not null default '',
-					creation_timestamp timestamp with time zone not null default now(),
-					deletion_timestamp timestamp with time zone not null default 'epoch',
-					finalizers text[] not null default '{}',
-					creators text[] not null default '{}',
-					tenants text[] not null default '{}',
-					data jsonb not null
-				);
-
-				create table archived_objects (
-					id text not null,
-					name text not null default '',
-					creation_timestamp timestamp with time zone not null,
-					deletion_timestamp timestamp with time zone not null,
-					archival_timestamp timestamp with time zone not null default now(),
-					creators text[] not null default '{}',
-					tenants text[] not null default '{}',
-					data jsonb not null
-				);
-				`,
-			)
+			// Create the tables:
+			err := CreateTables(ctx, "objects")
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create the attribution logic:
