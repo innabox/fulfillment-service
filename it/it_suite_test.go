@@ -154,6 +154,11 @@ var _ = BeforeSuite(func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 	}
+	DeferCleanup(func() {
+		logsDir := filepath.Join(projectDir, "logs")
+		err := cluster.Dump(ctx, logsDir)
+		Expect(err).ToNot(HaveOccurred())
+	})
 
 	// Build the container image:
 	imageTag := time.Now().Format("20060102150405")

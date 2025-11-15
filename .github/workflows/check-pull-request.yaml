@@ -69,3 +69,9 @@ jobs:
     - uses: ./.github/actions/setup-go
     - run: |
         ginkgo run -v it
+    - if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs
+        path: logs
+        retention-days: 7

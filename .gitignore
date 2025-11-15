@@ -5,4 +5,5 @@
 *.test
 /dev.yaml
 /fulfillment-service
+/logs
 __debug_bin*
