@@ -226,7 +226,7 @@ $ ginkgo run it
 ```
 
 The integration tests will automatically:
-1. Create a kind cluster named "it".
+1. Create a kind cluster named "fulfillment-service-it".
 2. Build and load the container image.
 3. Deploy the fulfillment service.
 4. Run all test cases.
@@ -259,5 +259,5 @@ run any actual test.
 To clean up a preserved cluster manually:
 
 ```bash
-$ kind delete cluster --name it
+$ kind delete cluster --name fulfillment-service-it
 ```

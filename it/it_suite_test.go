@@ -141,7 +141,7 @@ var _ = BeforeSuite(func() {
 	// Start the cluster, and remember to stop it:
 	cluster, err = NewKind().
 		SetLogger(logger).
-		SetName("it").
+		SetName("fulfillment-service-it").
 		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
 		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
