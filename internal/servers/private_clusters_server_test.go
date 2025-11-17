@@ -123,6 +123,14 @@ var _ = Describe("Private clusters server", func() {
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Ceate the host classes DAO:
+			hoastClassesDao, err := dao.NewGenericDAO[*privatev1.HostClass]().
+				SetLogger(logger).
+				SetTable("host_classes").
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
 			// Create the templates DAO:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 				SetLogger(logger).
@@ -131,18 +139,42 @@ var _ = Describe("Private clusters server", func() {
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
+			// Create the host classes:
+			Expect(err).ToNot(HaveOccurred())
+			_, err = hoastClassesDao.Create(ctx, privatev1.HostClass_builder{
+				Id: "acme-1ti-id",
+				Metadata: privatev1.Metadata_builder{
+					Name: "acme-1ti-name",
+				}.Build(),
+				Title:       "ACME 1TiB",
+				Description: "ACME 1TiB.",
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			_, err = hoastClassesDao.Create(ctx, privatev1.HostClass_builder{
+				Id: "acme-gpu-id",
+				Metadata: privatev1.Metadata_builder{
+					Name: "acme-gpu-name",
+				}.Build(),
+				Title:       "ACME GPU",
+				Description: "ACME GPU.",
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
 			// Create a usable template:
 			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
-				Id:          "my_template",
+				Id: "my-template-id",
+				Metadata: privatev1.Metadata_builder{
+					Name: "my-template-name",
+				}.Build(),
 				Title:       "My template",
 				Description: "My template",
 				NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
 					"compute": privatev1.ClusterTemplateNodeSet_builder{
-						HostClass: "acme_1tib",
+						HostClass: "acme-1ti-id",
 						Size:      3,
 					}.Build(),
 					"gpu": privatev1.ClusterTemplateNodeSet_builder{
-						HostClass: "acme_gpu",
+						HostClass: "acme-gpu-id",
 						Size:      1,
 					}.Build(),
 				},
@@ -150,14 +182,14 @@ var _ = Describe("Private clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create numbered templates for list tests:
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
-					Id:          fmt.Sprintf("my_template_%d", i),
+					Id:          fmt.Sprintf("my-template-id-%d", i),
 					Title:       fmt.Sprintf("My template %d", i),
 					Description: fmt.Sprintf("My template %d", i),
 					NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
 						"compute": privatev1.ClusterTemplateNodeSet_builder{
-							HostClass: "acme_1tib",
+							HostClass: "acme-1ti-id",
 							Size:      3,
 						}.Build(),
 					},
@@ -170,10 +202,10 @@ var _ = Describe("Private clusters server", func() {
 			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
-						Hub: "my_hub",
+						Hub: "my-hub-id",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -184,6 +216,222 @@ var _ = Describe("Private clusters server", func() {
 			Expect(object.GetId()).ToNot(BeEmpty())
 		})
 
+		It("Creates object with template specified by name", func() {
+			// Create the object:
+			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-name",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+
+			// Verify that the template name was replaced by the identifier:
+			Expect(object.GetSpec().GetTemplate()).To(Equal("my-template-id"))
+		})
+
+		It("Fails when creating object with non-existent template name", func() {
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "does-not-exist",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			Expect(status.Message()).To(Equal(
+				"there is no template with identifier or name 'does-not-exist'",
+			))
+		})
+
+		It("Creates object with host class specified by name in node set", func() {
+			// Create a cluster specifying the host class by name:
+			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-name",
+								Size:      5,
+							}.Build(),
+						},
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+
+			// Verify that the host class name was replaced by the identifier:
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			nodeSet := nodeSets["compute"]
+			Expect(nodeSet.GetHostClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Creates object with host class specified by identifier in node set", func() {
+			// Create a cluster specifying the host class by identifier:
+			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      7,
+							}.Build(),
+						},
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+
+			// Verify that the host class identifier is preserved:
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			nodeSet := nodeSets["compute"]
+			Expect(nodeSet.GetHostClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Creates object with template and host class specified by name", func() {
+			// Create a cluster specifying the template and the host class by name:
+			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-name",
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-name",
+								Size:      7,
+							}.Build(),
+						},
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+
+			// Verify that the the template and host class names were replaced by the identifiers:
+			Expect(object.GetSpec().GetTemplate()).To(Equal("my-template-id"))
+			nodeSets := object.GetSpec().GetNodeSets()
+			Expect(nodeSets).To(HaveKey("compute"))
+			nodeSet := nodeSets["compute"]
+			Expect(nodeSet.GetHostClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Fails when creating object with non-existent host class name", func() {
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: `does-not-exist`,
+								Size:      5,
+							}.Build(),
+						},
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			Expect(status.Message()).To(Equal(
+				"there is no host class with identifier or name 'does-not-exist'",
+			))
+		})
+
+		It("Fails when creating object with non-existent node set", func() {
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"does-not-exist": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      5,
+							}.Build(),
+						},
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"node set 'does-not-exist' doesn't exist, valid values for template 'my-template-id' " +
+					"are 'compute' and 'gpu'",
+			))
+		})
+
+		It("Fails when creating object with host class that doesn't match template", func() {
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-gpu-id",
+								Size:      5,
+							}.Build(),
+						},
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(
+				"host class for node set 'compute' should be empty, 'acme-1ti-name' or 'acme-1ti-id', " +
+					"like in template 'my-template-id', but it is 'acme-gpu-id'",
+			))
+		})
+
 		It("Returns 'already exists' when creating object with existing identifier", func() {
 			// Create an object with a specific identifier:
 			id := uuid.New()
@@ -191,10 +439,10 @@ var _ = Describe("Private clusters server", func() {
 				Object: privatev1.Cluster_builder{
 					Id: id,
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
-						Hub: "my_hub",
+						Hub: "my-hub-id",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -205,10 +453,10 @@ var _ = Describe("Private clusters server", func() {
 				Object: privatev1.Cluster_builder{
 					Id: id,
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
-						Hub: "my_hub",
+						Hub: "my-hub-id",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -226,10 +474,10 @@ var _ = Describe("Private clusters server", func() {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
 						Spec: privatev1.ClusterSpec_builder{
-							Template: fmt.Sprintf("my_template_%d", i),
+							Template: fmt.Sprintf("my-template-id-%d", i),
 						}.Build(),
 						Status: privatev1.ClusterStatus_builder{
-							Hub: fmt.Sprintf("my_hub_%d", i),
+							Hub: fmt.Sprintf("my-hub-id-%d", i),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -251,10 +499,10 @@ var _ = Describe("Private clusters server", func() {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
 						Spec: privatev1.ClusterSpec_builder{
-							Template: fmt.Sprintf("my_template_%d", i),
+							Template: fmt.Sprintf("my-template-id-%d", i),
 						}.Build(),
 						Status: privatev1.ClusterStatus_builder{
-							Hub: fmt.Sprintf("my_hub_%d", i),
+							Hub: fmt.Sprintf("my-hub-id-%d", i),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -276,10 +524,10 @@ var _ = Describe("Private clusters server", func() {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
 						Spec: privatev1.ClusterSpec_builder{
-							Template: fmt.Sprintf("my_template_%d", i),
+							Template: fmt.Sprintf("my-template-id-%d", i),
 						}.Build(),
 						Status: privatev1.ClusterStatus_builder{
-							Hub: fmt.Sprintf("my_hub_%d", i),
+							Hub: fmt.Sprintf("my-hub-id-%d", i),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -302,10 +550,10 @@ var _ = Describe("Private clusters server", func() {
 				response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
 						Spec: privatev1.ClusterSpec_builder{
-							Template: fmt.Sprintf("my_template_%d", i),
+							Template: fmt.Sprintf("my-template-id-%d", i),
 						}.Build(),
 						Status: privatev1.ClusterStatus_builder{
-							Hub: fmt.Sprintf("my_hub_%d", i),
+							Hub: fmt.Sprintf("my-hub-%d", i),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -329,10 +577,10 @@ var _ = Describe("Private clusters server", func() {
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
-						Hub: "my_hub",
+						Hub: "my-hub",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -351,10 +599,10 @@ var _ = Describe("Private clusters server", func() {
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
-						Hub: "my_hub",
+						Hub: "my-hub-id",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -394,10 +642,10 @@ var _ = Describe("Private clusters server", func() {
 						Finalizers: []string{"a"},
 					}.Build(),
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
-						Hub: "my_hub",
+						Hub: "my-hub-id",
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -423,7 +671,7 @@ var _ = Describe("Private clusters server", func() {
 			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
 						Conditions: []*privatev1.ClusterCondition{
@@ -448,7 +696,7 @@ var _ = Describe("Private clusters server", func() {
 			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "my_template",
+						Template: "my-template-id",
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
 						Conditions: []*privatev1.ClusterCondition{

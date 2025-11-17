@@ -151,15 +151,7 @@ func (s *PrivateClustersServer) Create(ctx context.Context,
 	// Get the spec:
 	spec := request.GetObject().GetSpec()
 
-	// The user may have specified the template by name, but we want to save the identifier, so we
-	// need to look it up:
-	template, err := s.lookupTemplate(ctx, spec.GetTemplate())
-	if err != nil {
-		return
-	}
-	spec.SetTemplate(template.GetId())
-
-	// The user may have specified the host classes of th enode sets by name, but we want to save the
+	// The user may have specified the host classes of the node sets by name, but we want to save the
 	// identifiers, so we need to look them up:
 	for _, nodeSet := range spec.GetNodeSets() {
 		var hostClass *privatev1.HostClass
@@ -216,9 +208,8 @@ func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
 	if key == "" {
 		return
 	}
-	key = strconv.Quote(key)
 	response, err := s.templatesDao.List(ctx, dao.ListRequest{
-		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", key),
+		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key)),
 		Limit:  1,
 	})
 	if err != nil {
@@ -248,9 +239,8 @@ func (s *PrivateClustersServer) lookupHostClass(ctx context.Context,
 	if key == "" {
 		return
 	}
-	key = strconv.Quote(key)
 	response, err := s.hostClassesDao.List(ctx, dao.ListRequest{
-		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", key),
+		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key)),
 		Limit:  1,
 	})
 	if err != nil {
@@ -296,29 +286,54 @@ func (s *PrivateClustersServer) validateNoDuplicateConditions(object *privatev1.
 }
 
 func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context, cluster *privatev1.Cluster) error {
-	// Check that the template is specified and that refers to a existing template:
+	// Check that the template is specified and that refers to a existing template. If the reference was a name
+	// then we replace it with the identifier.
 	if cluster == nil {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	templateId := cluster.GetSpec().GetTemplate()
-	if templateId == "" {
+	templateRef := cluster.GetSpec().GetTemplate()
+	if templateRef == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "template is mandatory")
 	}
-	template, err := s.templatesDao.Get(ctx, templateId)
+	template, err := s.lookupTemplate(ctx, templateRef)
 	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to get template",
-			slog.String("template", templateId),
-			slog.Any("error", err),
-		)
-		return grpcstatus.Errorf(grpccodes.Internal, "failed to get template '%s'", templateId)
-	}
-	if template == nil {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' doesn't exist", templateId)
+		return err
 	}
 	if template.GetMetadata().HasDeletionTimestamp() {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' has been deleted", templateId)
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "template '%s' has been deleted", templateRef)
+	}
+
+	// Check that the host classes given in the cluster and the template exist, and index them by identifier and
+	// name, so tha it will be easier to look them up later..
+	hostClasses := map[string]*privatev1.HostClass{}
+	for _, nodeSet := range template.GetNodeSets() {
+		hostClassRef := nodeSet.GetHostClass()
+		if hostClassRef == "" {
+			continue
+		}
+		hostClass, err := s.lookupHostClass(ctx, hostClassRef)
+		if err != nil {
+			return err
+		}
+		hostClassName := hostClass.GetMetadata().GetName()
+		if hostClassName != "" {
+			hostClasses[hostClassName] = hostClass
+		}
+		hostClassId := hostClass.GetId()
+		hostClasses[hostClassId] = hostClass
+	}
+	for _, nodeSet := range template.GetNodeSets() {
+		hostClassRef := nodeSet.GetHostClass()
+		hostClass, err := s.lookupHostClass(ctx, hostClassRef)
+		if err != nil {
+			return err
+		}
+		hostClassName := hostClass.GetMetadata().GetName()
+		if hostClassName != "" {
+			hostClasses[hostClassName] = hostClass
+		}
+		hostClassId := hostClass.GetId()
+		hostClasses[hostClassId] = hostClass
 	}
 
 	// Check that all the node sets given in the cluster correspond to node sets that exist in the template:
@@ -335,7 +350,7 @@ func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context,
 			return grpcstatus.Errorf(
 				grpccodes.InvalidArgument,
 				"node set '%s' doesn't exist, valid values for template '%s' are %s",
-				clusterNodeSetKey, templateId, english.WordSeries(templateNodeSetKeys, "and"),
+				clusterNodeSetKey, templateRef, english.WordSeries(templateNodeSetKeys, "and"),
 			)
 		}
 	}
@@ -343,19 +358,40 @@ func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context,
 	// Check that all the node sets given in the cluster specify the same host class that is specified in the
 	// template:
 	for clusterNodeSetKey, clusterNodeSet := range clusterNodeSets {
-		templateNodeSet := templateNodeSets[clusterNodeSetKey]
-		clusterHostClass := clusterNodeSet.GetHostClass()
-		if clusterHostClass == "" {
+		clusterHostClassRef := clusterNodeSet.GetHostClass()
+		if clusterHostClassRef == "" {
 			continue
 		}
-		templateHostClass := templateNodeSet.GetHostClass()
-		if clusterHostClass != templateHostClass {
-			return grpcstatus.Errorf(
-				grpccodes.InvalidArgument,
-				"host class for node set '%s' should be empty or '%s', like in template '%s', "+
-					"but it is '%s'",
-				clusterNodeSetKey, templateHostClass, templateId, clusterHostClass,
-			)
+		templateNodeSet := templateNodeSets[clusterNodeSetKey]
+		templateHostClassRef := templateNodeSet.GetHostClass()
+		templateHostClass := hostClasses[templateHostClassRef]
+		templateHostClassId := templateHostClass.GetId()
+		templateHostClassName := templateHostClass.GetMetadata().GetName()
+		if templateHostClassName != "" {
+			if clusterHostClassRef != templateHostClassId && clusterHostClassRef != templateHostClassName {
+				return grpcstatus.Errorf(
+					grpccodes.InvalidArgument,
+					"host class for node set '%s' should be empty, '%s' or '%s', like in template '%s', "+
+						"but it is '%s'",
+					clusterNodeSetKey,
+					templateHostClassName,
+					templateHostClassId,
+					templateRef,
+					clusterHostClassRef,
+				)
+			}
+		} else {
+			if clusterHostClassRef != templateHostClassId {
+				return grpcstatus.Errorf(
+					grpccodes.InvalidArgument,
+					"host class for node set '%s' should be empty or '%s', like in template '%s', "+
+						"but it is '%s'",
+					clusterNodeSetKey,
+					templateHostClassId,
+					templateRef,
+					clusterHostClassRef,
+				)
+			}
 		}
 	}
 
@@ -401,6 +437,15 @@ func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context,
 		clusterParameters,
 	)
 	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)
+
+	// Make sure that the templte and the host classes of the node sets are reference by their identifiers, as that
+	// is what we want to save to the database.
+	cluster.GetSpec().SetTemplate(template.GetId())
+	for _, clusterNodeSet := range cluster.GetSpec().GetNodeSets() {
+		hostClassRef := clusterNodeSet.GetHostClass()
+		hostClass := hostClasses[hostClassRef]
+		clusterNodeSet.SetHostClass(hostClass.GetId())
+	}
 
 	return nil
 }

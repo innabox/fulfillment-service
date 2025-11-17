@@ -36,10 +36,12 @@ import (
 
 var _ = Describe("Public clusters", func() {
 	var (
-		ctx             context.Context
-		clustersClient  ffv1.ClustersClient
-		templatesClient privatev1.ClusterTemplatesClient
-		templateId      string
+		ctx               context.Context
+		clustersClient    ffv1.ClustersClient
+		hostClassesClient privatev1.HostClassesClient
+		templatesClient   privatev1.ClusterTemplatesClient
+		hostClassId       string
+		templateId        string
 	)
 
 	BeforeEach(func() {
@@ -48,26 +50,40 @@ var _ = Describe("Public clusters", func() {
 
 		// Create the clients:
 		clustersClient = ffv1.NewClustersClient(clientConn)
+		hostClassesClient = privatev1.NewHostClassesClient(adminConn)
 		templatesClient = privatev1.NewClusterTemplatesClient(adminConn)
 
+		// Create a host class for testing:
+		hostClassId = fmt.Sprintf("my-host-class-%s", uuid.New())
+		_, err := hostClassesClient.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+			Object: privatev1.HostClass_builder{
+				Id: hostClassId,
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() {
+			_, err := hostClassesClient.Delete(ctx, privatev1.HostClassesDeleteRequest_builder{
+				Id: hostClassId,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
 		// Create a template for testing:
-		templateId = fmt.Sprintf("my_template_%s", uuid.New())
-		_, err := templatesClient.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+		templateId = fmt.Sprintf("my-template-%s", uuid.New())
+		_, err = templatesClient.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 			Object: privatev1.ClusterTemplate_builder{
 				Id:          templateId,
 				Title:       "My template %s",
 				Description: "My template.",
 				NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
-					"my_node_set": privatev1.ClusterTemplateNodeSet_builder{
-						HostClass: "my_host_class",
+					"my-node-set": privatev1.ClusterTemplateNodeSet_builder{
+						HostClass: hostClassId,
 						Size:      3,
 					}.Build(),
 				},
 			}.Build(),
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
-
-		// Clean up the template after each test:
 		DeferCleanup(func() {
 			_, err := templatesClient.Delete(ctx, privatev1.ClusterTemplatesDeleteRequest_builder{
 				Id: templateId,
@@ -192,8 +208,8 @@ var _ = Describe("Public clusters", func() {
 				Spec: ffv1.ClusterSpec_builder{
 					Template: templateId,
 					NodeSets: map[string]*ffv1.ClusterNodeSet{
-						"my_node_set": {
-							HostClass: "my_host_class",
+						"my-node-set": {
+							HostClass: hostClassId,
 							Size:      4,
 						},
 					},
@@ -202,7 +218,7 @@ var _ = Describe("Public clusters", func() {
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		object = updateResponse.GetObject()
-		nodeSet := object.GetSpec().GetNodeSets()["my_node_set"]
+		nodeSet := object.GetSpec().GetNodeSets()["my-node-set"]
 		Expect(nodeSet).ToNot(BeNil())
 		Expect(nodeSet.GetSize()).To(BeNumerically("==", 4))
 
@@ -212,7 +228,7 @@ var _ = Describe("Public clusters", func() {
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		object = getResponse.GetObject()
-		nodeSet = object.GetSpec().GetNodeSets()["my_node_set"]
+		nodeSet = object.GetSpec().GetNodeSets()["my-node-set"]
 		Expect(nodeSet).ToNot(BeNil())
 		Expect(nodeSet.GetSize()).To(BeNumerically("==", 4))
 	})
@@ -305,7 +321,7 @@ var _ = Describe("Public clusters", func() {
 				Name:      "kubeconfig",
 			},
 			Data: map[string][]byte{
-				"kubeconfig": []byte("my_kubeconfig"),
+				"kubeconfig": []byte("my-kubeconfig"),
 			},
 		}
 		err = kubeClient.Create(ctx, secretObj)
@@ -348,7 +364,7 @@ var _ = Describe("Public clusters", func() {
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		kubeconfig := getKubeconfigResponse.GetKubeconfig()
-		Expect(kubeconfig).To(Equal("my_kubeconfig"))
+		Expect(kubeconfig).To(Equal("my-kubeconfig"))
 	})
 
 	It("Can get the kubeconfig of a cluster via HTTP", func() {
@@ -407,7 +423,7 @@ var _ = Describe("Public clusters", func() {
 				Name:      "kubeconfig",
 			},
 			Data: map[string][]byte{
-				"kubeconfig": []byte("my_kubeconfig"),
+				"kubeconfig": []byte("my-kubeconfig"),
 			},
 		}
 		err = kubeClient.Create(ctx, secretObj)
@@ -450,7 +466,7 @@ var _ = Describe("Public clusters", func() {
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(getKubeconfigResponse.GetContentType()).To(Equal("application/yaml"))
-		Expect(getKubeconfigResponse.GetData()).To(Equal([]byte("my_kubeconfig")))
+		Expect(getKubeconfigResponse.GetData()).To(Equal([]byte("my-kubeconfig")))
 	})
 
 	It("Can get the admin password of a cluster", func() {
