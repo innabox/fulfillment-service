@@ -18,20 +18,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
+	"slices"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
-
-// objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
-const objectPrefix = "host-"
 
 // FunctionBuilder contains the data and logic needed to build a function that reconciles hosts.
 type FunctionBuilder struct {
@@ -49,11 +50,12 @@ type function struct {
 }
 
 type task struct {
-	r            *function
-	host         *privatev1.Host
-	hubId        string
-	hubNamespace string
-	hubClient    clnt.Client
+	parent        *function
+	host          *privatev1.Host
+	hub           *privatev1.Hub
+	hubClient     clnt.Client
+	bmcSecret     *corev1.Secret
+	bareMetalHost *unstructured.Unstructured
 }
 
 // NewFunction creates a new builder that can then be used to create a new host reconciler function.
@@ -107,11 +109,11 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	return
 }
 
-func (r *function) run(ctx context.Context, host *privatev1.Host) error {
+func (f *function) run(ctx context.Context, host *privatev1.Host) error {
 	oldHost := proto.Clone(host).(*privatev1.Host)
 	t := task{
-		r:    r,
-		host: host,
+		parent: f,
+		host:   host,
 	}
 	var err error
 	if host.GetMetadata().HasDeletionTimestamp() {
@@ -123,7 +125,7 @@ func (r *function) run(ctx context.Context, host *privatev1.Host) error {
 		return err
 	}
 	if !proto.Equal(host, oldHost) {
-		_, err = r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+		_, err = f.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
 			Object: host,
 		}.Build())
 	}
@@ -134,10 +136,13 @@ func (t *task) update(ctx context.Context) error {
 	// Set the default values:
 	t.setDefaults()
 
-	// TODO: add host state field so we can see if the update is needed
-	//if t.host.GetStatus().GetState() != privatev1.HostState_HOST_STATE_PROGRESSING {
-	//	return nil
-	//}
+	// Add a finalizer to ensure that the host isn't completely deleted before we have time to delete the
+	// resources in the hub.
+	finalizers := t.host.GetMetadata().GetFinalizers()
+	if !slices.Contains(finalizers, hostFinalizer) {
+		finalizers = append(finalizers, hostFinalizer)
+	}
+	t.host.GetMetadata().SetFinalizers(finalizers)
 
 	// Select the hub:
 	err := t.selectHub(ctx)
@@ -145,59 +150,107 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Get the K8S object:
-	object, err := t.getKubeObject(ctx)
+	// Ensure tha the BMC credentials secret exists:
+	t.bmcSecret = &corev1.Secret{}
+	t.bmcSecret.SetNamespace(t.hub.GetNamespace())
+	t.bmcSecret.SetName(fmt.Sprintf("%s-bmc", t.host.GetMetadata().GetName()))
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.bmcSecret, t.mutateBmcSecret)
 	if err != nil {
 		return err
 	}
 
-	// Prepare the changes to the spec:
+	// Ensure that the bare metal host exists:
+	t.bareMetalHost = &unstructured.Unstructured{}
+	t.bareMetalHost.SetGroupVersionKind(gvks.BareMetalHost)
+	t.bareMetalHost.SetNamespace(t.hub.GetNamespace())
+	t.bareMetalHost.SetName(t.host.GetMetadata().GetName())
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.bareMetalHost, t.mutateBareMetalHost)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *task) mutateBmcSecret() error {
+	t.mutateLabels(t.bmcSecret)
+	t.bmcSecret.Type = corev1.SecretTypeBasicAuth
+	if t.bmcSecret.Data == nil {
+		t.bmcSecret.Data = map[string][]byte{}
+	}
+	t.bmcSecret.Data[corev1.BasicAuthUsernameKey] = []byte(t.host.GetSpec().GetBmc().GetUser())
+	t.bmcSecret.Data[corev1.BasicAuthPasswordKey] = []byte(t.host.GetSpec().GetBmc().GetPassword())
+	return nil
+}
+
+func (t *task) mutateBareMetalHost() error {
+	// Set labels and annotations
+	t.mutateLabels(t.bareMetalHost)
+	t.mutateAnnotations(t.bareMetalHost)
+
+	// Set the spec:
 	spec := map[string]any{
-		"powerState": t.host.GetSpec().GetPowerState().String(),
+		"automatedCleaningMode": "disabled",
+		"bmc": map[string]any{
+			"address":                        t.host.GetSpec().GetBmc().GetUrl(),
+			"credentialsName":                t.bmcSecret.GetName(),
+			"disableCertificateVerification": t.host.GetSpec().GetBmc().GetInsecure(),
+		},
+		"bootMACAddress": t.host.GetSpec().GetBootMac(),
+		"customDeploy": map[string]any{
+			"method": "start_assisted_install",
+		},
+		"online": true,
+	}
+	err := unstructured.SetNestedField(t.bareMetalHost.Object, spec, "spec")
+	if err != nil {
+		return err
 	}
 
-	// Create or update the Kubernetes object:
-	if object == nil {
-		object := &unstructured.Unstructured{}
-		object.SetGroupVersionKind(gvks.Host)
-		object.SetNamespace(t.hubNamespace)
-		object.SetGenerateName(objectPrefix)
-		object.SetLabels(map[string]string{
-			labels.HostUuid: t.host.GetId(),
-		})
-		err = unstructured.SetNestedField(object.Object, spec, "spec")
-		if err != nil {
-			return err
-		}
-		err = t.hubClient.Create(ctx, object)
-		if err != nil {
-			return err
-		}
-		t.r.logger.DebugContext(
-			ctx,
-			"Created host",
-			slog.String("namespace", object.GetNamespace()),
-			slog.String("name", object.GetName()),
-		)
+	return nil
+}
+
+func (t *task) mutateLabels(object clnt.Object) {
+	// Make sure the labels map is initialized:
+	values := object.GetLabels()
+	if values == nil {
+		values = map[string]string{}
+	}
+
+	// Add labels to simplify identification of the host:
+	values[labels.HostId] = t.host.GetId()
+	values[labels.HostName] = t.host.GetMetadata().GetName()
+
+	// Add the label that indicates the infrastructure envirionment that this host belongs to, which should be
+	// the one inside the namespace of the hub, and with the same name:
+	values["infraenvs.agent-install.openshift.io"] = t.hub.GetNamespace()
+
+	// If the host is assiged to a cluster, then add the label with the cluster identifier, otherwise remove it, in
+	// case it was added in the past.
+	cluster := t.host.GetStatus().GetCluster()
+	if cluster != "" {
+		values[labels.ClusterId] = cluster
 	} else {
-		update := object.DeepCopy()
-		err = unstructured.SetNestedField(update.Object, spec, "spec")
-		if err != nil {
-			return err
-		}
-		err = t.hubClient.Patch(ctx, update, clnt.MergeFrom(object))
-		if err != nil {
-			return err
-		}
-		t.r.logger.DebugContext(
-			ctx,
-			"Updated host",
-			slog.String("namespace", object.GetNamespace()),
-			slog.String("name", object.GetName()),
-		)
+		delete(values, labels.ClusterId)
 	}
 
-	return err
+	// Save the labels:
+	object.SetLabels(values)
+}
+
+func (t *task) mutateAnnotations(object clnt.Object) {
+	// Make sure the annotations map is initialized:
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	// Add the annotation that indicates the hostname of the host:
+	annotations["bmac.agent-install.openshift.io/hostname"] = t.host.GetMetadata().GetName()
+	annotations["inspect.metal3.io"] = "disabled"
+
+	// Save the annotations:
+	object.SetAnnotations(annotations)
 }
 
 func (t *task) setDefaults() {
@@ -207,108 +260,42 @@ func (t *task) setDefaults() {
 	if t.host.GetStatus().GetPowerState() == privatev1.HostPowerState_HOST_POWER_STATE_UNSPECIFIED {
 		t.host.GetStatus().SetPowerState(privatev1.HostPowerState_HOST_POWER_STATE_OFF)
 	}
-	// Host doesn't have conditions in the current protobuf definition
 }
 
-// Host doesn't have conditions in the current protobuf definition
-
 func (t *task) delete(ctx context.Context) error {
-	// For hosts, we need to select a hub to find and delete the object
 	err := t.selectHub(ctx)
 	if err != nil {
 		return err
 	}
-
-	// Delete the K8S object:
-	object, err := t.getKubeObject(ctx)
-	if err != nil {
-		return err
-	}
-	if object == nil {
-		t.r.logger.DebugContext(
-			ctx,
-			"Host doesn't exist",
-			slog.String("id", t.host.GetId()),
-		)
-		return nil
-	}
-	err = t.hubClient.Delete(ctx, object)
-	if err != nil {
-		return err
-	}
-	t.r.logger.DebugContext(
-		ctx,
-		"Deleted host",
-		slog.String("namespace", object.GetNamespace()),
-		slog.String("name", object.GetName()),
-	)
-
 	return err
 }
 
 func (t *task) selectHub(ctx context.Context) error {
-	// Use the Hub from the parent host pool
-	hostPoolId := t.host.GetStatus().GetHostPool()
-	if hostPoolId == "" {
-		return errors.New("host is not associated with a host pool")
+	hub := t.host.GetStatus().GetHub()
+	if hub == "" {
+		response, err := t.parent.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+		if err != nil {
+			return err
+		}
+		if len(response.Items) == 0 {
+			return errors.New("there are no hubs")
+		}
+		t.hub = response.Items[rand.IntN(len(response.Items))]
 	}
-	response, err := t.r.hostPoolsClient.Get(ctx, privatev1.HostPoolsGetRequest_builder{Id: hostPoolId}.Build())
-	if err != nil {
-		return err
-	}
-	t.hubId = response.GetObject().GetStatus().GetHub()
-	if t.hubId == "" {
-		return errors.New("parent host pool is not associated with a hub")
-	}
-
-	t.r.logger.DebugContext(
+	t.parent.logger.DebugContext(
 		ctx,
 		"Selected hub",
-		slog.String("id", t.hubId),
+		slog.String("name", t.hub.GetMetadata().GetName()),
+		slog.String("id", t.hub.GetId()),
 	)
-	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
+	entry, err := t.parent.hubCache.Get(ctx, t.hub.GetId())
 	if err != nil {
 		return err
 	}
-	t.hubNamespace = hubEntry.Namespace
-	t.hubClient = hubEntry.Client
+	t.hubClient = entry.Client
 	return nil
 }
 
-func (t *task) getHub(ctx context.Context) error {
-	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
-	if err != nil {
-		return err
-	}
-	t.hubNamespace = hubEntry.Namespace
-	t.hubClient = hubEntry.Client
-	return nil
-}
-
-func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstructured, err error) {
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvks.HostList)
-	err = t.hubClient.List(
-		ctx, list,
-		clnt.InNamespace(t.hubNamespace),
-		clnt.MatchingLabels{
-			labels.HostUuid: t.host.GetId(),
-		},
-	)
-	if err != nil {
-		return
-	}
-	items := list.Items
-	count := len(items)
-	if count > 1 {
-		err = fmt.Errorf(
-			"expected at most one host with identifier '%s' but found %d",
-			t.host.GetId(), count,
-		)
-		return
-	}
-	if count > 0 {
-		result = &items[0]
-	}
-	return
-}
+// hostFinalizer is the finalizer that will be used to ensure that the host isn't completely deleted before we have
+// time clean up the other resources that depend on it.
+const hostFinalizer = "fulfillment-controller"

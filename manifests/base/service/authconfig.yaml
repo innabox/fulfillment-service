@@ -74,6 +74,7 @@ spec:
           admin_subjects := {
             "system:serviceaccount:innabox:admin",
             "system:serviceaccount:innabox:controller",
+            "system:serviceaccount:innabox:bcm-sync",
           }
 
           # Get the gRPC method:

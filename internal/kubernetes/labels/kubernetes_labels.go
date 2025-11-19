@@ -19,6 +19,17 @@ import (
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 )
 
+// Labels that will be added to Kubernetes objects to help identifiy the corresponding object in the fulfillment service.
+const (
+	base        = "fulfillment"
+	ClusterId   = base + "/cluster.id"
+	ClusterName = base + "/cluster.name"
+	HostId      = base + "/host.id"
+	HostName    = base + "/host.name"
+	HubId       = base + "/hub.id"
+	HubName     = base + "/hub.name"
+)
+
 // ClusterOrderUuid is the label where the fulfillment API will write the identifier of the order.
 var ClusterOrderUuid = fmt.Sprintf("%s/%s", gvks.ClusterOrder.Group, "clusterorder-uuid")
 

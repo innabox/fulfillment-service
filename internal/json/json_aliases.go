@@ -11,22 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package cmd
+package json
 
-import (
-	"github.com/spf13/cobra"
-)
-
-// Create creates and returns the `start` command.
-func NewStartCommand() *cobra.Command {
-	result := &cobra.Command{
-		Use:   "start",
-		Short: "Starts components",
-		Args:  cobra.NoArgs,
-	}
-	result.AddCommand(NewStartControllerCommand())
-	result.AddCommand(NewStartGatewayCommand())
-	result.AddCommand(NewStartBcmSyncCommand())
-	result.AddCommand(NewStartServerCommand())
-	return result
-}
+type Object = map[string]any
+type List = []any

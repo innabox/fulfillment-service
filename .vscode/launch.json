@@ -87,9 +87,36 @@
                                 "--log-level=debug",
                                 "--log-headers=true",
                                 "--log-bodies=true",
-                                "--grpc-server-address=localhost:8000",
-                                "--grpc-server-plaintext",
-                                "--grpc-keep-alive=5m"
+                                "--grpc-server-address=fulfillment-api-innabox.apps.sno.internal.demo:443",
+                                "--grpc-server-insecure",
+                                "--grpc-keep-alive=5m",
+                                "--token-file=token.txt",
+                                "--dns-server=head.internal.demo:53",
+                                "--dns-zone=my.demo",
+                                "--dns-key-name=fulfillment-service",
+                                "--dns-key-secret=nY8PWPZIzTU9jwCmF52gaLugtWEcL9MndXREiyRmHxw="
+                        ]
+                },
+                {
+                        "name": "start bcm-sync",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "start",
+                                "bcm-sync",
+                                "--log-level=debug",
+                                "--log-headers=true",
+                                "--log-bodies=true",
+                                "--bcm-url=https://head.internal.demo:8081",
+                                "--bcm-crt=../admin.pem",
+                                "--bcm-key=../admin.key",
+                                "--ca-file=../bundle.pem",
+                                "--sync-interval=10s",
+                                "--grpc-server-address=fulfillment-api-innabox.apps.sno.internal.demo:443",
+                                "--grpc-server-insecure",
+                                "--token-file=token.txt"
                         ]
                 }
         ]

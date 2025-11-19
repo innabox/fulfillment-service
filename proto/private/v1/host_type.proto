@@ -31,6 +31,36 @@ message Host {
 message HostSpec {
   // Copies of the public fields.
   HostPowerState power_state = 1;
+
+  // BMC (Baseboard Management Controller) details for this host.
+  BMC bmc = 2;
+
+  // Rack name where this host is located.
+  string rack = 3;
+
+  // Identifier of the host class for this host.
+  string class = 4;
+
+  // MAC address of the network interface used for initial network boot.
+  string boot_mac = 5;
+
+  // IP address of the network interface used for initial network boot.
+  string boot_ip = 6;
+}
+
+// BMC contains the details of the Baseboard Management Controller for a host.
+message BMC {
+  // URL of the BMC interface.
+  string url = 1;
+
+  // Username for authenticating with the BMC.
+  string user = 2;
+
+  // Password for authenticating with the BMC.
+  string password = 3;
+
+  // Insecure indicates if TLS certicates and host names shouldn't be verified when connecting to the BMC.
+  bool insecure = 4;
 }
 
 message HostStatus {
@@ -41,6 +71,12 @@ message HostStatus {
 
   // Identifier of the host pool that was selected for this host.
   string host_pool = 4;
+
+  // Identifier of the cluster that this host is assigned to.
+  string cluster = 5;
+
+  // Identifier of the hub that was selected to manage this host.
+  string hub = 6;
 }
 
 enum HostState {

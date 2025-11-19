@@ -31,6 +31,14 @@ var HostedCluster = schema.GroupVersionKind{
 
 var HostedClusterList = listGVK(HostedCluster)
 
+var NodePool = schema.GroupVersionKind{
+	Group:   "hypershift.openshift.io",
+	Version: "v1beta1",
+	Kind:    "NodePool",
+}
+
+var NodePoolList = listGVK(NodePool)
+
 var VirtualMachine = schema.GroupVersionKind{
 	Group:   "cloudkit.openshift.io",
 	Version: "v1alpha1",
@@ -54,6 +62,22 @@ var HostPool = schema.GroupVersionKind{
 }
 
 var HostPoolList = listGVK(HostPool)
+
+var BareMetalHost = schema.GroupVersionKind{
+	Group:   "metal3.io",
+	Version: "v1alpha1",
+	Kind:    "BareMetalHost",
+}
+
+var BareMetalHostList = listGVK(BareMetalHost)
+
+var InfraEnv = schema.GroupVersionKind{
+	Group:   "agent-install.openshift.io",
+	Version: "v1beta1",
+	Kind:    "InfraEnv",
+}
+
+var InfraEnvList = listGVK(InfraEnv)
 
 func listGVK(gvk schema.GroupVersionKind) schema.GroupVersionKind {
 	gvk.Kind = gvk.Kind + "List"

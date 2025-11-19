@@ -36,6 +36,9 @@ The following table lists the configurable parameters of the chart and their def
 | `images.postgres` | PostgreSQL container image | `quay.io/sclorg/postgresql-15-c9s:latest` |
 | `images.envoy` | Envoy proxy container image | `docker.io/envoyproxy/envoy:v1.33.0` |
 | `database.storageSize` | Size of database persistent volume | `10Gi` |
+| `dns.server` | DNS server address for dynamic updates (e.g., `my-dns-server.com:53`) | None |
+| `dns.zone` | DNS zone for dynamic updates (e.g., `my.demo.`) | None |
+| `dns.secret` | Name of Kubernetes secret containing TSIG key name and secret | None |
 
 ### Example custom values
 
@@ -66,6 +69,11 @@ images:
 
 database:
   storageSize: 50Gi
+
+dns:
+  server: head.internal.demo:53
+  zone: my.demo.
+  secret: dns-tsig-secret
 ```
 
 Then install with:
@@ -100,3 +108,32 @@ helm uninstall fulfillment-service -n innabox
 ## Database
 
 The chart includes a complete _PostgreSQL_ database deployment.
+
+## DNS Configuration
+
+The controller can perform dynamic DNS updates using RFC 2136. To enable this feature, configure the DNS settings in
+your values file:
+
+```yaml
+dns:
+  server: head.internal.demo:53
+  zone: my.demo.
+  secret: dns-tsig-secret
+```
+
+### Creating the DNS TSIG Secret
+
+If your DNS server requires TSIG authentication, create a Kubernetes secret with the TSIG key name and secret:
+
+```bash
+kubectl create secret generic dns-tsig-secret \
+  --from-literal=key="externaldns-key." \
+  --from-literal=secret="q2Rg2mWmEmoMu8cu+P2rAb6gQOzrSqdQjIocOy/0u2Q=" \
+  -n innabox
+```
+
+The secret must contain two keys:
+- `key`: The TSIG key name
+- `secret`: The TSIG key secret value
+
+See `files/dns-secret-example.yaml` for a complete example.

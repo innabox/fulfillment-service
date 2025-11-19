@@ -75,6 +75,7 @@ spec:
           admin_subjects := {
             "system:serviceaccount:{{ .Release.Namespace }}:admin",
             "system:serviceaccount:{{ .Release.Namespace }}:controller",
+            "system:serviceaccount:{{ .Release.Namespace }}:bcm-sync",
           }
 
           # Get the gRPC method:

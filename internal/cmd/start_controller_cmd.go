@@ -36,8 +36,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
-	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
-	"github.com/innabox/fulfillment-service/internal/controllers/vm"
+	"github.com/innabox/fulfillment-service/internal/controllers/hub"
 	"google.golang.org/grpc"
 )
 
@@ -63,6 +62,54 @@ func NewStartControllerCommand() *cobra.Command {
 		"",
 		"File containing the token to use for authentication.",
 	)
+	flags.StringVar(
+		&runner.args.dnsServer,
+		"dns-server",
+		"",
+		"DNS server address for dynamic updates (e.g., \"my-dns-server.com:53\").",
+	)
+	flags.StringVar(
+		&runner.args.dnsServerFile,
+		"dns-server-file",
+		"",
+		"File containing the DNS server address.",
+	)
+	flags.StringVar(
+		&runner.args.dnsZone,
+		"dns-zone",
+		"",
+		"DNS zone for dynamic updates (e.g., \"my.demo\").",
+	)
+	flags.StringVar(
+		&runner.args.dnsZoneFile,
+		"dns-zone-file",
+		"",
+		"File containing the DNS zone.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeyName,
+		"dns-key-name",
+		"",
+		"Name of the TSIG key for DNS authentication.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeyNameFile,
+		"dns-key-name-file",
+		"",
+		"File containing the name of the TSIG key.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeySecret,
+		"dns-key-secret",
+		"",
+		"Secret value of the TSIG key for DNS authentication.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeySecretFile,
+		"dns-key-secret-file",
+		"",
+		"File containing the secret value of the TSIG key.",
+	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	return command
 }
@@ -72,8 +119,16 @@ type startControllerRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
-		caFiles   []string
-		tokenFile string
+		caFiles          []string
+		tokenFile        string
+		dnsServer        string
+		dnsServerFile    string
+		dnsZone          string
+		dnsZoneFile      string
+		dnsKeyName       string
+		dnsKeyNameFile   string
+		dnsKeySecret     string
+		dnsKeySecretFile string
 	}
 	client *grpc.ClientConn
 }
@@ -142,12 +197,34 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create hub cache: %w", err)
 	}
 
+	// Load DNS configuration:
+	dnsServer, err := r.loadValue("DNS server", r.args.dnsServer, r.args.dnsServerFile)
+	if err != nil {
+		return err
+	}
+	dnsZone, err := r.loadValue("DNS zone", r.args.dnsZone, r.args.dnsZoneFile)
+	if err != nil {
+		return err
+	}
+	dnsKeyName, err := r.loadValue("DNS key name", r.args.dnsKeyName, r.args.dnsKeyNameFile)
+	if err != nil {
+		return err
+	}
+	dnsKeySecret, err := r.loadValue("DNS key secret", r.args.dnsKeySecret, r.args.dnsKeySecretFile)
+	if err != nil {
+		return err
+	}
+
 	// Create the cluster reconciler:
 	r.logger.InfoContext(ctx, "Creating cluster reconciler")
 	clusterReconcilerFunction, err := cluster.NewFunction().
 		SetLogger(r.logger).
 		SetConnection(r.client).
 		SetHubCache(hubCache).
+		SetDnsServer(dnsServer).
+		SetDnsZone(dnsZone).
+		SetDnsKeyName(dnsKeyName).
+		SetDnsKeySecret(dnsKeySecret).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler function: %w", err)
@@ -177,40 +254,42 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
-	// Create the virtual machine reconciler:
-	r.logger.InfoContext(ctx, "Creating virtual machine reconciler")
-	vmReconcilerFunction, err := vm.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual machine reconciler function: %w", err)
-	}
-	vmReconciler, err := controllers.NewReconciler[*privatev1.VirtualMachine]().
-		SetLogger(r.logger).
-		SetClient(r.client).
-		SetFunction(vmReconcilerFunction).
-		SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
-	}
-
-	// Start the virtual machine reconciler:
-	r.logger.InfoContext(ctx, "Starting virtual machine reconciler")
-	go func() {
-		err := vmReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Virtual machine reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Virtual machine reconciler failed",
-				slog.Any("error", err),
-			)
+	/*
+		// Create the virtual machine reconciler:
+		r.logger.InfoContext(ctx, "Creating virtual machine reconciler")
+		vmReconcilerFunction, err := vm.NewFunction().
+			SetLogger(r.logger).
+			SetConnection(r.client).
+			SetHubCache(hubCache).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create virtual machine reconciler function: %w", err)
 		}
-	}()
+		vmReconciler, err := controllers.NewReconciler[*privatev1.VirtualMachine]().
+			SetLogger(r.logger).
+			SetClient(r.client).
+			SetFunction(vmReconcilerFunction).
+			SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
+		}
+
+		// Start the virtual machine reconciler:
+		r.logger.InfoContext(ctx, "Starting virtual machine reconciler")
+		go func() {
+			err := vmReconciler.Start(ctx)
+			if err == nil || errors.Is(err, context.Canceled) {
+				r.logger.InfoContext(ctx, "Virtual machine reconciler finished")
+			} else {
+				r.logger.InfoContext(
+					ctx,
+					"Virtual machine reconciler failed",
+					slog.Any("error", err),
+				)
+			}
+		}()
+	*/
 
 	// Create the host reconciler:
 	r.logger.InfoContext(ctx, "Creating host reconciler")
@@ -247,40 +326,77 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
-	// Create the host pool reconciler:
-	r.logger.InfoContext(ctx, "Creating host pool reconciler")
-	hostPoolReconcilerFunction, err := hostpool.NewFunction().
+	// Create the hub reconciler:
+	r.logger.InfoContext(ctx, "Creating hub reconciler")
+	hubReconcilerFunction, err := hub.NewFunction().
 		SetLogger(r.logger).
 		SetConnection(r.client).
 		SetHubCache(hubCache).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create host pool reconciler function: %w", err)
+		return fmt.Errorf("failed to create hub reconciler function: %w", err)
 	}
-	hostPoolReconciler, err := controllers.NewReconciler[*privatev1.HostPool]().
+	hubReconciler, err := controllers.NewReconciler[*privatev1.Hub]().
 		SetLogger(r.logger).
 		SetClient(r.client).
-		SetFunction(hostPoolReconcilerFunction).
-		SetEventFilter("has(event.host_pool) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetFunction(hubReconcilerFunction).
+		SetEventFilter("has(event.hub)").
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create host pool reconciler: %w", err)
+		return fmt.Errorf("failed to create hub reconciler: %w", err)
 	}
 
-	// Start the host pool reconciler:
-	r.logger.InfoContext(ctx, "Starting host pool reconciler")
+	// Start the hub reconciler:
+	r.logger.InfoContext(ctx, "Starting hub reconciler")
 	go func() {
-		err := hostPoolReconciler.Start(ctx)
+		err := hubReconciler.Start(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Host pool reconciler finished")
+			r.logger.InfoContext(ctx, "Hub reconciler finished")
 		} else {
 			r.logger.InfoContext(
 				ctx,
-				"Host pool reconciler failed",
+				"Hub reconciler failed",
 				slog.Any("error", err),
 			)
 		}
 	}()
+
+	/*
+		// Create the host pool reconciler:
+		r.logger.InfoContext(ctx, "Creating host pool reconciler")
+		hostPoolReconcilerFunction, err := hostpool.NewFunction().
+			SetLogger(r.logger).
+			SetConnection(r.client).
+			SetHubCache(hubCache).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create host pool reconciler function: %w", err)
+		}
+		hostPoolReconciler, err := controllers.NewReconciler[*privatev1.HostPool]().
+			SetLogger(r.logger).
+			SetClient(r.client).
+			SetFunction(hostPoolReconcilerFunction).
+			SetEventFilter("has(event.host_pool) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create host pool reconciler: %w", err)
+		}
+
+		// Start the host pool reconciler:
+		r.logger.InfoContext(ctx, "Starting host pool reconciler")
+		go func() {
+			err := hostPoolReconciler.Start(ctx)
+			if err == nil || errors.Is(err, context.Canceled) {
+				r.logger.InfoContext(ctx, "Host pool reconciler finished")
+			} else {
+				r.logger.InfoContext(
+					ctx,
+					"Host pool reconciler failed",
+					slog.Any("error", err),
+				)
+			}
+		}()
+	*/
 
 	// Wait for a signal:
 	r.logger.InfoContext(ctx, "Waiting for signal")
@@ -320,4 +436,26 @@ func (r *startControllerRunner) waitForServer(ctx context.Context) error {
 		case <-time.After(interval):
 		}
 	}
+}
+
+// loadValue loads a configuration value from either a direct value or a file. If both are provided, the direct value
+// takes precedence. If neither is provided, an empty string is returned.
+func (r *startControllerRunner) loadValue(name string, directValue string, filePath string) (string, error) {
+	// If a direct value is provided, use it:
+	if directValue != "" {
+		return directValue, nil
+	}
+
+	// If a file path is provided, read from the file:
+	if filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read %s from file '%s': %w", name, filePath, err)
+		}
+		// Trim whitespace and newlines:
+		return string(data), nil
+	}
+
+	// If neither is provided, return empty string:
+	return "", nil
 }

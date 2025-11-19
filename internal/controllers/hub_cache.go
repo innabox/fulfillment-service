@@ -41,8 +41,8 @@ type HubCache struct {
 }
 
 type HubEntry struct {
-	Namespace string
-	Client    clnt.Client
+	Hub    *privatev1.Hub
+	Client clnt.Client
 }
 
 // NewHubCache creates a new builder that can then be used to create a new cluster order reconciler function.
@@ -99,6 +99,12 @@ func (r *HubCache) Get(ctx context.Context, id string) (result *HubEntry, err er
 	return
 }
 
+func (r *HubCache) Remove(id string) {
+	r.entriesLock.Lock()
+	defer r.entriesLock.Unlock()
+	delete(r.entries, id)
+}
+
 func (r *HubCache) create(ctx context.Context, id string) (result *HubEntry, err error) {
 	response, err := r.client.Get(ctx, privatev1.HubsGetRequest_builder{
 		Id: id,
@@ -116,8 +122,8 @@ func (r *HubCache) create(ctx context.Context, id string) (result *HubEntry, err
 		return
 	}
 	result = &HubEntry{
-		Namespace: hub.GetNamespace(),
-		Client:    client,
+		Hub:    hub,
+		Client: client,
 	}
 	return
 }

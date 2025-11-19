@@ -31,4 +31,10 @@ message Hub {
 
   // Namespace where the cluster orders will be created.
   string namespace = 4;
+
+  // Docker configuration containing credentials to pull images.
+  string pull_secret = 5;
+
+  // SSH public key to install into the hosts managed by this hub.
+  string ssh_public_key = 6;
 }

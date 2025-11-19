@@ -15,63 +15,53 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: fulfillment-controller
+  name: bcm-sync
 spec:
   selector:
     matchLabels:
-      app: fulfillment-controller
-  replicas: 0
+      app: bcm-sync
+  replicas: 1
   template:
     metadata:
       labels:
-        app: fulfillment-controller
+        app: bcm-sync
     spec:
-      serviceAccountName: controller
+      serviceAccountName: bcm-sync
       volumes:
       {{- if .Values.certs.caBundle.configMap }}
       - name: cas
         configMap:
           name: {{ .Values.certs.caBundle.configMap }}
       {{- end }}
-      {{- if .Values.dns.secret }}
-      - name: dns-secret
+      - name: bcm-credentials
         secret:
-          secretName: {{ .Values.dns.secret }}
-      {{- end }}
+          secretName: {{ required "bcm.credentialsSecret is required" .Values.bcm.credentialsSecret }}
       containers:
-      - name: controller
+      - name: bcm-sync
         image: {{ .Values.images.service }}
         volumeMounts:
         {{- if .Values.certs.caBundle.configMap }}
         - name: cas
-          mountPath: /etc/fulfillment-controller/tls/cas
+          mountPath: /etc/bcm-sync/tls/cas
         {{- end }}
-        {{- if .Values.dns.secret }}
-        - name: dns-secret
-          mountPath: /etc/fulfillment-controller/dns
-          readOnly: true
-        {{- end }}
+        - name: bcm-credentials
+          mountPath: /secrets/bcm
         command:
         - /usr/local/bin/fulfillment-service
         - start
-        - controller
+        - bcm-sync
         - --log-level={{ .Values.log.level }}
         - --log-headers={{ .Values.log.headers }}
         - --log-bodies={{ .Values.log.bodies }}
         {{- if .Values.certs.caBundle.configMap }}
-        - --ca-file=/etc/fulfillment-controller/tls/cas
+        - --ca-file=/etc/bcm-sync/tls/cas
         {{- end }}
         - --token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
         - --grpc-server-network=tcp
-        - --grpc-server-address=fulfillment-api:8000
+        - --grpc-server-address={{ .Values.grpc.server.address }}
         - --grpc-keep-alive=5m
-        {{- if .Values.dns.server }}
-        - --dns-server={{ .Values.dns.server }}
-        {{- end }}
-        {{- if .Values.dns.zone }}
-        - --dns-zone={{ .Values.dns.zone }}
-        {{- end }}
-        {{- if .Values.dns.secret }}
-        - --dns-key-name-file=/etc/fulfillment-controller/dns/key
-        - --dns-key-secret-file=/etc/fulfillment-controller/dns/secret
-        {{- end }}
+        - --bcm-url={{ required "bcm.url is required" .Values.bcm.url }}
+        - --bcm-crt=/secrets/bcm/tls.crt
+        - --bcm-key=/secrets/bcm/tls.key
+        - --ca-file=/secrets/bcm/ca.crt
+        - --sync-interval={{ .Values.bcm.syncInterval }}
