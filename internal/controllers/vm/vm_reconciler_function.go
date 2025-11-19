@@ -137,11 +137,6 @@ func (t *task) update(ctx context.Context) error {
 	// Set the default values:
 	t.setDefaults()
 
-	// Do nothing if the VM isn't progressing:
-	if t.vm.GetStatus().GetState() != privatev1.VirtualMachineState_VIRTUAL_MACHINE_STATE_PROGRESSING {
-		return nil
-	}
-
 	// Select the hub:
 	err := t.selectHub(ctx)
 	if err != nil {
