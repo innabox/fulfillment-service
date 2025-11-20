@@ -32,51 +32,68 @@ Before installing Keycloak, ensure you have:
 
 ## Installing Keycloak
 
-The fulfillment service includes a Helm chart for deploying Keycloak. The chart is located at `charts/keycloak/`.
+The fulfillment service includes a Helm chart for deploying Keycloak. The chart is published with each release as an OCI image at [ghcr.io/innabox/charts/keycloak](https://github.com/innabox/fulfillment-service/pkgs/container/charts%2Fkeycloak).
 
 ### Installation Steps
 
-1. **Create a values file** (optional, but recommended):
+Install Keycloak using the published Helm chart from the OCI registry:
 
-   Create a `keycloak-values.yaml` file with your configuration:
+**For OpenShift clusters:**
 
-   ```yaml
-   variant: kind  # or "openshift" for OpenShift clusters
-   
-   hostname: keycloak.keycloak.svc.cluster.local
-   
-   certs:
-     issuerRef:
-       kind: ClusterIssuer  # or "Issuer" for namespace-scoped issuer
-       name: default-ca     # Replace with your cert-manager issuer name
-   
-   images:
-     keycloak: quay.io/keycloak/keycloak:26.3
-     postgres: quay.io/sclorg/postgresql-15-c9s:latest
-   ```
+```bash
+helm install keycloak oci://ghcr.io/innabox/charts/keycloak \
+  --version 0.0.27 \
+  --namespace keycloak \
+  --create-namespace \
+  --set variant=openshift \
+  --set hostname=keycloak.keycloak.svc.cluster.local \
+  --set certs.issuerRef.name=default-ca \
+  --wait
+```
 
-2. **Install Keycloak using Helm**:
+**For Kind clusters:**
 
-   ```bash
-   helm install keycloak charts/keycloak \
-     --namespace keycloak \
-     --create-namespace \
-     --set hostname=keycloak.keycloak.svc.cluster.local \
-     --set certs.issuerRef.name=default-ca \
-     --wait
-   ```
+```bash
+helm install keycloak oci://ghcr.io/innabox/charts/keycloak \
+  --version 0.0.27 \
+  --namespace keycloak \
+  --create-namespace \
+  --set variant=kind \
+  --set hostname=keycloak.keycloak.svc.cluster.local \
+  --set certs.issuerRef.name=default-ca \
+  --wait
+```
 
-   Or using a values file:
+Replace `0.0.27` with the version you want to use. You can find available versions at the [chart registry](https://github.com/innabox/fulfillment-service/pkgs/container/charts%2Fkeycloak).
 
-   ```bash
-   helm install keycloak charts/keycloak \
-     --namespace keycloak \
-     --create-namespace \
-     --values keycloak-values.yaml \
-     --wait
-   ```
+**Using a values file (optional):**
 
-3. **Verify the installation**:
+You can also create a `keycloak-values.yaml` file with your configuration:
+
+```yaml
+variant: openshift  # or "kind" for Kind clusters
+
+hostname: keycloak.keycloak.svc.cluster.local
+
+certs:
+  issuerRef:
+    kind: ClusterIssuer  # or "Issuer" for namespace-scoped issuer
+    name: default-ca     # Replace with your cert-manager issuer name
+
+```
+
+Then install with:
+
+```bash
+helm install keycloak oci://ghcr.io/innabox/charts/keycloak \
+  --version 0.0.27 \
+  --namespace keycloak \
+  --create-namespace \
+  --values keycloak-values.yaml \
+  --wait
+```
+
+### Verify the Installation
 
    ```bash
    kubectl get pods -n keycloak
@@ -98,7 +115,7 @@ The fulfillment service includes a Helm chart for deploying Keycloak. The chart 
 
 ### Important Notes
 
-- The `hostname` parameter is critical and must match the hostname that Keycloak will use to access itself. This is used for token issuer URLs.
+- The `hostname` parameter is critical and must match the hostname that Keycloak will use to reference itself, meaning that when Keycloak redirects users, or generates an URL for itself, it will use this host name. This is also used for token issuer URLs.
 - The default admin credentials are:
   - Username: `admin`
   - Password: `admin`
@@ -111,27 +128,14 @@ The Helm chart includes a pre-configured realm named `innabox` with the followin
 ### Realm Configuration
 
 - **Realm Name**: `innabox`
-- **Access Token Lifespan**: 300 seconds (5 minutes)
-- **SSO Session Idle Timeout**: 1800 seconds (30 minutes)
-- **SSO Session Max Lifespan**: 36000 seconds (10 hours)
-- **SSL Required**: `external` (HTTPS required for external access)
 
 ### Pre-configured Clients
 
-The realm includes the following clients:
-
-1. **fulfillment-cli** (Public Client)
+The realm includes the **fulfillment-cli** (Public) client:
    - Client ID: `fulfillment-cli`
    - Type: Public client (no client secret required)
    - Enabled flows: Standard flow (authorization code)
    - Use case: Command-line interface authentication
-
-2. **fulfillment-controller** (Confidential Client)
-   - Client ID: `fulfillment-controller`
-   - Type: Confidential client (requires client secret)
-   - Client Secret: `t2N7qNiOYZzt6InsHOVsV5AzcZZbA7Sg` (default, change in production!)
-   - Enabled flows: Direct access grants (resource owner password credentials)
-   - Use case: Service-to-service authentication
 
 ### Accessing Keycloak Admin Console
 
@@ -143,11 +147,17 @@ To access the Keycloak Admin Console:
    kubectl port-forward -n keycloak svc/keycloak 8443:8001
    ```
 
+Alternatively, for development purposes, you can add the host name used internally in the cluster (keycloak.keycloak.svc.cluster.local) pointing to 127.0.0.1 to /etc/hosts:
+
+   ```
+   127.0.0.1 keycloak.keycloak.svc.cluster.local
+   ```
+
 2. **Access the console**:
 
    Open your browser and navigate to:
    ```
-   https://localhost:8443
+   https://localhost:8443 (or https://keycloak.keycloak.svc.cluster.local:8443 if configured)
    ```
 
    Accept the self-signed certificate warning.
@@ -210,11 +220,15 @@ https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
 When installing the fulfillment service using the Helm chart, set the `auth.issuerUrl` parameter:
 
 ```bash
-helm install fulfillment-service charts/service \
+helm install fulfillment-service oci://ghcr.io/innabox/charts/fulfillment-service \
+  --version 0.0.27 \
   --namespace innabox \
   --create-namespace \
-  --set auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox \
+  --set variant=kind \
+  --set hostname=fulfillment-api.innabox.cluster.local \
   --set certs.issuerRef.name=default-ca \
+  --set certs.caBundle.configMap=ca-bundle \
+  --set auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox \
   --wait
 ```
 
@@ -267,17 +281,13 @@ The Helm chart automatically sets this from the `auth.issuerUrl` value. In the d
 
 The fulfillment service maintains two separate lists of token issuers:
 
-1. **Trusted Token Issuers**: These are the issuers whose tokens are accepted by the service for authentication. This list is configured in:
+1. **Trusted Token Issuers**: These are the advertised trusted issuers. This list is configured in:
    - Authorino AuthConfig (for HTTP/gRPC gateway authentication)
    - Server command-line flag `--grpc-authn-trusted-token-issuers` (for direct gRPC authentication)
 
 2. **Advertised Token Issuers**: These are the issuers that the service advertises to clients (primarily for CLI usage). This allows clients to discover which issuers they can use without explicitly specifying them. The advertised issuers are returned via the metadata API and may or may not be the same as the trusted issuers.
 
-   The advertised issuers are configured via the `--grpc-authn-trusted-token-issuers` flag, which serves dual purpose:
-   - It sets the trusted issuers for the server
-   - It also sets the advertised issuers returned by the metadata API
-
-   **Note**: For HTTP services, this would typically be implemented using [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), but since this is a gRPC service, a custom implementation is used.
+   The advertised issuers are configured via the `--grpc-authn-trusted-token-issuers` flag
 
 ## User and Group Mapping
 
@@ -373,11 +383,12 @@ The fulfillment service implements a hard-coded tenancy logic that determines:
 
 1. **Shared Tenant**: Resources assigned to the `shared` tenant are visible to **everyone**. This is useful for templates, shared configurations, or other resources that should be accessible across all tenants.
 
-2. **Multi-Tenant Users**: A user can belong to multiple tenants. This is configured in Keycloak by assigning the user to multiple groups. The fulfillment service will reflect this one-to-one mapping.
+2. **Multi-Tenant Users**: A user can belong to multiple tenants. This is configured in Keycloak by assigning the user to multiple groups. The fulfillment service will reflect this one-to-many mapping.
 
-3. **Tenant Assignment**: When a user creates a resource, it is assigned to:
-   - The user's username (for user-specific resources)
-   - All tenants (groups) the user belongs to
+3. **Tenant Assignment**: When a user creates a resource:
+
+   - a user assignment is recorded in the metadata.creators field of the object, and is purely informative. The system doesn't currently use it to make any authorization or visibility decisions.
+   - Tenant assignment is recorded in the metadata.tenants fields and it used by the server to make visibility decisions: a user can only see an object if she belongs to the same tenant than the user. Actually, as both users and objects can have multiple tenants, a user can only see an object if the intersection between the tenants of the user and the tenants of the object isn't empty.
 
 4. **Tenant Visibility**: When a user queries resources, they can only see:
    - Resources from tenants (groups) they belong to
@@ -431,10 +442,6 @@ To configure multi-tenant access in Keycloak:
 
 3. **Configure Group Mapper** (as described in [Configuring Keycloak to Include Groups in Tokens](#configuring-keycloak-to-include-groups-in-tokens))
 
-4. **Create Shared Resources**:
-   - To make resources visible to everyone, assign them to a group named `shared`
-   - Or configure the fulfillment service to use a different name for the shared tenant (requires code changes)
-
 ### Future Enhancements
 
 The current tenancy logic is hard-coded. Future enhancements may include:
@@ -445,6 +452,7 @@ The current tenancy logic is hard-coded. Future enhancements may include:
 ## Authorization Configuration
 
 The fulfillment service uses Open Policy Agent (OPA) Rego policies for authorization. The authorization rules are defined in the `AuthConfig` resource.
+The defined rules are a very simple set of intended for development and testing purposes. Further rules and policies can be configured according to the different needs.
 
 ### Authorization Rules Overview
 
