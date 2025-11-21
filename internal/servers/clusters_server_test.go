@@ -150,27 +150,27 @@ var _ = Describe("Clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create the the host classes:
-			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+			_, err = hostClassesDao.Create().SetObject(privatev1.HostClass_builder{
 				Id:          "acme_1tib",
 				Title:       "ACME 1TiB",
 				Description: "ACME 1TiB.",
-			}.Build())
+			}.Build()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+			_, err = hostClassesDao.Create().SetObject(privatev1.HostClass_builder{
 				Id:          "acme_gpu",
 				Title:       "ACME GPU",
 				Description: "ACME GPU.",
-			}.Build())
+			}.Build()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+			_, err = hostClassesDao.Create().SetObject(privatev1.HostClass_builder{
 				Id:          "hal_9000",
 				Title:       "HAL 9000",
 				Description: "Heuristically programmed ALgorithmic computer.",
-			}.Build())
+			}.Build()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a usable template:
-			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+			_, err = templatesDao.Create().SetObject(privatev1.ClusterTemplate_builder{
 				Id:          "my_template",
 				Title:       "My template",
 				Description: "My template",
@@ -184,26 +184,26 @@ var _ = Describe("Clusters server", func() {
 						Size:      1,
 					}.Build(),
 				},
-			}.Build())
+			}.Build()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a template that has been deleted. Note that we add a finalizer to ensure that it will
 			// not be completely deleted and archived, as we will use it to verify that clusters can't be
 			// created using deleted templates.
-			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+			_, err = templatesDao.Create().SetObject(privatev1.ClusterTemplate_builder{
 				Id:          "my_deleted_template",
 				Title:       "My deleted template",
 				Description: "My deleted template",
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{"a"},
 				}.Build(),
-			}.Build())
+			}.Build()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			err = templatesDao.Delete(ctx, "my_deleted_template")
+			_, err = templatesDao.Delete().SetId("my_deleted_template").Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a template with parameters:
-			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+			_, err = templatesDao.Create().SetObject(privatev1.ClusterTemplate_builder{
 				Id:          "my_with_parameters",
 				Title:       "My with parameters",
 				Description: "My with parameters.",
@@ -224,7 +224,7 @@ var _ = Describe("Clusters server", func() {
 						Default:     makeAny(wrapperspb.String("my value")),
 					}.Build(),
 				},
-			}.Build())
+			}.Build()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -853,28 +853,36 @@ var _ = Describe("Clusters server", func() {
 		})
 
 		It("Preserves private data during update", func() {
-			// Use the DAO directly to create an object with private data:
+			// Create the DAO:
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 				SetLogger(logger).
 				SetTable("clusters").
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
-			object, err := dao.Create(ctx, privatev1.Cluster_builder{
-				Spec: privatev1.ClusterSpec_builder{
-					Template: "my_template",
-					NodeSets: map[string]*privatev1.ClusterNodeSet{
-						"compute": privatev1.ClusterNodeSet_builder{
-							HostClass: "my_host_class",
-							Size:      3,
+
+			// Use the DAO directly to create an object with private data:
+			createResponse, err := dao.Create().
+				SetObject(
+					privatev1.Cluster_builder{
+						Spec: privatev1.ClusterSpec_builder{
+							Template: "my_template",
+							NodeSets: map[string]*privatev1.ClusterNodeSet{
+								"compute": privatev1.ClusterNodeSet_builder{
+									HostClass: "my_host_class",
+									Size:      3,
+								}.Build(),
+							},
 						}.Build(),
-					},
-				}.Build(),
-				Status: privatev1.ClusterStatus_builder{
-					Hub: "123",
-				}.Build(),
-			}.Build())
+						Status: privatev1.ClusterStatus_builder{
+							Hub: "123",
+						}.
+							Build(),
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
 
 			// Update the object using the public server:
 			_, err = server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
@@ -894,7 +902,11 @@ var _ = Describe("Clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get the object again and verify that the private data hasn't changed:
-			object, err = dao.Get(ctx, object.GetId())
+			getResponse, err := dao.Get().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.GetStatus().GetHub()).To(Equal("123"))
 		})
@@ -931,15 +943,20 @@ var _ = Describe("Clusters server", func() {
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
-			object, err := dao.Create(ctx, privatev1.Cluster_builder{
-				Spec: privatev1.ClusterSpec_builder{
-					Template: "my_template",
-				}.Build(),
-				Status: privatev1.ClusterStatus_builder{
-					ApiUrl: "https://my.api",
-				}.Build(),
-			}.Build())
+			createResponse, err := dao.Create().
+				SetObject(
+					privatev1.Cluster_builder{
+						Spec: privatev1.ClusterSpec_builder{
+							Template: "my_template",
+						}.Build(),
+						Status: privatev1.ClusterStatus_builder{
+							ApiUrl: "https://my.api",
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
 
 			// Try to update the status:
 			_, err = server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
@@ -956,8 +973,9 @@ var _ = Describe("Clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get the object again and verify that the status hasn't changed:
-			object, err = dao.Get(ctx, object.GetId())
+			getResponse, err := dao.Get().SetId(object.GetId()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
 			Expect(object.GetStatus().GetApiUrl()).To(Equal("https://my.api"))
 		})
 

@@ -94,7 +94,7 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Create(ctx, &privatev1.Cluster{})
+			_, err = generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(err).ToNot(HaveOccurred())
@@ -118,17 +118,21 @@ var _ = Describe("Generic DAO events", func() {
 
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{})
+			response, createErr := generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
+			err = createErr
+			if err == nil {
+				object = response.GetObject()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, &privatev1.Cluster{
+			_, err = generic.Update().SetObject(&privatev1.Cluster{
 				Id: object.Id,
 				Status: &privatev1.ClusterStatus{
 					ApiUrl: "https://api.example.com",
 				},
-			})
+			}).Do(ctx)
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(event).ToNot(BeNil())
@@ -151,11 +155,15 @@ var _ = Describe("Generic DAO events", func() {
 
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{})
+			response, createErr := generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
+			err = createErr
+			if err == nil {
+				object = response.GetObject()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			err = generic.Delete(ctx, object.GetId())
+			_, err = generic.Delete().SetId(object.GetId()).Do(ctx)
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(event).ToNot(BeNil())
@@ -175,7 +183,11 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{})
+			response, createErr := generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
+			err = createErr
+			if err == nil {
+				object = response.GetObject()
+			}
 		})
 		Expect(err).To(MatchError("my error"))
 		Expect(object).To(BeNil())
@@ -196,7 +208,11 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{})
+			response, createErr := generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
+			err = createErr
+			if err == nil {
+				object = response.GetObject()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -211,14 +227,18 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			err = generic.Delete(ctx, object.GetId())
+			_, err = generic.Delete().SetId(object.GetId()).Do(ctx)
 		})
 		Expect(err).To(MatchError("my error"))
 
 		// Check that the object is still there:
 		var exists bool
 		runWithTx(func(ctx context.Context) {
-			exists, err = generic.Exists(ctx, object.GetId())
+			response, existsErr := generic.Exists().SetId(object.GetId()).Do(ctx)
+			err = existsErr
+			if err == nil {
+				exists = response.GetExists()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(exists).To(BeTrue())
@@ -243,13 +263,17 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the object:
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{})
+			response, createErr := generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
+			err = createErr
+			if err == nil {
+				object = response.GetObject()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		// Update without changes and verify the result:
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, object)
+			_, err = generic.Update().SetObject(object).Do(ctx)
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(called).To(BeFalse())
@@ -265,11 +289,15 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{
+			response, createErr := generic.Create().SetObject(&privatev1.Cluster{
 				Status: &privatev1.ClusterStatus{
 					ApiUrl: "https://my.api",
 				},
-			})
+			}).Do(ctx)
+			err = createErr
+			if err == nil {
+				object = response.GetObject()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -284,18 +312,25 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, &privatev1.Cluster{
+			_, err = generic.Update().SetObject(&privatev1.Cluster{
 				Id: object.GetId(),
 				Status: &privatev1.ClusterStatus{
 					ApiUrl: "https://your.api",
 				},
-			})
+			}).Do(ctx)
 		})
 		Expect(err).To(MatchError("my error"))
 
 		// Check that the object hasn't been updated:
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Get(ctx, object.GetId())
+			getResponse, getErr := generic.Get().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(getErr).ToNot(HaveOccurred())
+			err = getErr
+			if err == nil {
+				object = getResponse.GetObject()
+			}
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(object).ToNot(BeNil())
@@ -322,7 +357,7 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Create(ctx, &privatev1.Cluster{})
+			_, err = generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
 		})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(called1).To(BeTrue())
@@ -348,7 +383,7 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Create(ctx, &privatev1.Cluster{})
+			_, err = generic.Create().SetObject(&privatev1.Cluster{}).Do(ctx)
 		})
 		Expect(err).To(MatchError("my error 1"))
 		Expect(called1).To(BeTrue())
@@ -372,26 +407,37 @@ var _ = Describe("Generic DAO events", func() {
 		// Create an object with finalizers:
 		var object *privatev1.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &privatev1.Cluster{
-				Metadata: &privatev1.Metadata{
-					Finalizers: []string{"my-finalizer"},
-				},
-			})
+			createResponse, err := generic.Create().
+				SetObject(
+					privatev1.Cluster_builder{
+						Metadata: privatev1.Metadata_builder{
+							Finalizers: []string{
+								"my-finalizer",
+							},
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = createResponse.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		// Delete the object:
 		runWithTx(func(ctx context.Context) {
-			err = generic.Delete(ctx, object.GetId())
+			_, err = generic.Delete().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		// Remove the finalizers:
 		object.Metadata.Finalizers = []string{}
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, object)
+			_, err = generic.Update().
+				SetObject(object).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		// This should have generated four events:
 		//

@@ -226,14 +226,14 @@ func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
 	if key == "" {
 		return
 	}
-	response, err := s.templatesDao.List(ctx, dao.ListRequest{
-		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key)),
-		Limit:  1,
-	})
+	response, err := s.templatesDao.List().
+		SetFilter(fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key))).
+		SetLimit(1).
+		Do(ctx)
 	if err != nil {
 		return
 	}
-	switch response.Size {
+	switch response.GetSize() {
 	case 0:
 		err = grpcstatus.Errorf(
 			grpccodes.NotFound,
@@ -241,7 +241,7 @@ func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
 			key,
 		)
 	case 1:
-		result = response.Items[0]
+		result = response.GetItems()[0]
 	default:
 		err = grpcstatus.Errorf(
 			grpccodes.InvalidArgument,
@@ -257,14 +257,14 @@ func (s *PrivateClustersServer) lookupHostClass(ctx context.Context,
 	if key == "" {
 		return
 	}
-	response, err := s.hostClassesDao.List(ctx, dao.ListRequest{
-		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key)),
-		Limit:  1,
-	})
+	response, err := s.hostClassesDao.List().
+		SetFilter(fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key))).
+		SetLimit(1).
+		Do(ctx)
 	if err != nil {
 		return
 	}
-	switch response.Size {
+	switch response.GetSize() {
 	case 0:
 		err = grpcstatus.Errorf(
 			grpccodes.NotFound,
@@ -272,7 +272,7 @@ func (s *PrivateClustersServer) lookupHostClass(ctx context.Context,
 			key,
 		)
 	case 1:
-		result = response.Items[0]
+		result = response.GetItems()[0]
 	default:
 		err = grpcstatus.Errorf(
 			grpccodes.InvalidArgument,
@@ -354,10 +354,13 @@ func (s *PrivateClustersServer) getExistingCluster(ctx context.Context,
 	if id == "" {
 		return nil, false, nil
 	}
-	existingCluster, err := s.generic.dao.Get(ctx, id)
+	getResponse, err := s.generic.dao.Get().
+		SetId(id).
+		Do(ctx)
 	if err != nil {
 		return nil, false, err
 	}
+	existingCluster := getResponse.GetObject()
 	return existingCluster, true, nil
 }
 

@@ -168,7 +168,7 @@ var _ = Describe("Virtual machines server", func() {
 				},
 			}.Build()
 
-			_, err = templatesDao.Create(ctx, template)
+			_, err = templatesDao.Create().SetObject(template).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		}
 

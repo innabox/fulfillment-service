@@ -107,11 +107,11 @@ var _ = Describe("Tenancy logic", func() {
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
-		_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+		_, err = templatesDao.Create().SetObject(privatev1.ClusterTemplate_builder{
 			Id:          "my-template",
 			Title:       "My template",
 			Description: "My template",
-		}.Build())
+		}.Build()).Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create the public clusters server that uses the tenancy logic:

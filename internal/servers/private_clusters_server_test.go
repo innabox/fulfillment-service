@@ -143,59 +143,75 @@ var _ = Describe("Private clusters server", func() {
 
 			// Create the host classes:
 			Expect(err).ToNot(HaveOccurred())
-			_, err = hoastClassesDao.Create(ctx, privatev1.HostClass_builder{
-				Id: "acme-1ti-id",
-				Metadata: privatev1.Metadata_builder{
-					Name: "acme-1ti-name",
-				}.Build(),
-				Title:       "ACME 1TiB",
-				Description: "ACME 1TiB.",
-			}.Build())
+			_, err = hoastClassesDao.Create().
+				SetObject(
+					privatev1.HostClass_builder{
+						Id: "acme-1ti-id",
+						Metadata: privatev1.Metadata_builder{
+							Name: "acme-1ti-name",
+						}.Build(),
+						Title:       "ACME 1TiB",
+						Description: "ACME 1TiB.",
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = hoastClassesDao.Create(ctx, privatev1.HostClass_builder{
-				Id: "acme-gpu-id",
-				Metadata: privatev1.Metadata_builder{
-					Name: "acme-gpu-name",
-				}.Build(),
-				Title:       "ACME GPU",
-				Description: "ACME GPU.",
-			}.Build())
+			_, err = hoastClassesDao.Create().
+				SetObject(
+					privatev1.HostClass_builder{
+						Id: "acme-gpu-id",
+						Metadata: privatev1.Metadata_builder{
+							Name: "acme-gpu-name",
+						}.Build(),
+						Title:       "ACME GPU",
+						Description: "ACME GPU.",
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a usable template:
-			_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
-				Id: "my-template-id",
-				Metadata: privatev1.Metadata_builder{
-					Name: "my-template-name",
-				}.Build(),
-				Title:       "My template",
-				Description: "My template",
-				NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
-					"compute": privatev1.ClusterTemplateNodeSet_builder{
-						HostClass: "acme-1ti-id",
-						Size:      3,
+			_, err = templatesDao.Create().
+				SetObject(
+					privatev1.ClusterTemplate_builder{
+						Id: "my-template-id",
+						Metadata: privatev1.Metadata_builder{
+							Name: "my-template-name",
+						}.Build(),
+						Title:       "My template",
+						Description: "My template",
+						NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
+							"compute": privatev1.ClusterTemplateNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      3,
+							}.Build(),
+							"gpu": privatev1.ClusterTemplateNodeSet_builder{
+								HostClass: "acme-gpu-id",
+								Size:      1,
+							}.Build(),
+						},
 					}.Build(),
-					"gpu": privatev1.ClusterTemplateNodeSet_builder{
-						HostClass: "acme-gpu-id",
-						Size:      1,
-					}.Build(),
-				},
-			}.Build())
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create numbered templates for list tests:
 			for i := range 10 {
-				_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
-					Id:          fmt.Sprintf("my-template-id-%d", i),
-					Title:       fmt.Sprintf("My template %d", i),
-					Description: fmt.Sprintf("My template %d", i),
-					NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
-						"compute": privatev1.ClusterTemplateNodeSet_builder{
-							HostClass: "acme-1ti-id",
-							Size:      3,
+				_, err = templatesDao.Create().
+					SetObject(
+						privatev1.ClusterTemplate_builder{
+							Id:          fmt.Sprintf("my-template-id-%d", i),
+							Title:       fmt.Sprintf("My template %d", i),
+							Description: fmt.Sprintf("My template %d", i),
+							NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
+								"compute": privatev1.ClusterTemplateNodeSet_builder{
+									HostClass: "acme-1ti-id",
+									Size:      3,
+								}.Build(),
+							},
 						}.Build(),
-					},
-				}.Build())
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		})

@@ -178,7 +178,9 @@ func (s *PrivateVirtualMachinesServer) validateTemplate(ctx context.Context, vm 
 	}
 
 	// Get the template:
-	template, err := s.templatesDao.Get(ctx, templateID)
+	getTemplateResponse, err := s.templatesDao.Get().
+		SetId(templateID).
+		Do(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -192,6 +194,7 @@ func (s *PrivateVirtualMachinesServer) validateTemplate(ctx context.Context, vm 
 			templateID,
 		)
 	}
+	template := getTemplateResponse.GetObject()
 	if template == nil {
 		return grpcstatus.Errorf(
 			grpccodes.InvalidArgument,

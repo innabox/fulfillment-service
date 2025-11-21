@@ -313,11 +313,11 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		SetItems([]O)
 	}
 	requestMsg := request.(requestIface)
-	daoRequest := dao.ListRequest{}
-	daoRequest.Offset = requestMsg.GetOffset()
-	daoRequest.Limit = requestMsg.GetLimit()
-	daoRequest.Filter = requestMsg.GetFilter()
-	daoResponse, err := s.dao.List(ctx, daoRequest)
+	daoResponse, err := s.dao.List().
+		SetFilter(requestMsg.GetFilter()).
+		SetOffset(requestMsg.GetOffset()).
+		SetLimit(requestMsg.GetLimit()).
+		Do(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -327,9 +327,9 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to list")
 	}
 	responseMsg := proto.Clone(s.listResponse).(responseIface)
-	responseMsg.SetSize(daoResponse.Size)
-	responseMsg.SetTotal(daoResponse.Total)
-	responseMsg.SetItems(daoResponse.Items)
+	responseMsg.SetSize(daoResponse.GetSize())
+	responseMsg.SetTotal(daoResponse.GetTotal())
+	responseMsg.SetItems(daoResponse.GetItems())
 	s.setPointer(response, responseMsg)
 	return nil
 }
@@ -346,12 +346,14 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "identifier is mandatory")
 	}
-	object, err := s.dao.Get(ctx, id)
-	var notFoundErr *dao.ErrNotFound
-	if errors.As(err, &notFoundErr) {
-		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
-	}
+	daoResponse, err := s.dao.Get().
+		SetId(id).
+		Do(ctx)
 	if err != nil {
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get",
@@ -360,6 +362,7 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to get object with identifier '%s'", id)
 	}
+	object := daoResponse.GetObject()
 	responseMsg := proto.Clone(s.getResponse).(responseIface)
 	responseMsg.SetObject(object)
 	s.setPointer(response, responseMsg)
@@ -385,7 +388,9 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 			return err
 		}
 	}
-	object, err := s.dao.Create(ctx, object)
+	daoResponse, err := s.dao.Create().
+		SetObject(object).
+		Do(ctx)
 	if err != nil {
 		var alreadyExistsErr *dao.ErrAlreadyExists
 		if errors.As(err, &alreadyExistsErr) {
@@ -402,6 +407,7 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
 	}
+	object = daoResponse.GetObject()
 	responseMsg := proto.Clone(s.createResponse).(responseIface)
 	responseMsg.SetObject(object)
 	s.setPointer(response, responseMsg)
@@ -427,12 +433,18 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 	}
 
 	// Fetch the current representation of the object:
-	object, err := s.dao.Get(ctx, id)
-	var notFoundErr *dao.ErrNotFound
-	if errors.As(err, &notFoundErr) {
-		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
-	}
+	getResponse, err := s.dao.Get().
+		SetId(id).
+		Do(ctx)
 	if err != nil {
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			return grpcstatus.Errorf(
+				grpccodes.NotFound,
+				"object with identifier '%s' not found",
+				id,
+			)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to get object",
@@ -442,6 +454,14 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 		return grpcstatus.Errorf(
 			grpccodes.Internal,
 			"failed to get object with identifier '%s'",
+			id,
+		)
+	}
+	object := getResponse.GetObject()
+	if s.isNil(object) {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"object with identifier '%s' doesn't exist",
 			id,
 		)
 	}
@@ -475,7 +495,9 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 	}
 
 	// Save the result:
-	object, err = s.dao.Update(ctx, object)
+	updateResponse, err := s.dao.Update().
+		SetObject(object).
+		Do(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -489,6 +511,7 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 			id,
 		)
 	}
+	object = updateResponse.GetObject()
 
 	responseMsg := proto.Clone(s.updateResponse).(responseIface)
 	responseMsg.SetObject(object)
@@ -534,11 +557,17 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.Internal, "object identifier is mandatory")
 	}
-	err := s.dao.Delete(ctx, id)
+	_, err := s.dao.Delete().
+		SetId(id).
+		Do(ctx)
 	if err != nil {
 		var notFoundErr *dao.ErrNotFound
 		if errors.As(err, &notFoundErr) {
-			return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+			return grpcstatus.Errorf(
+				grpccodes.NotFound,
+				"object with identifier '%s' not found",
+				id,
+			)
 		}
 		s.logger.ErrorContext(
 			ctx,
@@ -546,7 +575,11 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 			slog.String("id", id),
 			slog.Any("error", err),
 		)
-		return grpcstatus.Errorf(grpccodes.Internal, "failed to delete object")
+		return grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to delete object with identifier '%s'",
+			id,
+		)
 	}
 	responseMsg := proto.Clone(s.deleteResponse).(responseIface)
 	s.setPointer(response, responseMsg)
@@ -562,20 +595,31 @@ func (s *GenericServer[O]) Signal(ctx context.Context, request any, response any
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "identifier is mandatory")
 	}
-	object, err := s.dao.Get(ctx, id)
-	var notFoundErr *dao.ErrNotFound
-	if errors.As(err, &notFoundErr) {
-		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
-	}
+	daoResponse, err := s.dao.Get().
+		SetId(id).
+		Do(ctx)
 	if err != nil {
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			return grpcstatus.Errorf(
+				grpccodes.NotFound,
+				"object with identifier '%s' not found",
+				id,
+			)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to signal object",
 			slog.String("id", id),
 			slog.Any("error", err),
 		)
-		return grpcstatus.Errorf(grpccodes.Internal, "failed to signal object with identifier '%s'", id)
+		return grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to signal object with identifier '%s'",
+			id,
+		)
 	}
+	object := daoResponse.GetObject()
 	event := privatev1.Event_builder{
 		Id:   uuid.New(),
 		Type: privatev1.EventType_EVENT_TYPE_OBJECT_SIGNALED,
