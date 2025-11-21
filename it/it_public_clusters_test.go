@@ -358,13 +358,23 @@ var _ = Describe("Public clusters", func() {
 		err = kubeClient.Status().Patch(ctx, clusterOrderUpdate, clusterOrderPatch)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Get the kubeconfig
-		getKubeconfigResponse, err := clustersClient.GetKubeconfig(ctx, ffv1.ClustersGetKubeconfigRequest_builder{
-			Id: object.GetId(),
-		}.Build())
-		Expect(err).ToNot(HaveOccurred())
-		kubeconfig := getKubeconfigResponse.GetKubeconfig()
-		Expect(kubeconfig).To(Equal("my-kubeconfig"))
+		// Get the kubeconfig:
+		var kubeconfig string
+		Eventually(
+			func(g Gomega) {
+				getKubeconfigResponse, err := clustersClient.GetKubeconfig(
+					ctx,
+					ffv1.ClustersGetKubeconfigRequest_builder{
+						Id: object.GetId(),
+					}.Build(),
+				)
+				g.Expect(err).ToNot(HaveOccurred())
+				kubeconfig = getKubeconfigResponse.GetKubeconfig()
+				g.Expect(kubeconfig).To(Equal("my-kubeconfig"))
+			},
+			time.Minute,
+			time.Second,
+		).Should(Succeed())
 	})
 
 	It("Can get the kubeconfig of a cluster via HTTP", func() {
@@ -460,13 +470,22 @@ var _ = Describe("Public clusters", func() {
 		err = kubeClient.Status().Patch(ctx, clusterOrderUpdate, clusterOrderPatch)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Get the kubeconfig
-		getKubeconfigResponse, err := clustersClient.GetKubeconfigViaHttp(ctx, ffv1.ClustersGetKubeconfigViaHttpRequest_builder{
-			Id: object.GetId(),
-		}.Build())
-		Expect(err).ToNot(HaveOccurred())
-		Expect(getKubeconfigResponse.GetContentType()).To(Equal("application/yaml"))
-		Expect(getKubeconfigResponse.GetData()).To(Equal([]byte("my-kubeconfig")))
+		// Get the kubeconfig:
+		Eventually(
+			func(g Gomega) {
+				getKubeconfigResponse, err := clustersClient.GetKubeconfigViaHttp(
+					ctx,
+					ffv1.ClustersGetKubeconfigViaHttpRequest_builder{
+						Id: object.GetId(),
+					}.Build(),
+				)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(getKubeconfigResponse.GetContentType()).To(Equal("application/yaml"))
+				g.Expect(getKubeconfigResponse.GetData()).To(Equal([]byte("my-kubeconfig")))
+			},
+			time.Minute,
+			time.Second,
+		).Should(Succeed())
 	})
 
 	It("Can get the admin password of a cluster", func() {
@@ -562,13 +581,20 @@ var _ = Describe("Public clusters", func() {
 		err = kubeClient.Status().Patch(ctx, clusterOrderUpdate, clusterOrderPatch)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Get the admin password
-		getPasswordResponse, err := clustersClient.GetPassword(ctx, ffv1.ClustersGetPasswordRequest_builder{
-			Id: object.GetId(),
-		}.Build())
-		Expect(err).ToNot(HaveOccurred())
-		password := getPasswordResponse.GetPassword()
-		Expect(password).To(Equal("my_password"))
+		// Get the admin password (with Eventually to handle cache propagation delay)
+		var password string
+		Eventually(
+			func(g Gomega) {
+				getPasswordResponse, err := clustersClient.GetPassword(ctx, ffv1.ClustersGetPasswordRequest_builder{
+					Id: object.GetId(),
+				}.Build())
+				g.Expect(err).ToNot(HaveOccurred())
+				password = getPasswordResponse.GetPassword()
+				g.Expect(password).To(Equal("my_password"))
+			},
+			30*time.Second,
+			time.Second,
+		).Should(Succeed())
 	})
 
 	It("Can get the admin password of a cluster via HTTP", func() {
@@ -664,13 +690,22 @@ var _ = Describe("Public clusters", func() {
 		err = kubeClient.Status().Patch(ctx, clusterOrderUpdate, clusterOrderPatch)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Get the admin password
-		getPasswordResponse, err := clustersClient.GetPasswordViaHttp(ctx, ffv1.ClustersGetPasswordViaHttpRequest_builder{
-			Id: object.GetId(),
-		}.Build())
-		Expect(err).ToNot(HaveOccurred())
-		Expect(getPasswordResponse.GetContentType()).To(Equal("text/plain"))
-		Expect(getPasswordResponse.GetData()).To(Equal([]byte("my_password")))
+		// Get the admin password (with Eventually to handle cache propagation delay)
+		Eventually(
+			func(g Gomega) {
+				getPasswordResponse, err := clustersClient.GetPasswordViaHttp(
+					ctx,
+					ffv1.ClustersGetPasswordViaHttpRequest_builder{
+						Id: object.GetId(),
+					}.Build(),
+				)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(getPasswordResponse.GetContentType()).To(Equal("text/plain"))
+				g.Expect(getPasswordResponse.GetData()).To(Equal([]byte("my_password")))
+			},
+			time.Minute,
+			time.Second,
+		).Should(Succeed())
 	})
 
 	It("Sets creator to the name of the user when creating a cluster", func() {
