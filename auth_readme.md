@@ -694,7 +694,7 @@ The fulfillment service uses a two-level authorization approach:
 
 The fulfillment service does not have an explicit "role" concept, but it distinguishes between:
 
-1. **Admin Users**: 
+1. **Admin Users**:
    - Defined by service account names in the Rego policy
    - Currently: `system:serviceaccount:<namespace>:admin` and `system:serviceaccount:<namespace>:controller`
    - Have full access to all operations
@@ -760,7 +760,7 @@ kubectl get authconfig fulfillment-service -n innabox -o yaml | grep issuerUrl
    ```bash
    # Port-forward to Keycloak
    kubectl port-forward -n keycloak svc/keycloak 8443:8001
-   
+
    # Get token (replace USERNAME and PASSWORD with actual credentials)
    TOKEN=$(curl -k -X POST \
      https://localhost:8443/realms/innabox/protocol/openid-connect/token \
@@ -776,7 +776,7 @@ kubectl get authconfig fulfillment-service -n innabox -o yaml | grep issuerUrl
    ```bash
    # Get the service URL
    SERVICE_URL=$(kubectl get route -n innabox fulfillment-api -o jsonpath='{.spec.host}')
-   
+
    # Make a request
    curl -k -H "Authorization: Bearer ${TOKEN}" \
      https://${SERVICE_URL}/api/fulfillment/v1/cluster_templates
