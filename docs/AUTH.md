@@ -840,4 +840,3 @@ Test that authorization rules are working:
 - [Open Policy Agent (OPA) Documentation](https://www.openpolicyagent.org/docs/latest/)
 - [Helm Chart README](charts/keycloak/README.md)
 - [Service Chart README](charts/service/README.md)
-
