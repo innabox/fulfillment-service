@@ -51,8 +51,14 @@ func (b *EmptyTenancyLogicBuilder) Build() (result *EmptyTenancyLogic, err error
 	return
 }
 
-// DetermineAssignedTenants returns an empty set of tenants.
-func (p *EmptyTenancyLogic) DetermineAssignedTenants(_ context.Context) (result collections.Set[string], err error) {
+// DetermineAssignableTenants returns an universal set of tenants.
+func (p *EmptyTenancyLogic) DetermineAssignableTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = collections.NewUniversal[string]()
+	return
+}
+
+// DetermineDefaultTenants returns an empty set of tenants.
+func (p *EmptyTenancyLogic) DetermineDefaultTenants(_ context.Context) (result collections.Set[string], err error) {
 	result = collections.NewEmptySet[string]()
 	return
 }

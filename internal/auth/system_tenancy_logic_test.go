@@ -16,7 +16,6 @@ package auth
 import (
 	"context"
 
-	"github.com/innabox/fulfillment-service/internal/collections"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -41,15 +40,27 @@ var _ = Describe("System tenancy logic", func() {
 		Expect(logic).ToNot(BeNil())
 	})
 
-	It("Returns the shared tenant for assigned tenants", func() {
-		result, err := logic.DetermineAssignedTenants(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Equal(collections.NewSet("shared"))).To(BeTrue())
+	Describe("Determine assignable tenants", func() {
+		It("Returns the universal set of tenants", func() {
+			result, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Universal()).To(BeTrue())
+		})
 	})
 
-	It("Returns an empty list of visible tenants to disable filtering", func() {
-		result, err := logic.DetermineVisibleTenants(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Universal()).To(BeTrue())
+	Describe("Determine default tenants", func() {
+		It("Returns the shared tenant", func() {
+			result, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(SharedTenants)).To(BeTrue())
+		})
+	})
+
+	Describe("Determine visible tenants", func() {
+		It("Returns the universal set of tenants", func() {
+			result, err := logic.DetermineVisibleTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Universal()).To(BeTrue())
+		})
 	})
 })

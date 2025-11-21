@@ -51,14 +51,14 @@ var _ = Describe("Service account tenancy logic", func() {
 		})
 	})
 
-	Describe("Determine assigned tenants", func() {
+	Describe("Determine assignable tenants", func() {
 		It("Returns the namespace for a valid service account", func() {
 			subject := &Subject{
 				User:   "system:serviceaccount:my-ns:my-sa",
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			result, err := logic.DetermineAssignableTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Equal(collections.NewSet("my-ns"))).To(BeTrue())
 		})
@@ -69,7 +69,7 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			_, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignableTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
 			Expect(err.Error()).To(ContainSubstring("system:serviceaccount:"))
@@ -81,7 +81,7 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			_, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignableTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
 		})
@@ -92,7 +92,54 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			_, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a service account"))
+		})
+	})
+
+	Describe("Determine default tenants", func() {
+		It("Returns the namespace for a valid service account", func() {
+			subject := &Subject{
+				User:   "system:serviceaccount:my-ns:my-sa",
+				Source: SubjectSourceServiceAccount,
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			result, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(collections.NewSet("my-ns"))).To(BeTrue())
+		})
+
+		It("Fails if the subject is not a service account", func() {
+			subject := &Subject{
+				User:   "my_user",
+				Source: SubjectSourceServiceAccount,
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			_, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a service account"))
+			Expect(err.Error()).To(ContainSubstring("system:serviceaccount:"))
+		})
+
+		It("Fails if the subject has the wrong prefix", func() {
+			subject := &Subject{
+				User:   "system:junk:my-ns:my-sa",
+				Source: SubjectSourceServiceAccount,
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			_, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a service account"))
+		})
+
+		It("Fails if the subject has the wrong number of parts", func() {
+			subject := &Subject{
+				User:   "system:serviceaccount:my-ns:my-sa:junk",
+				Source: SubjectSourceServiceAccount,
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			_, err := logic.DetermineDefaultTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
 		})

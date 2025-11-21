@@ -210,7 +210,13 @@ var _ = Describe("Generic DAO", func() {
 
 			// Create the tenancy logic:
 			tenancyLogic := auth.NewMockTenancyLogic(ctrl)
-			tenancyLogic.EXPECT().DetermineAssignedTenants(gomock.Any()).
+			tenancyLogic.EXPECT().DetermineAssignableTenants(gomock.Any()).
+				Return(
+					collections.NewSet("my_tenant"),
+					nil,
+				).
+				AnyTimes()
+			tenancyLogic.EXPECT().DetermineDefaultTenants(gomock.Any()).
 				Return(
 					collections.NewSet("my_tenant"),
 					nil,
@@ -1432,7 +1438,10 @@ var _ = Describe("Generic DAO", func() {
 			It("Filters results based on tenant visibility", func() {
 				// Create a new DAO with restricted tenant visibility:
 				restrictedTenancyLogic := auth.NewMockTenancyLogic(ctrl)
-				restrictedTenancyLogic.EXPECT().DetermineAssignedTenants(gomock.Any()).
+				restrictedTenancyLogic.EXPECT().DetermineAssignableTenants(gomock.Any()).
+					Return(collections.NewSet("tenant_a"), nil).
+					AnyTimes()
+				restrictedTenancyLogic.EXPECT().DetermineDefaultTenants(gomock.Any()).
 					Return(collections.NewSet("tenant_a"), nil).
 					AnyTimes()
 				restrictedTenancyLogic.EXPECT().DetermineVisibleTenants(gomock.Any()).

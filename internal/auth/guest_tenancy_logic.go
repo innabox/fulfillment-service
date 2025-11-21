@@ -52,15 +52,24 @@ func (b *GuestTenancyLogicBuilder) Build() (result *GuestTenancyLogic, err error
 	return
 }
 
-// DetermineAssignedTenants returns a set containing only the guest tenant, regardless of the user's identity.
-func (p *GuestTenancyLogic) DetermineAssignedTenants(_ context.Context) (result collections.Set[string], err error) {
-	result = collections.NewSet("guest")
+// DetermineAssignableTenants returns a set containing only the guest tenant, regardless of the user's identity.
+func (p *GuestTenancyLogic) DetermineAssignableTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = GuestTenants
+	return
+}
+
+// DetermineDefaultTenants returns a set containing only the guest tenant, regardless of the user's identity.
+func (p *GuestTenancyLogic) DetermineDefaultTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = GuestTenants
 	return
 }
 
 // DetermineVisibleTenants returns a set containing both the guest and shared tenants, allowing guest users to see
 // objects from both tenants.
 func (p *GuestTenancyLogic) DetermineVisibleTenants(_ context.Context) (result collections.Set[string], err error) {
-	result = collections.NewSet("guest", "shared")
+	result = GuestTenants.Union(SharedTenants)
 	return
 }
+
+// GuestTenants is the set of tenants that are assigned to guest users.
+var GuestTenants = collections.NewSet("guest")

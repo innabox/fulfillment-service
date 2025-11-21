@@ -52,14 +52,26 @@ var _ = Describe("Default tenancy logic", func() {
 	})
 
 	Describe("Regular users authenticated with JWT", func() {
-		It("Returns the groups as assigned tenants", func() {
+		It("Returns the groups as assignable tenants", func() {
 			subject := &Subject{
 				User:   "my_user",
 				Groups: []string{"group1", "group2"},
 				Source: SubjectSourceJwt,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			result, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
+		})
+
+		It("Returns the groups as default tenants", func() {
+			subject := &Subject{
+				User:   "my_user",
+				Groups: []string{"group1", "group2"},
+				Source: SubjectSourceJwt,
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			result, err := logic.DetermineDefaultTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
 		})
@@ -89,13 +101,24 @@ var _ = Describe("Default tenancy logic", func() {
 	})
 
 	Describe("Service accounts", func() {
-		It("Returns the namespace as the assigned tenant for a service account", func() {
+		It("Returns the namespace as the assignable tenant for a service account", func() {
 			subject := &Subject{
 				User:   "system:serviceaccount:my-ns:my-sa",
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			result, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Inclusions()).To(ConsistOf("my-ns"))
+		})
+
+		It("Returns the namespace as the default tenant for a service account", func() {
+			subject := &Subject{
+				User:   "system:serviceaccount:my-ns:my-sa",
+				Source: SubjectSourceServiceAccount,
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			result, err := logic.DetermineDefaultTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Inclusions()).To(ConsistOf("my-ns"))
 		})
@@ -117,7 +140,7 @@ var _ = Describe("Default tenancy logic", func() {
 				User:   "system:serviceaccount:another-ns:another-sa",
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			result, err := logic.DetermineDefaultTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Inclusions()).To(ConsistOf("another-ns"))
 		})
@@ -130,7 +153,7 @@ var _ = Describe("Default tenancy logic", func() {
 				Source: SubjectSource("invalid"),
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			_, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineDefaultTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unknown subject source"))
 			Expect(err.Error()).To(ContainSubstring("invalid"))
@@ -154,7 +177,7 @@ var _ = Describe("Default tenancy logic", func() {
 				Source: SubjectSource(""),
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			_, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineDefaultTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unknown subject source"))
 		})

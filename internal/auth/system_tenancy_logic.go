@@ -53,8 +53,15 @@ func (b *SystemTenancyLogicBuilder) Build() (result *SystemTenancyLogic, err err
 	return
 }
 
-// DetermineAssignedTenants returns the shared tenant for objects created through the private API.
-func (p *SystemTenancyLogic) DetermineAssignedTenants(_ context.Context) (result collections.Set[string], err error) {
+// DetermineAssignableTenants returns a universal set of tenants, which allows the private API to assign objects to any
+// tenant.
+func (p *SystemTenancyLogic) DetermineAssignableTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = AllTenants
+	return
+}
+
+// DetermineDefaultTenants returns the shared tenant for objects created through the private API.
+func (p *SystemTenancyLogic) DetermineDefaultTenants(_ context.Context) (result collections.Set[string], err error) {
 	result = SharedTenants
 	return
 }

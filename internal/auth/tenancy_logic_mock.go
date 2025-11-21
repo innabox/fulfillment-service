@@ -41,19 +41,34 @@ func (m *MockTenancyLogic) EXPECT() *MockTenancyLogicMockRecorder {
 	return m.recorder
 }
 
-// DetermineAssignedTenants mocks base method.
-func (m *MockTenancyLogic) DetermineAssignedTenants(ctx context.Context) (collections.Set[string], error) {
+// DetermineAssignableTenants mocks base method.
+func (m *MockTenancyLogic) DetermineAssignableTenants(ctx context.Context) (collections.Set[string], error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DetermineAssignedTenants", ctx)
+	ret := m.ctrl.Call(m, "DetermineAssignableTenants", ctx)
 	ret0, _ := ret[0].(collections.Set[string])
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// DetermineAssignedTenants indicates an expected call of DetermineAssignedTenants.
-func (mr *MockTenancyLogicMockRecorder) DetermineAssignedTenants(ctx any) *gomock.Call {
+// DetermineAssignableTenants indicates an expected call of DetermineAssignableTenants.
+func (mr *MockTenancyLogicMockRecorder) DetermineAssignableTenants(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetermineAssignedTenants", reflect.TypeOf((*MockTenancyLogic)(nil).DetermineAssignedTenants), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetermineAssignableTenants", reflect.TypeOf((*MockTenancyLogic)(nil).DetermineAssignableTenants), ctx)
+}
+
+// DetermineDefaultTenants mocks base method.
+func (m *MockTenancyLogic) DetermineDefaultTenants(ctx context.Context) (collections.Set[string], error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DetermineDefaultTenants", ctx)
+	ret0, _ := ret[0].(collections.Set[string])
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DetermineDefaultTenants indicates an expected call of DetermineDefaultTenants.
+func (mr *MockTenancyLogicMockRecorder) DetermineDefaultTenants(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetermineDefaultTenants", reflect.TypeOf((*MockTenancyLogic)(nil).DetermineDefaultTenants), ctx)
 }
 
 // DetermineVisibleTenants mocks base method.

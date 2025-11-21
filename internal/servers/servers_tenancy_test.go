@@ -81,7 +81,13 @@ var _ = Describe("Tenancy logic", func() {
 	It("Returns tenants in metadata when object is created", func() {
 		// Create a mock tenancy logic that returns specific tenants:
 		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(
+				collections.NewSet("my-tenant", "your-tenant"),
+				nil,
+			).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
 			Return(
 				collections.NewSet("my-tenant", "your-tenant"),
 				nil,

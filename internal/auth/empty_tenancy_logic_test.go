@@ -40,15 +40,27 @@ var _ = Describe("Empty tenancy logic", func() {
 		Expect(logic).ToNot(BeNil())
 	})
 
-	It("Should return an empty list of tenants", func() {
-		result, err := logic.DetermineAssignedTenants(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Empty()).To(BeTrue())
+	Describe("Determine assignable tenants", func() {
+		It("Should return the universal set of tenants", func() {
+			result, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Universal()).To(BeTrue())
+		})
 	})
 
-	It("Should return an empty list of visible tenants", func() {
-		result, err := logic.DetermineVisibleTenants(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Universal()).To(BeTrue())
+	Describe("Determine default tenants", func() {
+		It("Should return an empty set of tenants", func() {
+			result, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Empty()).To(BeTrue())
+		})
+	})
+
+	Describe("Determine visible tenants", func() {
+		It("Should return an universal set of tenants", func() {
+			result, err := logic.DetermineVisibleTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Universal()).To(BeTrue())
+		})
 	})
 })

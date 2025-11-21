@@ -40,17 +40,27 @@ var _ = Describe("Guest tenancy logic", func() {
 		Expect(logic).ToNot(BeNil())
 	})
 
-	It("Should return the guest tenant", func() {
-		result, err := logic.DetermineAssignedTenants(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Contains("guest")).To(BeTrue())
-		Expect(result.Contains("shared")).To(BeFalse())
+	Describe("Determine assignable tenants", func() {
+		It("Should return the guest tenant", func() {
+			result, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(GuestTenants)).To(BeTrue())
+		})
 	})
 
-	It("Should return guest and shared as visible tenants", func() {
-		result, err := logic.DetermineVisibleTenants(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Contains("guest")).To(BeTrue())
-		Expect(result.Contains("shared")).To(BeTrue())
+	Describe("Determine default tenants", func() {
+		It("Should return the guest tenant", func() {
+			result, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(GuestTenants)).To(BeTrue())
+		})
+	})
+
+	Describe("Determine visible tenants", func() {
+		It("Should return the guest and shared tenants", func() {
+			result, err := logic.DetermineVisibleTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(GuestTenants.Union(SharedTenants))).To(BeTrue())
+		})
 	})
 })

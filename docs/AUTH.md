@@ -375,42 +375,74 @@ To ensure that user groups are included in the JWT tokens issued by Keycloak:
 
 ## Tenancy Logic
 
-The fulfillment service implements a hard-coded tenancy logic that determines:
-- Which tenants are assigned to resources when they are created
-- Which tenants a user can see resources from
+The fulfillment service implements a tenancy logic that manages how resources are associated with
+tenants and which resources users can access. The tenancy logic operates with three distinct
+concepts:
 
-### Tenancy Concepts
+1. **Assignable Tenants**: The set of tenants that can be assigned to a resource, either explicitly
+   by the user or automatically as defaults. This represents the complete set of valid tenant
+   assignments for the user's context. Note that some assignable tenants may be invisible to the
+   user, meaning the user cannot explicitly select them, but they could still be assigned by
+   default.
 
-1. **Shared Tenant**: Resources assigned to the `shared` tenant are visible to **everyone**. This is useful for templates, shared configurations, or other resources that should be accessible across all tenants.
+2. **Default Tenants**: The tenants that will be automatically assigned to a resource when the user
+   creates it without explicitly specifying tenants. The default tenants are always a subset of the
+   assignable tenants.
 
-2. **Multi-Tenant Users**: A user can belong to multiple tenants. This is configured in Keycloak by assigning the user to multiple groups. The fulfillment service will reflect this one-to-many mapping.
+3. **Visible Tenants**: The tenants from which a user can see resources. When listing or querying
+   resources, only those belonging to visible tenants will be returned. Users can only explicitly
+   assign tenants that are both assignable and visible to them. Some default tenants may be
+   invisible, meaning a user could have resources automatically assigned to tenants they cannot
+   later query.
+
+The tenancy logic can be configured using the `--tenancy-logic` command-line flag when starting the
+fulfillment service.
+
+### Additional Tenancy Concepts
+
+1. **Shared Tenant**: The `shared` tenant is a special tenant that is always included in the
+   visible tenants for all users. Resources assigned to the `shared` tenant are visible to
+   **everyone**. This is useful for templates, shared configurations, or other resources that
+   should be accessible across all tenants.
+
+2. **Multi-Tenant Users**: A user can belong to multiple tenants. This is configured in Keycloak by
+   assigning the user to multiple groups. The fulfillment service will reflect this one-to-many
+   mapping in both the assignable and visible tenant sets.
 
 3. **Tenant Assignment**: When a user creates a resource:
 
-   - a user assignment is recorded in the metadata.creators field of the object, and is purely informative. The system doesn't currently use it to make any authorization or visibility decisions.
-   - Tenant assignment is recorded in the metadata.tenants fields and it used by the server to make visibility decisions: a user can only see an object if she belongs to the same tenant than the user. Actually, as both users and objects can have multiple tenants, a user can only see an object if the intersection between the tenants of the user and the tenants of the object isn't empty.
+   - A user assignment is recorded in the `metadata.creators` field of the object, and is purely
+     informative. The system doesn't currently use it to make any authorization or visibility
+     decisions.
+   - If the user explicitly specifies tenants, those tenants are assigned. The user can only
+     explicitly assign tenants that are both assignable and visible.
+   - If the user doesn't specify tenants, the default tenants are automatically assigned. Note that
+     some default tenants may be invisible to the user.
+   - Tenant assignment is recorded in the `metadata.tenants` field and is used by the server to
+     make visibility decisions.
 
-4. **Tenant Visibility**: When a user queries resources, they can only see:
-   - Resources from tenants (groups) they belong to
-   - Resources from the `shared` tenant
+4. **Tenant Visibility**: When a user queries resources, the visible tenants determine what they
+   can see. A user can only see a resource if the intersection between the user's visible tenants
+   and the resource's assigned tenants is not empty. Since both users and resources can have
+   multiple tenants, a non-empty intersection is sufficient for visibility.
 
-### Tenancy Logic Implementation
+### Tenancy Logic Implementations
 
-The tenancy logic can be configured using the `--tenancy-logic` command-line flag when starting the fulfillment
-service. The following implementations are available:
+The following tenancy logic implementations are available:
 
 #### Default (JWT-Authenticated Users)
 
 Use `--tenancy-logic=default` for JWT-authenticated users (Keycloak):
 
-- **Assigned Tenants**: Resources are assigned to the user's groups (from the `groups` claim in the JWT token)
-- **Visible Tenants**: Users can see resources from:
-  - All groups they belong to
-  - The `shared` tenant
+- **Assignable Tenants**: All groups from the user's JWT token (`groups` claim)
+- **Default Tenants**: Same as assignable tenants (all user's groups)
+- **Visible Tenants**: All user's groups plus the `shared` tenant
 
 Example:
 - User `alice` belongs to groups: `["team-a", "team-b"]`
-- When `alice` creates a cluster:
+- Assignable tenants: `["team-a", "team-b"]`
+- Default tenants: `["team-a", "team-b"]`
+- When `alice` creates a cluster without specifying tenants:
   - The cluster is assigned to tenants: `["team-a", "team-b"]`
 - When `alice` lists clusters:
   - She can see clusters from: `["team-a", "team-b", "shared"]`
@@ -419,14 +451,15 @@ Example:
 
 Use `--tenancy-logic=serviceaccount` for service account authentication:
 
-- **Assigned Tenants**: Resources are assigned to a tenant matching the service account's namespace
-- **Visible Tenants**: Service accounts can see resources from:
-  - Their namespace (as a tenant)
-  - The `shared` tenant
+- **Assignable Tenants**: The service account's namespace
+- **Default Tenants**: Same as assignable (the namespace)
+- **Visible Tenants**: The namespace plus the `shared` tenant
 
 Example:
 - Service account `system:serviceaccount:innabox:controller`
-- When creating a resource:
+- Assignable tenants: `["innabox"]`
+- Default tenants: `["innabox"]`
+- When creating a resource without specifying tenants:
   - Assigned to tenant: `["innabox"]`
 - When listing resources:
   - Can see resources from: `["innabox", "shared"]`
@@ -435,17 +468,18 @@ Example:
 
 Use `--tenancy-logic=guest` for guest user access:
 
-- **Assigned Tenants**: All resources are assigned to the `guest` tenant, regardless of the user's identity
-- **Visible Tenants**: Users can see resources from:
-  - The `guest` tenant
-  - The `shared` tenant
+- **Assignable Tenants**: The `guest` tenant only
+- **Default Tenants**: The `guest` tenant
+- **Visible Tenants**: The `guest` tenant plus the `shared` tenant
 
 This is intended only for development and testing environments, in combination with the `guest`
 authentication function.
 
 Example:
 - Any user (authenticated or guest)
-- When creating a resource:
+- Assignable tenants: `["guest"]`
+- Default tenants: `["guest"]`
+- When creating a resource without specifying tenants:
   - Assigned to tenant: `["guest"]`
 - When listing resources:
   - Can see resources from: `["guest", "shared"]`
@@ -454,7 +488,8 @@ Example:
 
 Use `--tenancy-logic=empty` to disable tenant assignment and filtering:
 
-- **Assigned Tenants**: No tenants are assigned to resources
+- **Assignable Tenants**: Empty set (no tenants can be assigned)
+- **Default Tenants**: Empty set (no tenants assigned by default)
 - **Visible Tenants**: All resources are visible (no tenant filtering applied)
 
 This is primarily used for testing or development scenarios where tenancy should be disabled.
@@ -671,8 +706,9 @@ The fulfillment service uses a two-level authorization approach:
    - The service:
      - Extracts user and tenant information from the `x-subject` header (set by Authorino)
      - Applies tenancy logic to determine:
-       - Which tenants the user can see
-       - Which tenants resources should be assigned to
+       - **Assignable tenants**: Which tenants can be assigned to resources
+       - **Default tenants**: Which tenants to assign if not explicitly specified
+       - **Visible tenants**: Which tenants the user can query resources from
      - Validates access to specific resources
      - Performs the operation or returns an error
 
@@ -688,7 +724,8 @@ The fulfillment service uses a two-level authorization approach:
    - **Result**: Authorized ✅
 4. **Fulfillment Service**:
    - Extracts user: `alice`, groups: `["team-a"]`
-   - Creates cluster and assigns it to tenants: `["team-a"]`
+   - Determines assignable tenants: `["team-a"]`, default tenants: `["team-a"]`, visible tenants: `["team-a", "shared"]`
+   - No tenants specified, so assigns the default tenants: `["team-a"]`
    - **Result**: Cluster created ✅
 
 #### Scenario 2: Client User Accessing Admin-Only Method

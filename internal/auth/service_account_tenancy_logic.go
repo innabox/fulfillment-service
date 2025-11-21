@@ -61,8 +61,10 @@ func (b *ServiceAccountTenancyLogicBuilder) Build() (result *ServiceAccountTenan
 	return
 }
 
-// DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
-func (p *ServiceAccountTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
+// DetermineAssignableTenants extracts the subject from the auth context and returns the identifiers of the tenants
+// that can be assigned to objects.
+func (p *ServiceAccountTenancyLogic) DetermineAssignableTenants(ctx context.Context) (result collections.Set[string],
+	err error) {
 	// Objects created by a service account are assigned to a tenant that is the namespace of the service account.
 	namespace, err := p.extractNamespace(ctx)
 	if err != nil {
@@ -72,11 +74,20 @@ func (p *ServiceAccountTenancyLogic) DetermineAssignedTenants(ctx context.Contex
 	return
 }
 
+// DetermineDefaultTenants extracts the subject from the auth context and returns the identifiers of the tenants
+// that will be assigned by default to objects.
+func (p *ServiceAccountTenancyLogic) DetermineDefaultTenants(ctx context.Context) (result collections.Set[string],
+	err error) {
+	result, err = p.DetermineAssignableTenants(ctx)
+	return
+}
+
 // DetermineVisibleTenants extracts the subject from the auth context and returns the identifiers of the tenants
 // that the current user has permission to see.
-func (p *ServiceAccountTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string], err error) {
-	// A service account can see the resources correponding to the tenant with the same name as the namespace of the
-	// service account, as well as the shared tenant.
+func (p *ServiceAccountTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string],
+	err error) {
+	// A service account can see the resources correponding to the tenant with the same name as the namespace of
+	// the service account, as well as the shared tenant.
 	namespace, err := p.extractNamespace(ctx)
 	if err != nil {
 		return

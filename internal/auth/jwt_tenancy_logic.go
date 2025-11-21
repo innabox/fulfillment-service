@@ -58,9 +58,9 @@ func (b *JwtTenancyLogicBuilder) Build() (result *JwtTenancyLogic, err error) {
 	return
 }
 
-// DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
-// For JWT-authenticated users, objects are assigned to the groups of the user.
-func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
+// DetermineAssignableTenants extracts the subject from the auth context and returns the identifiers of the tenants
+// that can be assigned to objects.
+func (p *JwtTenancyLogic) DetermineAssignableTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
 	result = collections.NewSet(subject.Groups...)
 	if len(subject.Groups) == 0 {
@@ -72,12 +72,13 @@ func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result 
 		err = fmt.Errorf("user must belong to at least one group to create objects")
 		return
 	}
-	p.logger.DebugContext(
-		ctx,
-		"Determined assigned tenants for JWT user",
-		slog.String("user", subject.User),
-		slog.Any("tenants", result.Inclusions()),
-	)
+	return
+}
+
+// DetermineDefaultTenants extracts the subject from the auth context and returns the identifiers of the tenants.
+// For JWT-authenticated users, objects are assigned to the groups of the user.
+func (p *JwtTenancyLogic) DetermineDefaultTenants(ctx context.Context) (result collections.Set[string], err error) {
+	result, err = p.DetermineAssignableTenants(ctx)
 	return
 }
 
@@ -86,12 +87,5 @@ func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result 
 func (p *JwtTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
 	result = SharedTenants.Union(collections.NewSet(subject.Groups...))
-	p.logger.DebugContext(
-		ctx,
-		"Determined visible tenants for JWT user",
-		slog.String("user", subject.User),
-		slog.Any("groups", subject.Groups),
-		slog.Any("tenants", result.Inclusions()),
-	)
 	return
 }

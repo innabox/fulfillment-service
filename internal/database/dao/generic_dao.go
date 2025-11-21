@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize/english"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/collections"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/json"
 	"github.com/innabox/fulfillment-service/internal/uuid"
@@ -655,26 +657,16 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	if metadata != nil {
 		name = metadata.GetName()
 	}
-	creatorsSet, err := d.attributionLogic.DetermineAssignedCreators(ctx)
+
+	// Calculate the creators and tenants:
+	creators, err := d.calculateCreators(ctx, object)
 	if err != nil {
 		return
 	}
-	if !creatorsSet.Finite() {
-		err = errors.New("creators set is infinite")
-		return
-	}
-	creators := creatorsSet.Inclusions()
-	sort.Strings(creators)
-	tenantsSet, err := d.tenancyLogic.DetermineAssignedTenants(ctx)
+	tenants, err := d.calculateTenants(ctx, object, object)
 	if err != nil {
 		return
 	}
-	if !tenantsSet.Finite() {
-		err = errors.New("tenants set is infinite")
-		return
-	}
-	tenants := tenantsSet.Inclusions()
-	sort.Strings(tenants)
 
 	// Save the object:
 	data, err := d.marshalData(object)
@@ -777,6 +769,12 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		name = metadata.GetName()
 	}
 
+	// Calculate the tenants:
+	tenants, err := d.calculateTenants(ctx, current, object)
+	if err != nil {
+		return
+	}
+
 	// Save the object:
 	data, err := d.marshalData(object)
 	if err != nil {
@@ -787,29 +785,27 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		update %s set
 			name = $1,
 			finalizers = $2,
-			data = $3
+			data = $3,
+			tenants = $4
 		where
-			id = $4
+			id = $5
 		returning
 			creation_timestamp,
 			deletion_timestamp,
-			creators,
-			tenants
+			creators
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, name, finalizers, data, id)
+	row := tx.QueryRow(ctx, sql, name, finalizers, data, tenants, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
 		creators   []string
-		tenants    []string
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
 		&creators,
-		&tenants,
 	)
 	if err != nil {
 		return
@@ -994,6 +990,133 @@ func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, 
 	sql = fmt.Sprintf(`delete from %s where id = $1`, d.table)
 	_, err = tx.Exec(ctx, sql, id)
 	return err
+}
+
+func (d *GenericDAO[O]) calculateCreators(ctx context.Context, objectt O) (result []string, err error) {
+	// Before returning, convert the set to a list and sort it:
+	var calculated collections.Set[string]
+	defer func() {
+		if err != nil {
+			return
+		}
+		result = calculated.Inclusions()
+		sort.Strings(result)
+	}()
+
+	// Calculate the assigned creators:
+	calculated, err = d.attributionLogic.DetermineAssignedCreators(ctx)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+// calculateTenants calculates the tenants for the given object.
+func (d *GenericDAO[O]) calculateTenants(ctx context.Context, object, update O) (result []string, err error) {
+	// Before returning, convert the set to a list and sort it:
+	var calculated collections.Set[string]
+	defer func() {
+		if err != nil {
+			return
+		}
+		result = calculated.Inclusions()
+		sort.Strings(result)
+	}()
+
+	// Get the current and requested tenants from the metadata:
+	current := d.getTenants(object)
+	requested := d.getTenants(update)
+
+	// Calculate the assignable and visible tenants:
+	assignable, err := d.tenancyLogic.DetermineAssignableTenants(ctx)
+	if err != nil {
+		return
+	}
+	visible, err := d.tenancyLogic.DetermineVisibleTenants(ctx)
+	if err != nil {
+		return
+	}
+
+	// Check that the user isn't requesting any tenants that aren't compabible with the visible and assignable
+	// tenants.
+	err = d.checkTenants(ctx, requested, visible, assignable)
+	if err != nil {
+		return
+	}
+
+	// If the user is requesting an empty list of tenants then we will assume that they want to use the default
+	// tenants (for new objects) or the current tenants (for updated objects):
+	if requested.Empty() {
+		if current.Empty() {
+			requested, err = d.tenancyLogic.DetermineDefaultTenants(ctx)
+			if err != nil {
+				return
+			}
+		} else {
+			requested = current
+		}
+	}
+
+	// The result should be whatever the user requested plus the tenants that are assignble and invisible:
+	calculated = requested.Union(assignable.Intersection(visible.Negate()))
+	return
+}
+
+// getTenants returns the tenants of the given object.
+func (d *GenericDAO[O]) getTenants(object O) collections.Set[string] {
+	metadata := d.getMetadata(object)
+	if metadata == nil {
+		return collections.NewEmptySet[string]()
+	}
+	return collections.NewSet(metadata.GetTenants()...)
+}
+
+// checkTenants verifies that the given requested tenants are compatible with the given visible and assignable tenants,
+// and generates an informative error message if they aren't.
+func (d *GenericDAO[O]) checkTenants(ctx context.Context,
+	requested, visible, assignable collections.Set[string]) error {
+	// Make sure that the user isn't requesting tenants that are invisible to them:
+	invisible := requested.Difference(visible)
+	if !invisible.Empty() {
+		ids := invisible.Inclusions()
+		d.logger.WarnContext(
+			ctx,
+			"User is trying to assign tenants that are invisible to them",
+			slog.Any("visible", visible.Inclusions()),
+			slog.Any("requested", ids),
+		)
+		if len(ids) == 1 {
+			return fmt.Errorf("tenant '%s' doesn't exist", ids[0])
+		}
+		sort.Strings(ids)
+		for i, tenantId := range ids {
+			ids[i] = fmt.Sprintf("'%s'", tenantId)
+		}
+		return fmt.Errorf("tenants %s don't exist", english.WordSeries(ids, "and"))
+	}
+
+	// Make sure that the user ins't requesting tenants that aren't assignable to them:
+	unassignable := requested.Difference(assignable)
+	if !unassignable.Empty() {
+		ids := unassignable.Inclusions()
+		d.logger.WarnContext(
+			ctx,
+			"User is trying to assign tenants that are unassignable",
+			slog.Any("assignable", assignable.Inclusions()),
+			slog.Any("requested", ids),
+		)
+		if len(ids) == 1 {
+			return fmt.Errorf("tenant '%s' can't be assigned", ids[0])
+		}
+		sort.Strings(ids)
+		for i, tenantId := range ids {
+			ids[i] = fmt.Sprintf("'%s'", tenantId)
+		}
+		return fmt.Errorf("tenants %s can't be assigned", english.WordSeries(ids, "and"))
+	}
+
+	return nil
 }
 
 func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {

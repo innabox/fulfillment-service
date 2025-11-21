@@ -78,14 +78,26 @@ func (b *DefaultTenancyLogicBuilder) Build() (result *DefaultTenancyLogic, err e
 	return
 }
 
-// DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
-func (p *DefaultTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
+// DetermineAssignableTenants extracts the subject from the auth context and returns the identifiers of the tenants
+// that can be assigned to objects.
+func (p *DefaultTenancyLogic) DetermineAssignableTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
 	delegate, err := p.selectDelegate(subject)
 	if err != nil {
 		return
 	}
-	return delegate.DetermineAssignedTenants(ctx)
+	return delegate.DetermineAssignableTenants(ctx)
+}
+
+// DetermineDefaultTenants extracts the subject from the auth context and returns the identifiers of the tenants
+// that will be assigned by default to objects.
+func (p *DefaultTenancyLogic) DetermineDefaultTenants(ctx context.Context) (result collections.Set[string], err error) {
+	subject := SubjectFromContext(ctx)
+	delegate, err := p.selectDelegate(subject)
+	if err != nil {
+		return
+	}
+	return delegate.DetermineDefaultTenants(ctx)
 }
 
 // DetermineVisibleTenants extracts the subject from the auth context and returns the identifiers of the tenants

@@ -45,21 +45,20 @@ var _ = Describe("JWT tenancy logic", func() {
 		It("Fails if logger is not set", func() {
 			logic, err := NewJwtTenancyLogic().
 				Build()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("logger is mandatory"))
+			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(logic).To(BeNil())
 		})
 	})
 
-	Describe("Determine assigned tenants", func() {
-		It("Returns the groups as assigned tenants", func() {
+	Describe("Determine assignable tenants", func() {
+		It("Returns the groups as assignable tenants", func() {
 			subject := &Subject{
 				Source: SubjectSourceJwt,
 				User:   "my_user",
 				Groups: []string{"group1", "group2"},
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			result, err := logic.DetermineAssignableTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
 		})
@@ -71,9 +70,34 @@ var _ = Describe("JWT tenancy logic", func() {
 				Groups: []string{},
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("user must belong to at least one group"))
+			result, err := logic.DetermineAssignableTenants(ctx)
+			Expect(err).To(MatchError("user must belong to at least one group to create objects"))
+			Expect(result.Empty()).To(BeTrue())
+		})
+	})
+
+	Describe("Determine default tenants", func() {
+		It("Returns the groups as default tenants", func() {
+			subject := &Subject{
+				Source: SubjectSourceJwt,
+				User:   "my_user",
+				Groups: []string{"group1", "group2"},
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			result, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
+		})
+
+		It("Returns error when user has no groups", func() {
+			subject := &Subject{
+				Source: SubjectSourceJwt,
+				User:   "my_user",
+				Groups: []string{},
+			}
+			ctx = ContextWithSubject(ctx, subject)
+			result, err := logic.DetermineDefaultTenants(ctx)
+			Expect(err).To(MatchError("user must belong to at least one group to create objects"))
 			Expect(result.Empty()).To(BeTrue())
 		})
 	})
