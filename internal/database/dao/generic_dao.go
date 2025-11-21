@@ -453,7 +453,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		if err != nil {
 			return
 		}
-		md := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+		md := d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 		item.SetId(id)
 		d.setMetadata(item, md)
 		items = append(items, item)
@@ -563,7 +563,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, id string, forU
 	if err != nil {
 		return
 	}
-	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	metadata := d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 	result = object
@@ -715,7 +715,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 	created := d.cloneObject(object)
-	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	metadata = d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	created.SetId(id)
 	d.setMetadata(created, metadata)
 
@@ -806,7 +806,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 	object = d.cloneObject(object)
-	metadata = d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	metadata = d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
@@ -925,7 +925,7 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	if err != nil {
 		return
 	}
-	metadata := d.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	metadata := d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
@@ -1010,7 +1010,7 @@ func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
 	return d.unmarshalOptions.Unmarshal(data, object)
 }
 
-func (d *GenericDAO[O]) makeMetadata(creationTs, deletionTs time.Time, finalizers []string,
+func (d *GenericDAO[O]) makeMetadata(ctx context.Context, creationTs, deletionTs time.Time, finalizers []string,
 	creators []string, tenants []string, name string) metadataIface {
 	result := d.metadataTemplate.New().Interface().(metadataIface)
 	result.SetName(name)
@@ -1022,7 +1022,42 @@ func (d *GenericDAO[O]) makeMetadata(creationTs, deletionTs time.Time, finalizer
 	}
 	result.SetFinalizers(finalizers)
 	result.SetCreators(creators)
-	result.SetTenants(tenants)
+	result.SetTenants(d.filterTenants(ctx, tenants))
+	return result
+}
+
+// filterTenants returns the intersection of the object's tenants and the user's visible tenants.
+func (d *GenericDAO[O]) filterTenants(ctx context.Context, objectTenants []string) []string {
+	// Get the tenants that the current user has permission to see:
+	visibleTenants, err := d.tenancyLogic.DetermineVisibleTenants(ctx)
+	if err != nil {
+		d.logger.ErrorContext(
+			ctx,
+			"Failed to determine visible tenants",
+			slog.Any("error", err),
+		)
+		return []string{}
+	}
+
+	// If no visible tenants are returned, don't apply any filtering. This allows the empty tenancy logic to work
+	// as a permissive fallback.
+	if len(visibleTenants) == 0 {
+		return objectTenants
+	}
+
+	// Calculate the intersection of object tenants and visible tenants:
+	visibleTenantsSet := make(map[string]struct{}, len(visibleTenants))
+	for _, tenant := range visibleTenants {
+		visibleTenantsSet[tenant] = struct{}{}
+	}
+
+	result := make([]string, 0, len(objectTenants))
+	for _, tenant := range objectTenants {
+		if _, ok := visibleTenantsSet[tenant]; ok {
+			result = append(result, tenant)
+		}
+	}
+
 	return result
 }
 

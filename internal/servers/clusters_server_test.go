@@ -161,6 +161,7 @@ var _ = Describe("Clusters server", func() {
 				Title:       "ACME GPU",
 				Description: "ACME GPU.",
 			}.Build())
+			Expect(err).ToNot(HaveOccurred())
 			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
 				Id:          "hal_9000",
 				Title:       "HAL 9000",
