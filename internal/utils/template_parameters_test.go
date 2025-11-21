@@ -14,8 +14,6 @@ language governing permissions and limitations under the License.
 package utils
 
 import (
-	"testing"
-
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc/codes"
@@ -25,11 +23,6 @@ import (
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
-
-func TestTemplateParameters(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Template Parameters")
-}
 
 var _ = Describe("ValidateTemplateParameters", func() {
 	var (

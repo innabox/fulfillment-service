@@ -15,8 +15,10 @@ package gvks
 
 import "k8s.io/apimachinery/pkg/runtime/schema"
 
+var CloudkitGroup = "cloudkit.openshift.io"
+
 var ClusterOrder = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   CloudkitGroup,
 	Version: "v1alpha1",
 	Kind:    "ClusterOrder",
 }
@@ -32,7 +34,7 @@ var HostedCluster = schema.GroupVersionKind{
 var HostedClusterList = listGVK(HostedCluster)
 
 var VirtualMachine = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   CloudkitGroup,
 	Version: "v1alpha1",
 	Kind:    "VirtualMachine",
 }
@@ -40,7 +42,7 @@ var VirtualMachine = schema.GroupVersionKind{
 var VirtualMachineList = listGVK(VirtualMachine)
 
 var Host = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   CloudkitGroup,
 	Version: "v1alpha1",
 	Kind:    "Host",
 }
@@ -48,7 +50,7 @@ var Host = schema.GroupVersionKind{
 var HostList = listGVK(Host)
 
 var HostPool = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   CloudkitGroup,
 	Version: "v1alpha1",
 	Kind:    "HostPool",
 }

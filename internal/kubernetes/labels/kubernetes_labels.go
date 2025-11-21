@@ -19,6 +19,8 @@ import (
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 )
 
+var TenantId = fmt.Sprintf("%s/%s", gvks.CloudkitGroup, "tenant-id")
+
 // ClusterOrderUuid is the label where the fulfillment API will write the identifier of the order.
 var ClusterOrderUuid = fmt.Sprintf("%s/%s", gvks.ClusterOrder.Group, "clusterorder-uuid")
 
