@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dustin/go-humanize/english"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -662,7 +663,11 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	if creators == nil {
 		creators = []string{}
 	}
-	tenants, err := d.tenancyLogic.DetermineAssignedTenants(ctx)
+	var tenants []string
+	if metadata != nil {
+		tenants = metadata.GetTenants()
+	}
+	tenants, err = d.determineAssignedTenants(ctx, tenants)
 	if err != nil {
 		return
 	}
@@ -769,6 +774,17 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	if metadata != nil {
 		name = metadata.GetName()
 	}
+	var tenants []string
+	if metadata != nil {
+		tenants = metadata.GetTenants()
+	}
+	tenants, err = d.determineAssignedTenants(ctx, tenants)
+	if err != nil {
+		return
+	}
+	if tenants == nil {
+		tenants = []string{}
+	}
 
 	// Save the object:
 	data, err := d.marshalData(object)
@@ -780,29 +796,27 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		update %s set
 			name = $1,
 			finalizers = $2,
-			data = $3
+			data = $3,
+			tenants = $4
 		where
-			id = $4
+			id = $5
 		returning
 			creation_timestamp,
 			deletion_timestamp,
-			creators,
-			tenants
+			creators
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, name, finalizers, data, id)
+	row := tx.QueryRow(ctx, sql, name, finalizers, data, tenants, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
 		creators   []string
-		tenants    []string
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
 		&creators,
-		&tenants,
 	)
 	if err != nil {
 		return
@@ -987,6 +1001,79 @@ func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, 
 	sql = fmt.Sprintf(`delete from %s where id = $1`, d.table)
 	_, err = tx.Exec(ctx, sql, id)
 	return err
+}
+
+func (d *GenericDAO[O]) determineAssignedTenants(ctx context.Context,
+	alternativeAssignedTenants []string) (result []string, err error) {
+	// Get the default assigned tenants as determined by the tenancy logic, and return them if the user hasn't
+	// explicitly provided an alternative list:
+	defaultAssignedTenants, err := d.tenancyLogic.DetermineAssignedTenants(ctx)
+	if err != nil {
+		return
+	}
+	if len(alternativeAssignedTenants) == 0 {
+		result = defaultAssignedTenants
+		return
+	}
+
+	// Check and reject any tenants that are not visible to the user:
+	visibleTenants, err := d.tenancyLogic.DetermineVisibleTenants(ctx)
+	if err != nil {
+		return
+	}
+	var invisibleTenants, unassignableTenants []string
+	for _, alternativeAssignedTenant := range alternativeAssignedTenants {
+		if !slices.Contains(visibleTenants, alternativeAssignedTenant) {
+			invisibleTenants = append(invisibleTenants, alternativeAssignedTenant)
+		}
+		if !slices.Contains(defaultAssignedTenants, alternativeAssignedTenant) {
+			unassignableTenants = append(unassignableTenants, alternativeAssignedTenant)
+		}
+	}
+	if len(invisibleTenants) > 0 {
+		d.logger.WarnContext(
+			ctx,
+			"User is trying to assign alternatie tenants that aren't visible to them",
+			slog.Any("visible", defaultAssignedTenants),
+			slog.Any("tenants", alternativeAssignedTenants),
+		)
+		if len(invisibleTenants) == 1 {
+			err = fmt.Errorf("tenant '%s' doesn't exist", invisibleTenants[0])
+		} else {
+			for i, invisibleTenant := range invisibleTenants {
+				invisibleTenants[i] = fmt.Sprintf("'%s'", invisibleTenant)
+			}
+			err = fmt.Errorf("tenants %s don't exist", english.WordSeries(invisibleTenants, "and"))
+		}
+		return
+	}
+	if len(unassignableTenants) > 0 {
+		d.logger.WarnContext(
+			ctx,
+			"User is trying to assign tenants that wouldn't be assigned by default to them",
+			slog.Any("default", defaultAssignedTenants),
+			slog.Any("tenants", alternativeAssignedTenants),
+		)
+		if len(unassignableTenants) == 1 {
+			err = fmt.Errorf("tenant '%s' can't be assiged", unassignableTenants[0])
+		} else {
+			for i, unassignableTenant := range unassignableTenants {
+				unassignableTenants[i] = fmt.Sprintf("'%s'", unassignableTenant)
+			}
+			err = fmt.Errorf("tenants %s can't be assiged", english.WordSeries(unassignableTenants, "and"))
+		}
+		return
+	}
+
+	// Remove from the default assigned tenants the those that aren't in the alternative assigned tenants:
+	result = make([]string, 0, len(defaultAssignedTenants))
+	for _, tenant := range defaultAssignedTenants {
+		if slices.Contains(alternativeAssignedTenants, tenant) {
+			result = append(result, tenant)
+		}
+	}
+
+	return
 }
 
 func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {
