@@ -819,9 +819,17 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 
-	// If the object has been deleted and there are no finalizers we can now archive the object and delete the row:
+	// If the object has been deleted and there are no finalizers we can now archive the object and fire the
+	// delete event:
 	if deletionTs.Unix() != 0 && len(finalizers) == 0 {
 		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, name, data)
+		if err != nil {
+			return
+		}
+		err = d.fireEvent(ctx, Event{
+			Type:   EventTypeDeleted,
+			Object: object,
+		})
 		if err != nil {
 			return
 		}
@@ -844,11 +852,10 @@ func (d *GenericDAO[O]) Delete(ctx context.Context, id string) (err error) {
 	return
 }
 
-func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (err error) {
+func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) error {
 	// Add the id parameter:
 	if id == "" {
-		err = errors.New("object identifier is mandatory")
-		return
+		return errors.New("object identifier is mandatory")
 	}
 	filterBuffer := &strings.Builder{}
 	parameters := []any{}
@@ -856,9 +863,9 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 	filterBuffer.WriteString("id = $1")
 
 	// Add the tenancy filter:
-	err = d.addTenancyFilter(ctx, filterBuffer, &parameters)
+	err := d.addTenancyFilter(ctx, filterBuffer, &parameters)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Set the deletion timestamp of the row and simultaneousyly retrieve the data, as we need it to fire the event
@@ -912,41 +919,39 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, id string) (
 		&data,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = &ErrNotFound{
+		return &ErrNotFound{
 			ID: id,
 		}
-		return
 	}
 	if err != nil {
-		return
+		return err
 	}
 	object := d.newObject()
 	err = d.unmarshalData(data, object)
 	if err != nil {
-		return
+		return err
 	}
 	metadata := d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
 	d.setMetadata(object, metadata)
 
-	// Fire the event:
-	err = d.fireEvent(ctx, Event{
-		Type:   EventTypeDeleted,
-		Object: object,
-	})
+	// If there are finalizers we need to fire the update event instead of the delete event:
+	if len(finalizers) > 0 {
+		return d.fireEvent(ctx, Event{
+			Type:   EventTypeUpdated,
+			Object: object,
+		})
+	}
+
+	// If there are no finalizers we can now archive the object and fire the delete event:
+	err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, name, data)
 	if err != nil {
 		return err
 	}
-
-	// If there are no finalizers we can now archive the object and delete the row:
-	if len(finalizers) == 0 {
-		err = d.archive(ctx, tx, id, creationTs, deletionTs, creators, tenants, name, data)
-		if err != nil {
-			return
-		}
-	}
-
-	return
+	return d.fireEvent(ctx, Event{
+		Type:   EventTypeDeleted,
+		Object: object,
+	})
 }
 
 func (d *GenericDAO[O]) archive(ctx context.Context, tx database.Tx, id string, creationTs, deletionTs time.Time,

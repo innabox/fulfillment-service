@@ -354,4 +354,55 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(called1).To(BeTrue())
 		Expect(called2).To(BeFalse())
 	})
+
+	It("Fires update event when deleting object with finalizers", func() {
+		// Create a DAO that an event callback that saves the events:
+		events := []Event{}
+		generic, err := NewGenericDAO[*privatev1.Cluster]().
+			SetLogger(logger).
+			SetTable("clusters").
+			SetTenancyLogic(tenancy).
+			AddEventCallback(func(_ context.Context, event Event) error {
+				events = append(events, event)
+				return nil
+			}).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create an object with finalizers:
+		var object *privatev1.Cluster
+		runWithTx(func(ctx context.Context) {
+			object, err = generic.Create(ctx, &privatev1.Cluster{
+				Metadata: &privatev1.Metadata{
+					Finalizers: []string{"my-finalizer"},
+				},
+			})
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Delete the object:
+		runWithTx(func(ctx context.Context) {
+			err = generic.Delete(ctx, object.GetId())
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Remove the finalizers:
+		object.Metadata.Finalizers = []string{}
+		runWithTx(func(ctx context.Context) {
+			_, err = generic.Update(ctx, object)
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		// This should have generated four events:
+		//
+		// - The first for the creation of the object.
+		// - The second one for the delete, which is translated into an update because there are finalizers.
+		// - The third one for the update of the object that removes the finalizers.
+		// - The fourth one for the automatic deletion of the object because finalizers have been removed.
+		Expect(events).To(HaveLen(4))
+		Expect(events[0].Type).To(Equal(EventTypeCreated))
+		Expect(events[1].Type).To(Equal(EventTypeUpdated))
+		Expect(events[2].Type).To(Equal(EventTypeUpdated))
+		Expect(events[3].Type).To(Equal(EventTypeDeleted))
+	})
 })
