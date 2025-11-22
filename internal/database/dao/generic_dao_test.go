@@ -336,6 +336,14 @@ var _ = Describe("Generic DAO", func() {
 			Expect(result).ToNot(BeNil())
 		})
 
+		It("Returns not found error when getting object that doesn't exist", func() {
+			_, err := generic.Get(ctx, "does-not-exist")
+			Expect(err).To(HaveOccurred())
+			var notFoundErr *ErrNotFound
+			Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+			Expect(notFoundErr.ID).To(Equal("does-not-exist"))
+		})
+
 		It("Lists objects", func() {
 			// Insert a couple of rows:
 			const count = 2
@@ -834,6 +842,17 @@ var _ = Describe("Generic DAO", func() {
 			object, err = generic.Get(ctx, object.GetId())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.GetMetadata().GetName()).To(Equal("your-name"))
+		})
+
+		It("Returns not found error when updating object that doesn't exist", func() {
+			_, err := generic.Update(ctx, testsv1.Object_builder{
+				Id:       "does-not-exist",
+				MyString: "some-value",
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			var notFoundErr *ErrNotFound
+			Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+			Expect(notFoundErr.ID).To(Equal("does-not-exist"))
 		})
 
 		Describe("Filtering", func() {
@@ -1419,10 +1438,12 @@ var _ = Describe("Generic DAO", func() {
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("visible_object"))
 
-				// Try to get the invisible object - should return nil (not found)
-				invisibleObject, err := restrictedDAO.Get(ctx, "invisible_object")
-				Expect(err).ToNot(HaveOccurred())
-				Expect(invisibleObject).To(BeNil())
+				// Try to get the invisible object - should return not found error
+				_, err = restrictedDAO.Get(ctx, "invisible_object")
+				Expect(err).To(HaveOccurred())
+				var notFoundErr *ErrNotFound
+				Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+				Expect(notFoundErr.ID).To(Equal("invisible_object"))
 
 				// Check exists for invisible object - should return false
 				exists, err := restrictedDAO.Exists(ctx, "invisible_object")
@@ -1432,7 +1453,6 @@ var _ = Describe("Generic DAO", func() {
 				// Try to delete the invisible object - should return not found error
 				err = restrictedDAO.Delete(ctx, "invisible_object")
 				Expect(err).To(HaveOccurred())
-				var notFoundErr *ErrNotFound
 				Expect(errors.As(err, &notFoundErr)).To(BeTrue())
 				Expect(notFoundErr.ID).To(Equal("invisible_object"))
 

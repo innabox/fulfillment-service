@@ -340,6 +340,10 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "identifier is mandatory")
 	}
 	object, err := s.dao.Get(ctx, id)
+	var notFoundErr *dao.ErrNotFound
+	if errors.As(err, &notFoundErr) {
+		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+	}
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -420,6 +424,10 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 
 	// Fetch the current representation of the object:
 	object, err := s.dao.Get(ctx, id)
+	var notFoundErr *dao.ErrNotFound
+	if errors.As(err, &notFoundErr) {
+		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+	}
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,

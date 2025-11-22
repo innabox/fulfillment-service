@@ -29,6 +29,7 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 	"github.com/innabox/fulfillment-service/internal/uuid"
@@ -263,6 +264,41 @@ var _ = Describe("Public clusters", func() {
 			metadata := object.GetMetadata()
 			Expect(metadata.HasDeletionTimestamp()).To(BeTrue())
 		}
+	})
+
+	It("Returns not found error when getting cluster that doesn't exist", func() {
+		_, err := clustersClient.Get(ctx, ffv1.ClustersGetRequest_builder{
+			Id: "does-not-exist",
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.NotFound))
+	})
+
+	It("Returns not found error when updating cluster that doesn't exist", func() {
+		_, err := clustersClient.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+			Object: ffv1.Cluster_builder{
+				Id: "does-not-exist",
+				Metadata: sharedv1.Metadata_builder{
+					Name: "my-name",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.NotFound))
+	})
+
+	It("Returns not found error when deleting cluster that doesn't exist", func() {
+		_, err := clustersClient.Delete(ctx, ffv1.ClustersDeleteRequest_builder{
+			Id: "does-not-exist",
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.NotFound))
 	})
 
 	It("Can get the kubeconfig of a cluster", func() {

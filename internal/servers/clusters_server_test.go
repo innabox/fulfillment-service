@@ -713,6 +713,17 @@ var _ = Describe("Clusters server", func() {
 			Expect(proto.Equal(createResponse.GetObject(), getResponse.GetObject())).To(BeTrue())
 		})
 
+		It("Returns not found error when getting object that doesn't exist", func() {
+			response, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: "does-not-exist",
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+		})
+
 		It("Update object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
@@ -1059,6 +1070,22 @@ var _ = Describe("Clusters server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(getResponse.GetObject().GetMetadata().GetName()).To(Equal("your-name"))
+		})
+
+		It("Returns not found error when updating object that doesn't exist", func() {
+			response, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: "does-not-exist",
+					Metadata: sharedv1.Metadata_builder{
+						Name: "my-name",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
 		})
 
 		DescribeTable(
