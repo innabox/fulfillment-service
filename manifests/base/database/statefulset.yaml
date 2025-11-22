@@ -16,20 +16,24 @@ kind: StatefulSet
 metadata:
   name: fulfillment-database
 spec:
+  selector:
+    matchLabels:
+      app: fulfillment-database
+  serviceName: fulfillment-database
   replicas: 1
   template:
+    metadata:
+      labels:
+        app: fulfillment-database
     spec:
       volumes:
       - name: server-cert
         secret:
           secretName: fulfillment-database-server-cert
           defaultMode: 0440
-      - name: server-config
+      - name: config
         configMap:
-          name: fulfillment-database-server
-      - name: access-config
-        configMap:
-          name: fulfillment-database-access
+          name: fulfillment-database
       - name: data
         persistentVolumeClaim:
           claimName: fulfillment-database
@@ -49,10 +53,12 @@ spec:
           mountPath: /var/lib/pgsql/data
         - name: server-cert
           mountPath: /secrets/cert
-        - name: server-config
-          mountPath: /opt/app-root/src/postgresql-cfg
-        - name: access-config
-          mountPath: /config/access
+        - name: config
+          mountPath: /opt/app-root/src/postgresql-cfg/server.conf
+          subPath: server.conf
+        - name: config
+          mountPath: /config/access/access.conf
+          subPath: access.conf
         ports:
         - name: postgres
           protocol: TCP

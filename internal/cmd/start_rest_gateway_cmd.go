@@ -31,12 +31,12 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-// NewStartGatewayCommand creates and returns the `start server` command.
-func NewStartGatewayCommand() *cobra.Command {
-	runner := &startGatewayCommandRunner{}
+// NewStartRestGatewayCommand creates and returns the `start rest-gateway` command.
+func NewStartRestGatewayCommand() *cobra.Command {
+	runner := &startRestGatewayCommandRunner{}
 	command := &cobra.Command{
-		Use:   "gateway",
-		Short: "Starts the gRPC gateway",
+		Use:   "rest-gateway",
+		Short: "Starts the REST gateway",
 		Args:  cobra.NoArgs,
 		RunE:  runner.run,
 	}
@@ -53,8 +53,8 @@ func NewStartGatewayCommand() *cobra.Command {
 	return command
 }
 
-// startGatewayCommandRunner contains the data and logic needed to run the `start gateway` command.
-type startGatewayCommandRunner struct {
+// startRestGatewayCommandRunner contains the data and logic needed to run the `start rest-gateway` command.
+type startRestGatewayCommandRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
@@ -63,8 +63,8 @@ type startGatewayCommandRunner struct {
 	}
 }
 
-// run runs the `start gateway` command.
-func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error {
+// run runs the `start rest-gateway` command.
+func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	// Get the context:
 	ctx := cmd.Context()
 
@@ -75,7 +75,7 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 	c.flags = cmd.Flags()
 
 	// Create the network listener:
-	c.logger.InfoContext(ctx, "Creating gateway listener")
+	c.logger.InfoContext(ctx, "Creating REST gateway listener")
 	gwListener, err := network.NewListener().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.HttpListenerName).
@@ -105,7 +105,7 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 	}
 
 	// Create the gateway multiplexer:
-	c.logger.InfoContext(ctx, "Creating gateway server")
+	c.logger.InfoContext(ctx, "Creating REST gateway server")
 	gatewayMarshaller := &runtime.JSONPb{
 		MarshalOptions: protojson.MarshalOptions{
 			UseProtoNames: true,

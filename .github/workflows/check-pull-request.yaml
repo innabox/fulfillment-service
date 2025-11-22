@@ -61,17 +61,32 @@ jobs:
     - run: |
         ginkgo run -r internal
 
-  run-integration-tests:
-    name: Run integration tests
+  run-integration-tests-helm:
+    name: Run integration tests - Helm
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup-go
     - run: |
-        ginkgo run -v it
+        IT_DEPLOY_MODE=helm ginkgo run -v it
     - if: always()
       uses: actions/upload-artifact@v5
       with:
-        name: logs
+        name: logs-helm
+        path: logs
+        retention-days: 7
+
+  run-integration-tests-kustomize:
+    name: Run integration tests - Kustomize
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/setup-go
+    - run: |
+        IT_DEPLOY_MODE=kustomize ginkgo run -v it
+    - if: always()
+      uses: actions/upload-artifact@v5
+      with:
+        name: logs-kustomize
         path: logs
         retention-days: 7

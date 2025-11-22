@@ -43,11 +43,11 @@ import (
 	"github.com/innabox/fulfillment-service/internal/servers"
 )
 
-// NewStartServerCommand creates and returns the `start server` command.
-func NewStartServerCommand() *cobra.Command {
-	runner := &startServerCommandRunner{}
+// NewStartGrpcServerCommand creates and returns the `start grpc-server` command.
+func NewStartGrpcServerCommand() *cobra.Command {
+	runner := &startGrpcServerCommandRunner{}
 	command := &cobra.Command{
-		Use:   "server",
+		Use:   "grpc-server",
 		Short: "Starts the gRPC server",
 		Args:  cobra.NoArgs,
 		RunE:  runner.run,
@@ -93,8 +93,8 @@ func NewStartServerCommand() *cobra.Command {
 	return command
 }
 
-// startServerCommandRunner contains the data and logic needed to run the `start server` command.
-type startServerCommandRunner struct {
+// startGrpcServerCommandRunner contains the data and logic needed to run the `start grpc-server` command.
+type startGrpcServerCommandRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
@@ -106,8 +106,8 @@ type startServerCommandRunner struct {
 	}
 }
 
-// run runs the `start server` command.
-func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error {
+// run runs the `start grpc-server` command.
+func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	// Get the context:
 	ctx := cmd.Context()
 

@@ -11,17 +11,17 @@
 # specific language governing permissions and limitations under the License.
 #
 
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-labels:
-- includeSelectors: true
-  pairs:
-    component: database
-
-resources:
-- configmap.yaml
-- pvc.yaml
-- service.yaml
-- statefulset.yaml
-- server-cert.yaml
-- client-cert.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fulfillment-api
+spec:
+  issuerRef:
+    kind: ClusterIssuer
+    name: default-ca
+  dnsNames:
+  - localhost
+  - fulfillment-api
+  secretName: fulfillment-api-tls
+  privateKey:
+    rotationPolicy: Always

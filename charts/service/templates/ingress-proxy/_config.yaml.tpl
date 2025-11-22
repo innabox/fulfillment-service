@@ -11,17 +11,20 @@
 # specific language governing permissions and limitations under the License.
 #
 
+{{ define "ingress-proxy.config.yaml" }}
+
 admin:
   address:
-    pipe:
-      path: /run/sockets/admin.socket
+    socket_address:
+      address: 127.0.0.1
+      port_value: 9901
 
 static_resources:
 
   listeners:
 
-  # This listener receives traffic from outside, so it needs to be secured with CORS and TLS. Authentication and
-  # authorization are handled by the service itself.
+   # This listener receives traffic from outside, so it needs to be secured with CORS and TLS. Authentication and
+   # authorization are handled by the service itself.
   - name: ingress
     address:
       socket_address:
@@ -37,8 +40,6 @@ static_resources:
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
               path: /dev/stdout
-          use_remote_address: true
-          xff_num_trusted_hops: 1
           stat_prefix: ingress
           route_config:
             name: backend
@@ -60,37 +61,34 @@ static_resources:
               routes:
 
               # This route is for the REST gateway.
-              - name: gateway
+              - name: rest-gateway
                 match:
                   prefix: /api
                 route:
-                  cluster: gateway
+                  cluster: rest-gateway
                   timeout: 300s
 
               # This route is for the gRPC streaming requests used to watch events. Those streams can last very long,
               # so we don't want to set a timeout, as that would cause the connection to be closed and events to be
               # potentially lost.
-              - name: watch
+              - name: events
                 match:
                   safe_regex:
                     regex: ^.*/Watch$
                 route:
-                  cluster: server
+                  cluster: grpc-server
                   timeout: 0s
                   idle_timeout: 0s
 
               # This route is for gRPC unary requests, which should be quite fast, so we can safely set a timeout.
-              - name: other
+              - name: grpc-server
                 match:
                   prefix: /
                 route:
-                  cluster: server
+                  cluster: grpc-server
                   timeout: 300s
 
           http_filters:
-          - name: envoy.filters.http.grpc_web
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
           - name: envoy.filters.http.cors
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
@@ -112,48 +110,11 @@ static_resources:
               private_key:
                 filename: /etc/envoy/tls/tls.key
 
-  # This listener is used only for requests from the REST gateway. Those are internal only, and always gRPC, so we
-  # don't need CORS or TLS. Authentication and authorization are handled by the service itself.
-  - name: gateway
-    address:
-      pipe:
-        path: /run/sockets/ingress.socket
-    filter_chains:
-    - filters:
-      - name: envoy.filters.network.http_connection_manager
-        typed_config:
-          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-          access_log:
-          - name: envoy.access_loggers.file
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
-              path: /dev/stdout
-          use_remote_address: true
-          xff_num_trusted_hops: 1
-          stat_prefix: gateway
-          route_config:
-            name: backend
-            virtual_hosts:
-            - name: all
-              domains:
-              - "*"
-              routes:
-              - name: server
-                match:
-                  prefix: /
-                route:
-                  cluster: server
-                  timeout: 300s
-          http_filters:
-          - name: envoy.filters.http.router
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-
   clusters:
 
-  - name: server
+  - name: grpc-server
     connect_timeout: 1s
-    type: STATIC
+    type: STRICT_DNS
     lb_policy: ROUND_ROBIN
     typed_extension_protocol_options:
       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -161,17 +122,26 @@ static_resources:
         explicit_http_config:
           http2_protocol_options: {}
     load_assignment:
-      cluster_name: server
+      cluster_name: grpc-server
       endpoints:
       - lb_endpoints:
         - endpoint:
             address:
-              pipe:
-                path: /run/sockets/server.socket
+              socket_address:
+                address: fulfillment-grpc-server
+                port_value: 8000
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        common_tls_context:
+          validation_context:
+            trusted_ca:
+              filename: /etc/envoy/tls/ca.crt
 
-  - name: gateway
+  - name: rest-gateway
     connect_timeout: 1s
-    type: STATIC
+    type: STRICT_DNS
     lb_policy: ROUND_ROBIN
     typed_extension_protocol_options:
       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -179,10 +149,21 @@ static_resources:
         explicit_http_config:
           http2_protocol_options: {}
     load_assignment:
-      cluster_name: gateway
+      cluster_name: rest-gateway
       endpoints:
       - lb_endpoints:
         - endpoint:
             address:
-              pipe:
-                path: /run/sockets/gateway.socket
+              socket_address:
+                address: fulfillment-rest-gateway
+                port_value: 8000
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        common_tls_context:
+          validation_context:
+            trusted_ca:
+              filename: /etc/envoy/tls/ca.crt
+
+{{ end }}

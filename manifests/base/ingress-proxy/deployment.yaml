@@ -14,38 +14,38 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fulfillment-controller
+  name: fulfillment-ingress-proxy
 spec:
   selector:
     matchLabels:
-      app: fulfillment-controller
+      app: fulfillment-ingress-proxy
   replicas: 1
   template:
     metadata:
       labels:
-        app: fulfillment-controller
+        app: fulfillment-ingress-proxy
     spec:
-      serviceAccountName: controller
       volumes:
-      - name: cas
+      - name: config
         configMap:
-          name: ca-bundle
+          name: fulfillment-ingress-proxy
+      - name: tls
+        secret:
+          secretName: fulfillment-api-tls
       containers:
-      - name: controller
-        image: fulfillment-service
+      - name: envoy
+        image: envoy
         imagePullPolicy: IfNotPresent
         volumeMounts:
-        - name: cas
-          mountPath: /etc/fulfillment-controller/tls/cas
+        - name: config
+          mountPath: /etc/envoy
+        - name: tls
+          mountPath: /etc/envoy/tls
         command:
-        - /usr/local/bin/fulfillment-service
-        - start
-        - controller
-        - --log-level=info
-        - --log-headers=false
-        - --log-bodies=false
-        - --ca-file=/etc/fulfillment-controller/tls/cas
-        - --token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
-        - --grpc-server-network=tcp
-        - --grpc-server-address=fulfillment-api:8000
-        - --grpc-keep-alive=5m
+        - envoy
+        - --config-path
+        - /etc/envoy/envoy.yaml
+        ports:
+        - name: api
+          protocol: TCP
+          containerPort: 8000

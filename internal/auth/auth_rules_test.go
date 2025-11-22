@@ -14,14 +14,18 @@ language governing permissions and limitations under the License.
 package auth
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/innabox/fulfillment-common/testing"
 	"github.com/innabox/fulfillment-service/internal/jq"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
+	. "github.com/onsi/ginkgo/v2/dsl/decorators"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
 
@@ -33,23 +37,56 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 )
 
-var _ = Describe("Authorization rules", func() {
+var _ = Describe("Authorization rules", Ordered, func() {
 	var (
 		ctx   context.Context
 		rules string
 	)
 
-	BeforeEach(func() {
+	BeforeAll(func() {
 		// Create a context:
 		ctx = context.Background()
 
-		// Read the Authorino config that contains the rules:
-		file := filepath.Join("..", "..", "manifests", "base", "service", "authconfig.yaml")
-		bytes, err := os.ReadFile(file)
+		// Find the project directory
+		currentDir, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred())
+		projectDir, err := filepath.Abs(filepath.Join(currentDir, "..", ".."))
+		Expect(err).ToNot(HaveOccurred())
+
+		// Run the helm template command to generate the manifests:
+		chartDir := filepath.Join(projectDir, "charts", "service")
+		helmCmd, err := testing.NewCommand().
+			SetLogger(logger).
+			SetHome(projectDir).
+			SetDir(projectDir).
+			SetName("helm").
+			SetArgs(
+				"template", "fulfillment-service", chartDir,
+				"--namespace", "my-ns",
+				"--set", "certs.issuerRef.name=my-ca",
+				"--set", "auth.issuerUrl=https://my-issuer.com",
+			).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		helmOut, _, err := helmCmd.Evaluate(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Parse the multi-document YAML output and find the 'AuthConfig' document:
 		var data map[string]any
-		err = yaml.Unmarshal(bytes, &data)
-		Expect(err).ToNot(HaveOccurred())
+		decoder := yaml.NewDecoder(bytes.NewReader(helmOut))
+		for {
+			var doc map[string]any
+			err = decoder.Decode(&doc)
+			if err == io.EOF {
+				break
+			}
+			Expect(err).ToNot(HaveOccurred())
+			if doc["kind"] == "AuthConfig" {
+				data = doc
+				break
+			}
+		}
+		Expect(data).ToNot(BeNil())
 
 		// Extract the rules field:
 		tool, err := jq.NewTool().

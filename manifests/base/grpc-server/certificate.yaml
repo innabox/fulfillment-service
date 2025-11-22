@@ -11,11 +11,17 @@
 # specific language governing permissions and limitations under the License.
 #
 
-# Enable TLS:
-ssl = on
-ssl_ca_file = '/secrets/cert/ca.crt'
-ssl_cert_file = '/secrets/cert/tls.crt'
-ssl_key_file = '/secrets/cert/tls.key'
-
-# Use our custom access file:
-hba_file = '/config/access/access.conf'
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fulfillment-grpc-server
+spec:
+  issuerRef:
+    kind: ClusterIssuer
+    name: default-ca
+  dnsNames:
+  - localhost
+  - fulfillment-grpc-server
+  secretName: fulfillment-grpc-server-tls
+  privateKey:
+    rotationPolicy: Always

@@ -11,10 +11,20 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
-apiVersion: v1
-kind: ConfigMap
+apiVersion: cert-manager.io/v1
+kind: Certificate
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: fulfillment-service-envoy
-data:
-  envoy.yaml: {{ .Files.Get "files/service/envoy.yaml" | quote }}
+  name: fulfillment-grpc-server
+spec:
+  issuerRef:
+    kind: {{ .Values.certs.issuerRef.kind }}
+    name: {{ required "certs.issuerRef.name is required" .Values.certs.issuerRef.name }}
+  dnsNames:
+  - localhost
+  - fulfillment-grpc-server
+  - fulfillment-grpc-server.{{ .Release.Namespace }}
+  - fulfillment-grpc-server.{{ .Release.Namespace }}.svc.cluster.local
+  secretName: fulfillment-grpc-server-tls
+  privateKey:
+    rotationPolicy: Always

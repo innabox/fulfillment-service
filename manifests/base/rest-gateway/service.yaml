@@ -11,9 +11,17 @@
 # specific language governing permissions and limitations under the License.
 #
 
-# This is needed by the scripts that setup the database.
-local all all peer
-
-# For any other user we only allow access with certificates.
-hostssl all all 0.0.0.0/0 cert
-hostssl all all ::0/0 cert
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulfillment-rest-gateway
+  labels:
+    app: fulfillment-rest-gateway
+spec:
+  selector:
+    app: fulfillment-rest-gateway
+  clusterIP: None
+  ports:
+  - name: api
+    port: 8000
+    targetPort: api

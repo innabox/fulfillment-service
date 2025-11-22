@@ -23,13 +23,12 @@ resources:
 - bundle.yaml
 - database
 - authorino
-- service
+- grpc-server
+- ingress-proxy
+- rest-gateway
 - client
 - admin
 - controller
-
-generatorOptions:
-  disableNameSuffixHash: true
 
 images:
 - name: envoy

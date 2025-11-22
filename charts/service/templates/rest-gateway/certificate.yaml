@@ -15,19 +15,16 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: fulfillment-api
+  name: fulfillment-rest-gateway
 spec:
   issuerRef:
     kind: {{ .Values.certs.issuerRef.kind }}
     name: {{ required "certs.issuerRef.name is required" .Values.certs.issuerRef.name }}
   dnsNames:
   - localhost
-  - fulfillment-api
-  - fulfillment-api.{{ .Release.Namespace }}
-  - fulfillment-api.{{ .Release.Namespace }}.svc.cluster.local
-  {{- if .Values.hostname }}
-  - {{ .Values.hostname }}
-  {{- end }}
-  secretName: fulfillment-service-tls
+  - fulfillment-rest-gateway
+  - fulfillment-rest-gateway.{{ .Release.Namespace }}
+  - fulfillment-rest-gateway.{{ .Release.Namespace }}.svc.cluster.local
+  secretName: fulfillment-rest-gateway-tls
   privateKey:
     rotationPolicy: Always

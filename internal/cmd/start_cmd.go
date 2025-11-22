@@ -25,7 +25,7 @@ func NewStartCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	result.AddCommand(NewStartControllerCommand())
-	result.AddCommand(NewStartGatewayCommand())
-	result.AddCommand(NewStartServerCommand())
+	result.AddCommand(NewStartRestGatewayCommand())
+	result.AddCommand(NewStartGrpcServerCommand())
 	return result
 }

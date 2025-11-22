@@ -16,12 +16,9 @@ kind: Kustomization
 labels:
 - includeSelectors: true
   pairs:
-    component: database
+    component: rest-gateway
 
 resources:
-- configmap.yaml
-- pvc.yaml
+- certificate.yaml
+- deployment.yaml
 - service.yaml
-- statefulset.yaml
-- server-cert.yaml
-- client-cert.yaml
