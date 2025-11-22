@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +27,7 @@ import (
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
+	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
@@ -131,6 +133,9 @@ func (r *function) run(ctx context.Context, host *privatev1.Host) error {
 }
 
 func (t *task) update(ctx context.Context) error {
+	// Add the finalizer:
+	t.addFinalizer()
+
 	// Set the default values:
 	t.setDefaults()
 
@@ -212,17 +217,24 @@ func (t *task) setDefaults() {
 
 // Host doesn't have conditions in the current protobuf definition
 
-func (t *task) delete(ctx context.Context) error {
+func (t *task) delete(ctx context.Context) (err error) {
+	// Remember to remove the finalizer if there was no error:
+	defer func() {
+		if err != nil {
+			t.removeFinalizer()
+		}
+	}()
+
 	// For hosts, we need to select a hub to find and delete the object
-	err := t.selectHub(ctx)
+	err = t.selectHub(ctx)
 	if err != nil {
-		return err
+		return
 	}
 
 	// Delete the K8S object:
 	object, err := t.getKubeObject(ctx)
 	if err != nil {
-		return err
+		return
 	}
 	if object == nil {
 		t.r.logger.DebugContext(
@@ -230,11 +242,11 @@ func (t *task) delete(ctx context.Context) error {
 			"Host doesn't exist",
 			slog.String("id", t.host.GetId()),
 		)
-		return nil
+		return
 	}
 	err = t.hubClient.Delete(ctx, object)
 	if err != nil {
-		return err
+		return
 	}
 	t.r.logger.DebugContext(
 		ctx,
@@ -243,7 +255,7 @@ func (t *task) delete(ctx context.Context) error {
 		slog.String("name", object.GetName()),
 	)
 
-	return err
+	return
 }
 
 func (t *task) selectHub(ctx context.Context) error {
@@ -311,4 +323,22 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 		result = &items[0]
 	}
 	return
+}
+
+func (t *task) addFinalizer() {
+	list := t.host.GetMetadata().GetFinalizers()
+	if !slices.Contains(list, finalizers.Controller) {
+		list = append(list, finalizers.Controller)
+		t.host.GetMetadata().SetFinalizers(list)
+	}
+}
+
+func (t *task) removeFinalizer() {
+	list := t.host.GetMetadata().GetFinalizers()
+	if slices.Contains(list, finalizers.Controller) {
+		list = slices.DeleteFunc(list, func(item string) bool {
+			return item == finalizers.Controller
+		})
+		t.host.GetMetadata().SetFinalizers(list)
+	}
 }

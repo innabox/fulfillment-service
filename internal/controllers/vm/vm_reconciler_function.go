@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -28,6 +29,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
+	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 	"github.com/innabox/fulfillment-service/internal/utils"
@@ -134,6 +136,9 @@ func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error 
 }
 
 func (t *task) update(ctx context.Context) error {
+	// Add the finalizer:
+	t.addFinalizer()
+
 	// Set the default values:
 	t.setDefaults()
 
@@ -238,21 +243,28 @@ func (t *task) setConditionDefaults(value privatev1.VirtualMachineConditionType)
 	}
 }
 
-func (t *task) delete(ctx context.Context) error {
+func (t *task) delete(ctx context.Context) (err error) {
+	// Remember to remove the finalizer if there was no error:
+	defer func() {
+		if err != nil {
+			t.removeFinalizer()
+		}
+	}()
+
 	// Do nothing if we don't know the hub yet:
 	t.hubId = t.vm.GetStatus().GetHub()
 	if t.hubId == "" {
 		return nil
 	}
-	err := t.getHub(ctx)
+	err = t.getHub(ctx)
 	if err != nil {
-		return err
+		return
 	}
 
 	// Delete the K8S object:
 	object, err := t.getKubeObject(ctx)
 	if err != nil {
-		return err
+		return
 	}
 	if object == nil {
 		t.r.logger.DebugContext(
@@ -260,11 +272,11 @@ func (t *task) delete(ctx context.Context) error {
 			"Virtual machine doesn't exist",
 			slog.String("id", t.vm.GetId()),
 		)
-		return nil
+		return
 	}
 	err = t.hubClient.Delete(ctx, object)
 	if err != nil {
-		return err
+		return
 	}
 	t.r.logger.DebugContext(
 		ctx,
@@ -273,7 +285,7 @@ func (t *task) delete(ctx context.Context) error {
 		slog.String("name", object.GetName()),
 	)
 
-	return err
+	return
 }
 
 func (t *task) selectHub(ctx context.Context) error {
@@ -339,4 +351,22 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 		result = &items[0]
 	}
 	return
+}
+
+func (t *task) addFinalizer() {
+	list := t.vm.GetMetadata().GetFinalizers()
+	if !slices.Contains(list, finalizers.Controller) {
+		list = append(list, finalizers.Controller)
+		t.vm.GetMetadata().SetFinalizers(list)
+	}
+}
+
+func (t *task) removeFinalizer() {
+	list := t.vm.GetMetadata().GetFinalizers()
+	if slices.Contains(list, finalizers.Controller) {
+		list = slices.DeleteFunc(list, func(item string) bool {
+			return item == finalizers.Controller
+		})
+		t.vm.GetMetadata().SetFinalizers(list)
+	}
 }
