@@ -246,7 +246,7 @@ func (t *task) setConditionDefaults(value privatev1.VirtualMachineConditionType)
 func (t *task) delete(ctx context.Context) (err error) {
 	// Remember to remove the finalizer if there was no error:
 	defer func() {
-		if err != nil {
+		if err == nil {
 			t.removeFinalizer()
 		}
 	}()

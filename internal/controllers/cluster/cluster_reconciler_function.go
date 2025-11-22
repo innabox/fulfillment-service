@@ -281,7 +281,7 @@ func (t *task) prepareNodeRequest(nodeSet *privatev1.ClusterNodeSet) any {
 func (t *task) delete(ctx context.Context) (err error) {
 	// Remember to remove the finalizer if there was no error:
 	defer func() {
-		if err != nil {
+		if err == nil {
 			t.removeFinalizer()
 		}
 	}()
