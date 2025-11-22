@@ -37,7 +37,9 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/ghttp"
 	"google.golang.org/grpc"
+	grpccodes "google.golang.org/grpc/codes"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
+	grpcstatus "google.golang.org/grpc/status"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -138,10 +140,57 @@ var _ = BeforeSuite(func() {
 	_, err = exec.LookPath(helmCmd)
 	Expect(err).ToNot(HaveOccurred())
 
+	// Build the binary:
+	buildCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetHome(projectDir).
+		SetName("go").
+		SetArgs("build").
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = buildCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Build the container image:
+	imageTag := time.Now().Format("20060102150405")
+	imageRef := fmt.Sprintf("%s:%s", imageName, imageTag)
+	buildCmd, err = NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName("podman").
+		SetArgs(
+			"build",
+			"--tag", imageRef,
+			"--file", filepath.Join("it", "Containerfile"),
+			".",
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = buildCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Save the container image to the tar file:
+	imageTar := filepath.Join(tmpDir, "image.tar")
+	saveCmd, err := NewCommand().
+		SetLogger(logger).
+		SetDir(projectDir).
+		SetName(podmanCmd).
+		SetArgs(
+			"save",
+			"--output", imageTar,
+			imageRef,
+		).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+	err = saveCmd.Execute(ctx)
+	Expect(err).ToNot(HaveOccurred())
+
 	// Start the cluster, and remember to stop it:
 	cluster, err = NewKind().
 		SetLogger(logger).
 		SetName("fulfillment-service-it").
+		SetHome(projectDir).
 		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
 		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
@@ -160,38 +209,7 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	// Build the container image:
-	imageTag := time.Now().Format("20060102150405")
-	imageRef := fmt.Sprintf("%s:%s", imageName, imageTag)
-	buildCmd, err := NewCommand().
-		SetLogger(logger).
-		SetDir(projectDir).
-		SetName("podman").
-		SetArgs(
-			"build",
-			"--tag", imageRef,
-			"--file", "Containerfile",
-		).
-		Build()
-	Expect(err).ToNot(HaveOccurred())
-	err = buildCmd.Execute(ctx)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Save the container image to the tar file and load it into the cluster:
-	imageTar := filepath.Join(tmpDir, "image.tar")
-	saveCmd, err := NewCommand().
-		SetLogger(logger).
-		SetDir(projectDir).
-		SetName(podmanCmd).
-		SetArgs(
-			"save",
-			"--output", imageTar,
-			imageRef,
-		).
-		Build()
-	Expect(err).ToNot(HaveOccurred())
-	err = saveCmd.Execute(ctx)
-	Expect(err).ToNot(HaveOccurred())
+	// Load the container image into the cluster:
 	err = cluster.LoadArchive(ctx, imageTar)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -238,6 +256,7 @@ var _ = BeforeSuite(func() {
 	installCmd, err := NewCommand().
 		SetLogger(logger).
 		SetDir(projectDir).
+		SetHome(projectDir).
 		SetName(helmCmd).
 		SetArgs(
 			"upgrade",
@@ -262,6 +281,7 @@ var _ = BeforeSuite(func() {
 	installCmd, err = NewCommand().
 		SetLogger(logger).
 		SetDir(projectDir).
+		SetHome(projectDir).
 		SetName(helmCmd).
 		SetArgs(
 			"upgrade",
@@ -292,6 +312,7 @@ var _ = BeforeSuite(func() {
 			uninstallCmd, err := NewCommand().
 				SetLogger(logger).
 				SetDir(projectDir).
+				SetHome(projectDir).
 				SetName(helmCmd).
 				SetArgs(
 					"uninstall",
@@ -412,6 +433,12 @@ var _ = BeforeSuite(func() {
 			Namespace:  hubNamespace,
 		}.Build(),
 	}.Build())
+	if err != nil {
+		status, ok := grpcstatus.FromError(err)
+		if ok && status.Code() == grpccodes.AlreadyExists {
+			err = nil
+		}
+	}
 	Expect(err).ToNot(HaveOccurred())
 })
 
