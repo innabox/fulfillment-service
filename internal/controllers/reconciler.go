@@ -28,6 +28,7 @@ import (
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
+	"github.com/innabox/fulfillment-service/internal/work"
 )
 
 // ReconcilerFunction is a function that receives the current state of an object and reconciles it.
@@ -52,10 +53,8 @@ type Reconciler[O dao.Object] struct {
 	function      ReconcilerFunction[O]
 	eventFilter   string
 	objectFilter  string
-	syncInterval  time.Duration
-	lastSync      time.Time
-	watchInterval time.Duration
-	lastWatch     time.Time
+	syncLoop      *work.Loop
+	watchLoop     *work.Loop
 	grpcClient    *grpc.ClientConn
 	payloadField  protoreflect.FieldDescriptor
 	listMethod    string
@@ -177,13 +176,11 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 	eventsClient := privatev1.NewEventsClient(b.grpcClient)
 
 	// Create and populate the object:
-	result = &Reconciler[O]{
+	reconciler := &Reconciler[O]{
 		logger:        b.logger,
 		function:      b.function,
 		eventFilter:   eventFilter,
 		objectFilter:  b.objectFilter,
-		syncInterval:  b.syncInterval,
-		watchInterval: b.watchInterval,
 		grpcClient:    b.grpcClient,
 		payloadField:  payloadField,
 		listMethod:    listMethod,
@@ -192,6 +189,33 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 		objectChannel: make(chan O),
 		eventsClient:  eventsClient,
 	}
+
+	// Create the sync loop:
+	reconciler.syncLoop, err = work.NewLoop().
+		SetLogger(b.logger).
+		SetName("sync").
+		SetInterval(b.syncInterval).
+		SetWorkFunc(reconciler.syncObjects).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create sync loop: %w", err)
+		return
+	}
+
+	// Create the watch loop:
+	reconciler.watchLoop, err = work.NewLoop().
+		SetLogger(b.logger).
+		SetName("watch").
+		SetInterval(b.watchInterval).
+		SetWorkFunc(reconciler.watchEvents).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create watch loop: %w", err)
+		return
+	}
+
+	// Return the result:
+	result = reconciler
 	return
 }
 
@@ -283,8 +307,8 @@ func (b *ReconcilerBuilder[O]) findListMethod() (name string, request, response 
 // Start starts the controller. To stop it cancel the context.
 func (c *Reconciler[O]) Start(ctx context.Context) error {
 	// Start the watch and sync loops:
-	go c.watchLoop(ctx)
-	go c.syncLoop(ctx)
+	go c.watchLoop.Run(ctx)
+	go c.syncLoop.Run(ctx)
 
 	// Run the reconcile loop:
 	for {
@@ -309,35 +333,8 @@ func (c *Reconciler[O]) Start(ctx context.Context) error {
 	}
 }
 
-func (c *Reconciler[O]) watchLoop(ctx context.Context) {
-	for {
-		err := c.watchEvents(ctx)
-		if errors.Is(err, context.Canceled) {
-			c.logger.InfoContext(ctx, "Watch finished")
-			return
-		}
-		if err != nil {
-			c.logger.ErrorContext(
-				ctx,
-				"Watch failed",
-				slog.Any("error", err),
-			)
-		}
-		err = c.sleepAfterWatch(ctx)
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		if err != nil {
-			c.logger.ErrorContext(
-				ctx,
-				"Sleep failed",
-				slog.Any("error", err),
-			)
-		}
-	}
-}
-
 func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
+	c.syncLoop.Kick()
 	stream, err := c.eventsClient.Watch(ctx, &privatev1.EventsWatchRequest{
 		Filter: &c.eventFilter,
 	})
@@ -376,34 +373,6 @@ func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
 	}
 }
 
-func (c *Reconciler[O]) syncLoop(ctx context.Context) {
-	for {
-		err := c.syncObjects(ctx)
-		if errors.Is(err, context.Canceled) {
-			c.logger.InfoContext(ctx, "Sync finished")
-			return
-		}
-		if err != nil {
-			c.logger.ErrorContext(
-				ctx,
-				"Sync failed",
-				slog.Any("error", err),
-			)
-		}
-		err = c.sleepAfterSync(ctx)
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		if err != nil {
-			c.logger.ErrorContext(
-				ctx,
-				"Sleep failed",
-				slog.Any("error", err),
-			)
-		}
-	}
-}
-
 func (c *Reconciler[O]) syncObjects(ctx context.Context) error {
 	type requestIface interface {
 	}
@@ -421,48 +390,4 @@ func (c *Reconciler[O]) syncObjects(ctx context.Context) error {
 		c.objectChannel <- item
 	}
 	return nil
-}
-
-// sleepAfterWatch waits till the watch interval passes, or till the context is cancelled.
-func (c *Reconciler[O]) sleepAfterWatch(ctx context.Context) error {
-	return c.sleep(ctx, "watch", &c.lastWatch, c.watchInterval)
-}
-
-// sleepAfterSync waits till the sync interval passes, or till the context is cancelled.
-func (c *Reconciler[O]) sleepAfterSync(ctx context.Context) error {
-	return c.sleep(ctx, "sync", &c.lastSync, c.syncInterval)
-}
-
-func (c *Reconciler[O]) sleep(ctx context.Context, reason string, last *time.Time, interval time.Duration) error {
-	defer func() {
-		*last = time.Now()
-	}()
-	elapsed := time.Since(*last)
-	duration := interval - elapsed
-	if duration <= 0 {
-		c.logger.DebugContext(
-			ctx,
-			"No need to sleep",
-			slog.String("reason", reason),
-			slog.Time("last", *last),
-			slog.Duration("elapsed", elapsed),
-			slog.Duration("interval", interval),
-		)
-		return nil
-	}
-	c.logger.DebugContext(
-		ctx,
-		"Sleeping",
-		slog.String("reason", reason),
-		slog.Time("last", *last),
-		slog.Duration("elapsed", elapsed),
-		slog.Duration("interval", interval),
-		slog.Duration("duration", duration),
-	)
-	select {
-	case <-ctx.Done():
-		return context.Canceled
-	case <-time.After(duration):
-		return nil
-	}
 }
