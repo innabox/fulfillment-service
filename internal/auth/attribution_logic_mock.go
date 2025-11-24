@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	collections "github.com/innabox/fulfillment-service/internal/collections"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,10 +42,10 @@ func (m *MockAttributionLogic) EXPECT() *MockAttributionLogicMockRecorder {
 }
 
 // DetermineAssignedCreators mocks base method.
-func (m *MockAttributionLogic) DetermineAssignedCreators(ctx context.Context) ([]string, error) {
+func (m *MockAttributionLogic) DetermineAssignedCreators(ctx context.Context) (collections.Set[string], error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DetermineAssignedCreators", ctx)
-	ret0, _ := ret[0].([]string)
+	ret0, _ := ret[0].(collections.Set[string])
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

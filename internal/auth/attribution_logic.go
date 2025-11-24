@@ -15,6 +15,8 @@ package auth
 
 import (
 	"context"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // AttributionLogic defines the logic for determining what users and group should be assisged as the creators of
@@ -25,5 +27,5 @@ type AttributionLogic interface {
 	// DetermineAssignedCreators calculates and returns the list of creators that should be assigned to an object
 	// being created. The context will contain authentication and authorization information that can be used to
 	// determine the appropriate creators.
-	DetermineAssignedCreators(ctx context.Context) ([]string, error)
+	DetermineAssignedCreators(ctx context.Context) (collections.Set[string], error)
 }

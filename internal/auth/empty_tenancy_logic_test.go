@@ -43,12 +43,12 @@ var _ = Describe("Empty tenancy logic", func() {
 	It("Should return an empty list of tenants", func() {
 		result, err := logic.DetermineAssignedTenants(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result).To(BeEmpty())
+		Expect(result.Empty()).To(BeTrue())
 	})
 
 	It("Should return an empty list of visible tenants", func() {
 		result, err := logic.DetermineVisibleTenants(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result).To(BeEmpty())
+		Expect(result.Universal()).To(BeTrue())
 	})
 })

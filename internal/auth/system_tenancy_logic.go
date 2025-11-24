@@ -16,6 +16,8 @@ package auth
 import (
 	"context"
 	"log/slog"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // SystemTenancyLogicBuilder contains the data and logic needed to create system tenancy logic.
@@ -24,7 +26,7 @@ type SystemTenancyLogicBuilder struct {
 }
 
 // SystemTenancyLogic is a tenancy logic implementation intended exclusively for the private API, where tenancy
-// filtering is effectively disabled. It assigns objects to the "shared" tenant while returning an empty list of
+// filtering is effectively disabled. It assigns objects to the shared tenant while returning an empty set of
 // visible tenants, which allows the private API to access all objects regardless of their tenant assignment.
 // This implementation should NOT be used for the public API.
 type SystemTenancyLogic struct {
@@ -51,18 +53,15 @@ func (b *SystemTenancyLogicBuilder) Build() (result *SystemTenancyLogic, err err
 	return
 }
 
-// DetermineAssignedTenants returns the "shared" tenant for objects created through the private API.
-func (p *SystemTenancyLogic) DetermineAssignedTenants(_ context.Context) (result []string, err error) {
-	result = systemTenants
+// DetermineAssignedTenants returns the shared tenant for objects created through the private API.
+func (p *SystemTenancyLogic) DetermineAssignedTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = SharedTenants
 	return
 }
 
-// DetermineVisibleTenants returns an empty list of tenants, which disables tenant filtering and allows the private
+// DetermineVisibleTenants returns a universal set of tenants, which disables tenant filtering and allows the private
 // API to access all objects regardless of their tenant assignment.
-func (p *SystemTenancyLogic) DetermineVisibleTenants(_ context.Context) (result []string, err error) {
+func (p *SystemTenancyLogic) DetermineVisibleTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = AllTenants
 	return
-}
-
-var systemTenants = []string{
-	"shared",
 }

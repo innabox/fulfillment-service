@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // JwtTenancyLogicBuilder contains the data and logic needed to create JWT tenancy logic.
@@ -58,31 +60,29 @@ func (b *JwtTenancyLogicBuilder) Build() (result *JwtTenancyLogic, err error) {
 
 // DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
 // For JWT-authenticated users, objects are assigned to the groups of the user.
-func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result []string, err error) {
+func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
-	result = subject.Groups
+	result = collections.NewSet(subject.Groups...)
 	p.logger.DebugContext(
 		ctx,
 		"Determined assigned tenants for JWT user",
 		slog.String("user", subject.User),
-		slog.Any("tenants", result),
+		slog.Any("tenants", result.Inclusions()),
 	)
 	return
 }
 
 // DetermineVisibleTenants extracts the subject from the context and returns a tenant for each group that the user
 // belongs to, as well as the shared tenant.
-func (p *JwtTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result []string, err error) {
+func (p *JwtTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
-	result = make([]string, 0, len(subject.Groups)+1)
-	result = append(result, subject.Groups...)
-	result = append(result, "shared")
+	result = SharedTenants.Union(collections.NewSet(subject.Groups...))
 	p.logger.DebugContext(
 		ctx,
 		"Determined visible tenants for JWT user",
 		slog.String("user", subject.User),
 		slog.Any("groups", subject.Groups),
-		slog.Any("tenants", result),
+		slog.Any("tenants", result.Inclusions()),
 	)
 	return
 }

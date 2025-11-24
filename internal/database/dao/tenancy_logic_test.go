@@ -25,6 +25,7 @@ import (
 
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/collections"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
@@ -78,20 +79,20 @@ var _ = Describe("Tenancy logic", func() {
 		tenancy := auth.NewMockTenancyLogic(ctrl)
 		tenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
 			Return(
-				[]string{
+				collections.NewSet(
 					"tenant_a",
 					"tenant_b",
 					"tenant_c",
-				},
+				),
 				nil,
 			).
 			AnyTimes()
 		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
 			Return(
-				[]string{
+				collections.NewSet(
 					"tenant_a",
 					"tenant_c",
-				},
+				),
 				nil,
 			).
 			AnyTimes()
@@ -141,10 +142,10 @@ var _ = Describe("Tenancy logic", func() {
 		// Create a tenancy logic that returns an empty list, which means no tenant filtering will be applied:
 		tenancy := auth.NewMockTenancyLogic(ctrl)
 		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return([]string{}, nil).
+			Return(collections.NewUniversal[string](), nil).
 			AnyTimes()
 		tenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
-			Return([]string{"tenant_a", "tenant_b", "tenant_c"}, nil).
+			Return(collections.NewSet("tenant_a", "tenant_b", "tenant_c"), nil).
 			AnyTimes()
 
 		// Create the DAO:
@@ -165,10 +166,10 @@ var _ = Describe("Tenancy logic", func() {
 		// Create a tenancy logic that assigns tenant X but only makes tenant Y visible:
 		tenancy := auth.NewMockTenancyLogic(ctrl)
 		tenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
-			Return([]string{"tenant_y"}, nil).
+			Return(collections.NewSet("tenant_y"), nil).
 			AnyTimes()
 		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return([]string{"tenant_x"}, nil).
+			Return(collections.NewSet("tenant_x"), nil).
 			AnyTimes()
 
 		// Create the DAO:

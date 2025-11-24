@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // DefaultAttributionLogicBuilder contains the data and logic needed to create default attribution logic.
@@ -58,10 +60,8 @@ func (b *DefaultAttributionLogicBuilder) Build() (result *DefaultAttributionLogi
 }
 
 // DetermineAssignedCreators extracts the subject from the auth context and returns the subject name as the creator.
-func (l *DefaultAttributionLogic) DetermineAssignedCreators(ctx context.Context) (result []string, err error) {
+func (l *DefaultAttributionLogic) DetermineAssignedCreators(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
-	result = []string{
-		subject.User,
-	}
+	result = collections.NewSet(subject.User)
 	return
 }

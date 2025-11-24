@@ -24,6 +24,7 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/collections"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
@@ -82,19 +83,13 @@ var _ = Describe("Tenancy logic", func() {
 		tenancy := auth.NewMockTenancyLogic(ctrl)
 		tenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
 			Return(
-				[]string{
-					"my-tenant",
-					"your-tenant",
-				},
+				collections.NewSet("my-tenant", "your-tenant"),
 				nil,
 			).
 			AnyTimes()
 		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
 			Return(
-				[]string{
-					"my-tenant",
-					"your-tenant",
-				},
+				collections.NewSet("my-tenant", "your-tenant"),
 				nil,
 			).
 			AnyTimes()

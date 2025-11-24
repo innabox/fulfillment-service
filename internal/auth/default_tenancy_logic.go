@@ -17,6 +17,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // DefaultTenancyLogicBuilder contains the data and logic needed to create default tenancy logic.
@@ -77,7 +79,7 @@ func (b *DefaultTenancyLogicBuilder) Build() (result *DefaultTenancyLogic, err e
 }
 
 // DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
-func (p *DefaultTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result []string, err error) {
+func (p *DefaultTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
 	delegate, err := p.selectDelegate(subject)
 	if err != nil {
@@ -88,7 +90,7 @@ func (p *DefaultTenancyLogic) DetermineAssignedTenants(ctx context.Context) (res
 
 // DetermineVisibleTenants extracts the subject from the auth context and returns the identifiers of the tenants
 // that the current user has permission to see.
-func (p *DefaultTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result []string, err error) {
+func (p *DefaultTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
 	delegate, err := p.selectDelegate(subject)
 	if err != nil {

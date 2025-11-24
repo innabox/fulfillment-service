@@ -16,6 +16,8 @@ package auth
 import (
 	"context"
 	"log/slog"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // EmptyTenancyLogicBuilder contains the data and logic needed to create empty tenancy logic.
@@ -49,13 +51,15 @@ func (b *EmptyTenancyLogicBuilder) Build() (result *EmptyTenancyLogic, err error
 	return
 }
 
-// DetermineAssignedTenants returns an empty list of tenants.
-func (p *EmptyTenancyLogic) DetermineAssignedTenants(_ context.Context) (result []string, err error) {
+// DetermineAssignedTenants returns an empty set of tenants.
+func (p *EmptyTenancyLogic) DetermineAssignedTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = collections.NewEmptySet[string]()
 	return
 }
 
-// DetermineVisibleTenants returns an empty list of tenants, which means no tenant filtering will be applied.
+// DetermineVisibleTenants returns a universal set of tenants, which means no tenant filtering will be applied.
 // This allows access to all objects regardless of their tenant assignment.
-func (p *EmptyTenancyLogic) DetermineVisibleTenants(_ context.Context) (result []string, err error) {
+func (p *EmptyTenancyLogic) DetermineVisibleTenants(_ context.Context) (result collections.Set[string], err error) {
+	result = collections.NewUniversal[string]()
 	return
 }

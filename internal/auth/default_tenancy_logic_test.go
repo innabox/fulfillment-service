@@ -16,6 +16,7 @@ package auth
 import (
 	"context"
 
+	"github.com/innabox/fulfillment-service/internal/collections"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -60,7 +61,7 @@ var _ = Describe("Default tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("group1", "group2"))
+			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
 		})
 
 		It("Returns only shared as visible tenants when user has no groups", func() {
@@ -71,7 +72,7 @@ var _ = Describe("Default tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("shared"))
+			Expect(result.Equal(SharedTenants)).To(BeTrue())
 		})
 
 		It("Returns the groups and shared as visible tenants", func() {
@@ -83,7 +84,7 @@ var _ = Describe("Default tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("group1", "group2", "shared"))
+			Expect(result.Equal(SharedTenants.Union(collections.NewSet("group1", "group2")))).To(BeTrue())
 		})
 	})
 
@@ -96,7 +97,7 @@ var _ = Describe("Default tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("my-ns"))
+			Expect(result.Inclusions()).To(ConsistOf("my-ns"))
 		})
 
 		It("Returns the namespace and shared as visible tenants for a service account", func() {
@@ -107,18 +108,18 @@ var _ = Describe("Default tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("my-ns", "shared"))
+			Expect(result.Inclusions()).To(ConsistOf("my-ns", "shared"))
 		})
 
 		It("Handles service accounts with different namespaces", func() {
 			subject := &Subject{
-				User:   "system:serviceaccount:another-ns:another-sa",
 				Source: SubjectSourceServiceAccount,
+				User:   "system:serviceaccount:another-ns:another-sa",
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("another-ns"))
+			Expect(result.Inclusions()).To(ConsistOf("another-ns"))
 		})
 	})
 
@@ -129,11 +130,10 @@ var _ = Describe("Default tenancy logic", func() {
 				Source: SubjectSource("invalid"),
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unknown subject source"))
 			Expect(err.Error()).To(ContainSubstring("invalid"))
-			Expect(result).To(BeNil())
 		})
 
 		It("Returns error for unknown source when determining visible tenants", func() {
@@ -142,11 +142,10 @@ var _ = Describe("Default tenancy logic", func() {
 				Source: SubjectSource("invalid"),
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineVisibleTenants(ctx)
+			_, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unknown subject source"))
 			Expect(err.Error()).To(ContainSubstring("invalid"))
-			Expect(result).To(BeNil())
 		})
 
 		It("Returns error for empty source when determining assigned tenants", func() {
@@ -155,10 +154,9 @@ var _ = Describe("Default tenancy logic", func() {
 				Source: SubjectSource(""),
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unknown subject source"))
-			Expect(result).To(BeNil())
 		})
 	})
 })

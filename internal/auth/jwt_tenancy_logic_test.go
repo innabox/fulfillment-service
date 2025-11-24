@@ -16,6 +16,7 @@ package auth
 import (
 	"context"
 
+	"github.com/innabox/fulfillment-service/internal/collections"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -60,7 +61,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("group1", "group2"))
+			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
 		})
 
 		It("Returns empty list when user has no groups", func() {
@@ -72,7 +73,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(BeEmpty())
+			Expect(result.Empty()).To(BeTrue())
 		})
 	})
 
@@ -85,7 +86,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("shared"))
+			Expect(result.Equal(collections.NewSet("shared"))).To(BeTrue())
 		})
 
 		It("Returns the groups and shared", func() {
@@ -97,7 +98,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("group1", "group2", "shared"))
+			Expect(result.Equal(collections.NewSet("group1", "group2", "shared"))).To(BeTrue())
 		})
 
 		It("Returns multiple groups and shared", func() {
@@ -109,7 +110,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("admins", "developers", "team-a", "shared"))
+			Expect(result.Equal(collections.NewSet("admins", "developers", "team-a", "shared"))).To(BeTrue())
 		})
 
 		It("Returns only shared when groups is empty array", func() {
@@ -121,7 +122,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("shared"))
+			Expect(result.Equal(collections.NewSet("shared"))).To(BeTrue())
 		})
 	})
 })

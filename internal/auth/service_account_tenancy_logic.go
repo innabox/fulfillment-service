@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // ServiceAccountTenancyLogicBuilder contains the data and logic needed to create default tenancy logic.
@@ -60,31 +62,26 @@ func (b *ServiceAccountTenancyLogicBuilder) Build() (result *ServiceAccountTenan
 }
 
 // DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
-func (p *ServiceAccountTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result []string, err error) {
+func (p *ServiceAccountTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
 	// Objects created by a service account are assigned to a tenant that is the namespace of the service account.
 	namespace, err := p.extractNamespace(ctx)
 	if err != nil {
 		return
 	}
-	result = []string{
-		namespace,
-	}
+	result = collections.NewSet(namespace)
 	return
 }
 
 // DetermineVisibleTenants extracts the subject from the auth context and returns the identifiers of the tenants
 // that the current user has permission to see.
-func (p *ServiceAccountTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result []string, err error) {
+func (p *ServiceAccountTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string], err error) {
 	// A service account can see the resources correponding to the tenant with the same name as the namespace of the
 	// service account, as well as the shared tenant.
 	namespace, err := p.extractNamespace(ctx)
 	if err != nil {
 		return
 	}
-	result = []string{
-		namespace,
-		"shared",
-	}
+	result = SharedTenants.Union(collections.NewSet(namespace))
 	return
 }
 

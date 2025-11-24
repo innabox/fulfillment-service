@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync"
 
 	"github.com/google/cel-go/cel"
@@ -34,6 +33,7 @@ import (
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/collections"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/uuid"
 )
@@ -344,7 +344,7 @@ func (s *EventsServer) checkTenancy(ctx context.Context, event *privatev1.Event)
 		err = fmt.Errorf("failed to determine visible tenants: %w", err)
 		return
 	}
-	if len(visibleTenants) == 0 {
+	if visibleTenants.Empty() {
 		result = true
 		return
 	}
@@ -352,39 +352,35 @@ func (s *EventsServer) checkTenancy(ctx context.Context, event *privatev1.Event)
 	// Get the tenants of the object:
 	objectTenants := s.extractTenants(ctx, event)
 
-	// Check if any of the visible tenants is in the object tenants:
-	for _, objectTenant := range objectTenants {
-		if slices.Contains(visibleTenants, objectTenant) {
-			s.logger.DebugContext(
-				ctx,
-				"Event is visible to the current user",
-				slog.Any("event", event),
-				slog.Any("visibible_tenants", visibleTenants),
-				slog.Any("object_tenants", objectTenants),
-			)
-			result = true
-			return
-		}
-	}
+	// Calculate the intersection of the visible tenants and the object tenants:
+	commonTenants := visibleTenants.Intersection(objectTenants)
 
-	// If we are here then none of the visibile tenants is in the object tenants, so the user can't see the object.
+	// If the intersection is empty, thn the user can see the event, otherwise they can't.
+	if commonTenants.Empty() {
+		s.logger.DebugContext(
+			ctx,
+			"Event is not visible to the current user",
+			slog.Any("event", event),
+			slog.Any("visibible_tenants", visibleTenants),
+			slog.Any("object_tenants", objectTenants),
+		)
+		result = false
+		return
+	}
 	s.logger.DebugContext(
 		ctx,
-		"Event isn't visible to the current user",
+		"Event is visible to the current user",
 		slog.Any("event", event),
 		slog.Any("visibible_tenants", visibleTenants),
 		slog.Any("object_tenants", objectTenants),
 	)
-	result = false
+	result = true
 	return
 }
 
-func (s *EventsServer) extractTenants(ctx context.Context, event *privatev1.Event) []string {
+func (s *EventsServer) extractTenants(ctx context.Context, event *privatev1.Event) collections.Set[string] {
 	metadata := s.extractMetadata(ctx, event)
-	if metadata == nil {
-		return nil
-	}
-	return metadata.GetTenants()
+	return collections.NewSet(metadata.GetTenants()...)
 }
 
 func (s *EventsServer) extractMetadata(ctx context.Context, event *privatev1.Event) *privatev1.Metadata {

@@ -16,6 +16,7 @@ package auth
 import (
 	"context"
 
+	"github.com/innabox/fulfillment-service/internal/collections"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -43,12 +44,12 @@ var _ = Describe("System tenancy logic", func() {
 	It("Returns the shared tenant for assigned tenants", func() {
 		result, err := logic.DetermineAssignedTenants(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result).To(ConsistOf("shared"))
+		Expect(result.Equal(collections.NewSet("shared"))).To(BeTrue())
 	})
 
 	It("Returns an empty list of visible tenants to disable filtering", func() {
 		result, err := logic.DetermineVisibleTenants(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(result).To(BeEmpty())
+		Expect(result.Universal()).To(BeTrue())
 	})
 })

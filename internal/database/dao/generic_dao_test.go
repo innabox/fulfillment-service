@@ -30,6 +30,7 @@ import (
 
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/collections"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/uuid"
 )
@@ -201,16 +202,25 @@ var _ = Describe("Generic DAO", func() {
 			// Create the attribution logic:
 			attributionLogic := auth.NewMockAttributionLogic(ctrl)
 			attributionLogic.EXPECT().DetermineAssignedCreators(gomock.Any()).
-				Return([]string{"my_user"}, nil).
+				Return(
+					collections.NewSet("my_user"),
+					nil,
+				).
 				AnyTimes()
 
 			// Create the tenancy logic:
 			tenancyLogic := auth.NewMockTenancyLogic(ctrl)
 			tenancyLogic.EXPECT().DetermineAssignedTenants(gomock.Any()).
-				Return([]string{"my_tenant"}, nil).
+				Return(
+					collections.NewSet("my_tenant"),
+					nil,
+				).
 				AnyTimes()
 			tenancyLogic.EXPECT().DetermineVisibleTenants(gomock.Any()).
-				Return([]string{"my_tenant"}, nil).
+				Return(
+					collections.NewSet("my_tenant"),
+					nil,
+				).
 				AnyTimes()
 
 			// Create the DAO:
@@ -822,6 +832,26 @@ var _ = Describe("Generic DAO", func() {
 			Expect(object.GetMyString()).To(Equal("your_value"))
 		})
 
+		It("Returns current object when updating with no changes", func() {
+			// Create an object:
+			created, err := generic.Create(ctx, &testsv1.Object{
+				MyString: "my_value",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(created).ToNot(BeNil())
+			Expect(created.GetId()).ToNot(BeEmpty())
+			Expect(created.GetMyString()).To(Equal("my_value"))
+
+			// Update with the same object (no changes):
+			updated, err := generic.Update(ctx, created)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated).ToNot(BeNil())
+			Expect(updated.GetId()).To(Equal(created.GetId()))
+			Expect(updated.GetMyString()).To(Equal("my_value"))
+			Expect(updated.GetMetadata()).ToNot(BeNil())
+			Expect(updated.GetMetadata().GetCreationTimestamp()).To(Equal(created.GetMetadata().GetCreationTimestamp()))
+		})
+
 		It("Updates name", func() {
 			// Create an object with an initial name:
 			object, err := generic.Create(ctx, &testsv1.Object{
@@ -1403,10 +1433,10 @@ var _ = Describe("Generic DAO", func() {
 				// Create a new DAO with restricted tenant visibility:
 				restrictedTenancyLogic := auth.NewMockTenancyLogic(ctrl)
 				restrictedTenancyLogic.EXPECT().DetermineAssignedTenants(gomock.Any()).
-					Return([]string{"tenant_a"}, nil).
+					Return(collections.NewSet("tenant_a"), nil).
 					AnyTimes()
 				restrictedTenancyLogic.EXPECT().DetermineVisibleTenants(gomock.Any()).
-					Return([]string{"tenant_a"}, nil).
+					Return(collections.NewSet("tenant_a"), nil).
 					AnyTimes()
 
 				restrictedDAO, err := NewGenericDAO[*testsv1.Object]().

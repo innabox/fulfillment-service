@@ -16,6 +16,8 @@ package auth
 import (
 	"context"
 	"log/slog"
+
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 // EmptyAttributionLogicBuilder contains the data and logic needed to create empty attribution logic.
@@ -49,6 +51,9 @@ func (b *EmptyAttributionLogicBuilder) Build() (result *EmptyAttributionLogic, e
 }
 
 // DetermineAssignedCreators returns an empty list of creators.
-func (l *EmptyAttributionLogic) DetermineAssignedCreators(_ context.Context) (result []string, err error) {
+func (l *EmptyAttributionLogic) DetermineAssignedCreators(_ context.Context) (result collections.Set[string], err error) {
+	result = emptyCreators
 	return
 }
+
+var emptyCreators = collections.NewEmptySet[string]()

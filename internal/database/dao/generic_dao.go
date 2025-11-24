@@ -655,20 +655,26 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 	if metadata != nil {
 		name = metadata.GetName()
 	}
-	creators, err := d.attributionLogic.DetermineAssignedCreators(ctx)
+	creatorsSet, err := d.attributionLogic.DetermineAssignedCreators(ctx)
 	if err != nil {
 		return
 	}
-	if creators == nil {
-		creators = []string{}
+	if !creatorsSet.Finite() {
+		err = errors.New("creators set is infinite")
+		return
 	}
-	tenants, err := d.tenancyLogic.DetermineAssignedTenants(ctx)
+	creators := creatorsSet.Inclusions()
+	sort.Strings(creators)
+	tenantsSet, err := d.tenancyLogic.DetermineAssignedTenants(ctx)
 	if err != nil {
 		return
 	}
-	if tenants == nil {
-		tenants = []string{}
+	if !tenantsSet.Finite() {
+		err = errors.New("tenants set is infinite")
+		return
 	}
+	tenants := tenantsSet.Inclusions()
+	sort.Strings(tenants)
 
 	// Save the object:
 	data, err := d.marshalData(object)
@@ -759,6 +765,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 
 	// Do nothing if there are no changes:
 	if d.equivalent(current, object) {
+		result = current
 		return
 	}
 
@@ -1046,21 +1053,16 @@ func (d *GenericDAO[O]) filterTenants(ctx context.Context, objectTenants []strin
 		return []string{}
 	}
 
-	// If no visible tenants are returned, don't apply any filtering. This allows the empty tenancy logic to work
-	// as a permissive fallback.
-	if len(visibleTenants) == 0 {
+	// If the visible tenants set is universal, it means that the user has permission to see all tenants, so we don't
+	// need to filter anything:
+	if visibleTenants.Universal() {
 		return objectTenants
 	}
 
 	// Calculate the intersection of object tenants and visible tenants:
-	visibleTenantsSet := make(map[string]struct{}, len(visibleTenants))
-	for _, tenant := range visibleTenants {
-		visibleTenantsSet[tenant] = struct{}{}
-	}
-
 	result := make([]string, 0, len(objectTenants))
 	for _, tenant := range objectTenants {
-		if _, ok := visibleTenantsSet[tenant]; ok {
+		if visibleTenants.Contains(tenant) {
 			result = append(result, tenant)
 		}
 	}
@@ -1170,24 +1172,40 @@ func (d *GenericDAO[O]) addTenancyFilter(ctx context.Context, buffer *strings.Bu
 		return err
 	}
 
-	// If no visible tenants are returned, don't apply any tenant filtering. This allows the empty tenancy logic to
-	// work as a permissive fallback.
-	if len(tenants) == 0 {
+	// If the tenants set is universal, it means that the user has permission to see all tenants, so we don't need to
+	// apply any filtering:
+	if tenants.Universal() {
 		return nil
 	}
 
-	// Add the tenant values to the parameters and the text to the buffer. Note that if the buffer isn't empty then
-	// we need to wrap the previous content in parentheses and add the tenancy filter with the 'and' operator.
-	*parameters = append(*parameters, tenants)
-	filter := fmt.Sprintf("tenants && $%d", len(*parameters))
-	if buffer.Len() == 0 {
-		buffer.WriteString(filter)
-	} else {
-		previous := buffer.String()
+	// If the tenantes set is empty, it means that the user has no permission to see any tenatns, so we can discard
+	// any previous filter and return instead a one that matches nothing.
+	if tenants.Empty() {
 		buffer.Reset()
-		fmt.Fprintf(buffer, "(%s) and %s", previous, filter)
+		buffer.WriteString("false")
+		return nil
 	}
-	return nil
+
+	// If the tenant set is finite, then we can add a filer that matches the tenants in the set.
+	var filter string
+	if tenants.Finite() {
+		tenants := tenants.Inclusions()
+		sort.Strings(tenants)
+		*parameters = append(*parameters, tenants)
+		filter = fmt.Sprintf("tenants && $%d", len(*parameters))
+		if buffer.Len() == 0 {
+			buffer.WriteString(filter)
+		} else {
+			previous := buffer.String()
+			buffer.Reset()
+			fmt.Fprintf(buffer, "(%s) and %s", previous, filter)
+		}
+		return nil
+	}
+
+	// If we are here then the tenant set is infinite, and we don't know how to apply filterning for that at the
+	// moment, so return an error.
+	return errors.New("infinite tenant sets are not supported")
 }
 
 // Names of well known fields:

@@ -16,6 +16,7 @@ package auth
 import (
 	"context"
 
+	"github.com/innabox/fulfillment-service/internal/collections"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -59,7 +60,7 @@ var _ = Describe("Service account tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("my-ns"))
+			Expect(result.Equal(collections.NewSet("my-ns"))).To(BeTrue())
 		})
 
 		It("Fails if the subject is not a service account", func() {
@@ -68,11 +69,10 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
 			Expect(err.Error()).To(ContainSubstring("system:serviceaccount:"))
-			Expect(result).To(BeNil())
 		})
 
 		It("Fails if the subject has the wrong prefix", func() {
@@ -81,10 +81,9 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
-			Expect(result).To(BeNil())
 		})
 
 		It("Fails if the subject has the wrong number of parts", func() {
@@ -93,10 +92,9 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineAssignedTenants(ctx)
+			_, err := logic.DetermineAssignedTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
-			Expect(result).To(BeNil())
 		})
 	})
 
@@ -109,7 +107,7 @@ var _ = Describe("Service account tenancy logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ConsistOf("my-ns", "shared"))
+			Expect(result.Equal(collections.NewSet("my-ns", "shared"))).To(BeTrue())
 		})
 
 		It("Fails if the subject is not a service account", func() {
@@ -118,10 +116,9 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineVisibleTenants(ctx)
+			_, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
-			Expect(result).To(BeNil())
 		})
 
 		It("Fails if the subject has the wrong number of parts", func() {
@@ -130,10 +127,9 @@ var _ = Describe("Service account tenancy logic", func() {
 				Source: SubjectSourceServiceAccount,
 			}
 			ctx = ContextWithSubject(ctx, subject)
-			result, err := logic.DetermineVisibleTenants(ctx)
+			_, err := logic.DetermineVisibleTenants(ctx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not a service account"))
-			Expect(result).To(BeNil())
 		})
 	})
 })

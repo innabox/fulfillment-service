@@ -58,7 +58,8 @@ var _ = Describe("Default attribution logic", func() {
 			ctx = ContextWithSubject(ctx, subject)
 			creators, err := logic.DetermineAssignedCreators(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(creators).To(ConsistOf("my_creator"))
+			Expect(creators.Finite()).To(BeTrue())
+			Expect(creators.Inclusions()).To(ConsistOf("my_creator"))
 		})
 
 		It("Panics when there is no subject in the context", func() {
