@@ -28,7 +28,7 @@ jobs:
       contents: read
       packages: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 0
     - id: run
@@ -61,7 +61,7 @@ jobs:
       contents: read
       packages: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 0
     - id: run
@@ -89,7 +89,7 @@ jobs:
       contents: read
       packages: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 0
     - id: run
