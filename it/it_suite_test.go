@@ -426,6 +426,19 @@ var _ = BeforeSuite(func() {
 	hubKubeconfigBytes, err = clientcmd.Write(*hubKubeconfigObject)
 	Expect(err).ToNot(HaveOccurred())
 	hubsClient := privatev1.NewHubsClient(adminConn)
+
+	// Wait for Authorino authorization to be ready before creating the hub:
+	Eventually(
+		func(g Gomega) {
+			// Try a simple list operation to verify authorization is working
+			_, err := hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+			g.Expect(err).ToNot(HaveOccurred())
+		},
+		30*time.Second,
+		time.Second,
+	).Should(Succeed())
+
+	// Now create the hub:
 	_, err = hubsClient.Create(ctx, privatev1.HubsCreateRequest_builder{
 		Object: privatev1.Hub_builder{
 			Id:         hubId,
