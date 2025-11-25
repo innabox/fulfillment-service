@@ -30,6 +30,7 @@ import (
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/annotations"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 	"github.com/innabox/fulfillment-service/internal/utils"
@@ -117,7 +118,7 @@ func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error 
 		vm: vm,
 	}
 	var err error
-	if vm.GetMetadata().HasDeletionTimestamp() {
+	if vm.HasMetadata() && vm.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
 		err = t.update(ctx)
@@ -142,9 +143,13 @@ func (t *task) update(ctx context.Context) error {
 	// Set the default values:
 	t.setDefaults()
 
+	// Validate that exactly one tenant is assigned:
+	if err := t.validateTenant(); err != nil {
+		return err
+	}
+
 	// Select the hub:
-	err := t.selectHub(ctx)
-	if err != nil {
+	if err := t.selectHub(ctx); err != nil {
 		return err
 	}
 
@@ -175,6 +180,9 @@ func (t *task) update(ctx context.Context) error {
 		object.SetGenerateName(objectPrefix)
 		object.SetLabels(map[string]string{
 			labels.VirtualMachineUuid: t.vm.GetId(),
+		})
+		object.SetAnnotations(map[string]string{
+			annotations.VirtualMachineTenant: t.vm.GetMetadata().GetTenants()[0],
 		})
 		err = unstructured.SetNestedField(object.Object, spec, "spec")
 		if err != nil {
@@ -226,6 +234,7 @@ func (t *task) setDefaults() {
 }
 
 func (t *task) setConditionDefaults(value privatev1.VirtualMachineConditionType) {
+	// Check if condition already exists
 	exists := false
 	for _, current := range t.vm.GetStatus().GetConditions() {
 		if current.GetType() == value {
@@ -233,14 +242,25 @@ func (t *task) setConditionDefaults(value privatev1.VirtualMachineConditionType)
 			break
 		}
 	}
+	// Only set default if condition doesn't exist
 	if !exists {
-		conditions := t.vm.GetStatus().GetConditions()
-		conditions = append(conditions, privatev1.VirtualMachineCondition_builder{
-			Type:   value,
-			Status: sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
-		}.Build())
-		t.vm.GetStatus().SetConditions(conditions)
+		t.updateCondition(value, sharedv1.ConditionStatus_CONDITION_STATUS_FALSE, "", "")
 	}
+}
+
+func (t *task) validateTenant() error {
+	if !t.vm.HasMetadata() || len(t.vm.GetMetadata().GetTenants()) != 1 {
+		message := "Virtual Machine must have exactly one tenant assigned"
+		err := errors.New(message)
+		t.updateCondition(
+			privatev1.VirtualMachineConditionType_VIRTUAL_MACHINE_CONDITION_TYPE_PROGRESSING,
+			sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
+			"InvalidTenant",
+			message,
+		)
+		return err
+	}
+	return nil
 }
 
 func (t *task) delete(ctx context.Context) (err error) {
@@ -354,6 +374,9 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 }
 
 func (t *task) addFinalizer() {
+	if !t.vm.HasMetadata() {
+		t.vm.SetMetadata(&privatev1.Metadata{})
+	}
 	list := t.vm.GetMetadata().GetFinalizers()
 	if !slices.Contains(list, finalizers.Controller) {
 		list = append(list, finalizers.Controller)
@@ -362,6 +385,9 @@ func (t *task) addFinalizer() {
 }
 
 func (t *task) removeFinalizer() {
+	if !t.vm.HasMetadata() {
+		return
+	}
 	list := t.vm.GetMetadata().GetFinalizers()
 	if slices.Contains(list, finalizers.Controller) {
 		list = slices.DeleteFunc(list, func(item string) bool {
@@ -369,4 +395,32 @@ func (t *task) removeFinalizer() {
 		})
 		t.vm.GetMetadata().SetFinalizers(list)
 	}
+}
+
+// updateCondition updates or creates a condition with the specified type, status, reason, and message.
+func (t *task) updateCondition(conditionType privatev1.VirtualMachineConditionType, status sharedv1.ConditionStatus,
+	reason string, message string) {
+	conditions := t.vm.GetStatus().GetConditions()
+	updated := false
+	for i, condition := range conditions {
+		if condition.GetType() == conditionType {
+			conditions[i] = privatev1.VirtualMachineCondition_builder{
+				Type:    conditionType,
+				Status:  status,
+				Reason:  &reason,
+				Message: &message,
+			}.Build()
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		conditions = append(conditions, privatev1.VirtualMachineCondition_builder{
+			Type:    conditionType,
+			Status:  status,
+			Reason:  &reason,
+			Message: &message,
+		}.Build())
+	}
+	t.vm.GetStatus().SetConditions(conditions)
 }
