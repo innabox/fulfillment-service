@@ -23,6 +23,7 @@ import (
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
@@ -727,6 +728,227 @@ var _ = Describe("Private clusters server", func() {
 			Expect(ok).To(BeTrue())
 			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
 			Expect(status.Message()).To(Equal("condition 'CLUSTER_CONDITION_TYPE_READY' is duplicated"))
+		})
+
+		It("Allows adding a new node set", func() {
+			// Create a cluster with the default node sets from the template
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+			Expect(object.GetSpec().GetNodeSets()).To(HaveLen(2)) // compute and gpu
+
+			// Add a new node set
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      3,
+							}.Build(),
+							"gpu": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-gpu-id",
+								Size:      1,
+							}.Build(),
+							"storage": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      2,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Allows removing a node set when multiple exist", func() {
+			// Create a cluster with the default node sets from the template
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+			Expect(object.GetSpec().GetNodeSets()).To(HaveLen(2)) // compute and gpu
+
+			// Remove the gpu node set
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      3,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Rejects removing the last node set", func() {
+			// Create a cluster with a template that has only one node set
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id-0",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+			Expect(object.GetSpec().GetNodeSets()).To(HaveLen(1)) // only compute
+
+			// Try to remove the last node set
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						NodeSets: map[string]*privatev1.ClusterNodeSet{},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets"},
+				},
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal("cannot remove the last node set: clusters must have at least one node set"))
+		})
+
+		It("Rejects changing host_class of an existing node set", func() {
+			// Create a cluster with the default node sets from the template
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Try to change the host_class of the compute node set
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-gpu-id", // Changed from acme-1ti-id
+								Size:      3,
+							}.Build(),
+							"gpu": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-gpu-id",
+								Size:      1,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets"},
+				},
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal("cannot change host_class for node set 'compute' from 'acme-1ti-id' to 'acme-gpu-id': host_class is immutable"))
+		})
+
+		It("Allows changing size of an existing node set", func() {
+			// Create a cluster with the default node sets from the template
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Change the size of the compute node set
+			updateResponse, err := server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-1ti-id",
+								Size:      5, // Changed from 3
+							}.Build(),
+							"gpu": privatev1.ClusterNodeSet_builder{
+								HostClass: "acme-gpu-id",
+								Size:      1,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			updatedObject := updateResponse.GetObject()
+			Expect(updatedObject.GetSpec().GetNodeSets()["compute"].GetSize()).To(Equal(int32(5)))
+		})
+
+		It("Allows changing size with granular field mask", func() {
+			// Create a cluster with the default node sets from the template
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Get the initial size
+			initialSize := object.GetSpec().GetNodeSets()["compute"].GetSize()
+			newSize := initialSize + 2
+
+			// Change only the size using a granular field mask
+			updateResponse, err := server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						NodeSets: map[string]*privatev1.ClusterNodeSet{
+							"compute": privatev1.ClusterNodeSet_builder{
+								Size: newSize,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets.compute.size"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			updatedObject := updateResponse.GetObject()
+			Expect(updatedObject.GetSpec().GetNodeSets()["compute"].GetSize()).To(Equal(newSize))
 		})
 	})
 })

@@ -20,12 +20,14 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/dustin/go-humanize/english"
 	"golang.org/x/exp/maps"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
@@ -184,6 +186,10 @@ func (s *PrivateClustersServer) Update(ctx context.Context,
 	if err != nil {
 		return
 	}
+	err = s.validateNodeSetsUpdate(ctx, request)
+	if err != nil {
+		return
+	}
 	err = s.generic.Update(ctx, request, &response)
 	return
 }
@@ -281,6 +287,127 @@ func (s *PrivateClustersServer) validateNoDuplicateConditions(object *privatev1.
 			)
 		}
 		conditionTypes.Set(uint(conditionType))
+	}
+	return nil
+}
+
+// validateNodeSetsUpdate validates that changes to node_sets are allowed.
+// It delegates to specific validators for different aspects of the validation.
+func (s *PrivateClustersServer) validateNodeSetsUpdate(ctx context.Context,
+	request *privatev1.ClustersUpdateRequest) error {
+	// Check if the update affects node_sets at all:
+	if !s.updateAffectsNodeSets(request.GetUpdateMask()) {
+		// Update doesn't touch node_sets, no validation needed
+		return nil
+	}
+
+	// Check if only size fields are being updated - these are always allowed
+	if s.isUpdatingOnlySizes(request.GetUpdateMask()) {
+		return nil
+	}
+
+	// Fetch the existing cluster from the database:
+	existingCluster, found, err := s.getExistingCluster(ctx, request)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	// Get the node sets from both clusters:
+	existingNodeSets := existingCluster.GetSpec().GetNodeSets()
+	newNodeSets := request.GetObject().GetSpec().GetNodeSets()
+
+	// Run specific validations:
+	if err := s.validateAtLeastOneNodeSet(newNodeSets); err != nil {
+		return err
+	}
+	if err := s.validateNodeSetHostClassImmutability(existingNodeSets, newNodeSets); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// getExistingCluster fetches the existing cluster from the database.
+// Returns the cluster, a boolean indicating if it was found, and any error that occurred.
+func (s *PrivateClustersServer) getExistingCluster(ctx context.Context,
+	request *privatev1.ClustersUpdateRequest) (*privatev1.Cluster, bool, error) {
+	cluster := request.GetObject()
+	if cluster == nil {
+		return nil, false, nil
+	}
+	id := cluster.GetId()
+	if id == "" {
+		return nil, false, nil
+	}
+	existingCluster, err := s.generic.dao.Get(ctx, id)
+	if err != nil {
+		return nil, false, err
+	}
+	return existingCluster, true, nil
+}
+
+// updateAffectsNodeSets checks if the update mask indicates that node_sets are being modified.
+func (s *PrivateClustersServer) updateAffectsNodeSets(updateMask *fieldmaskpb.FieldMask) bool {
+	if updateMask == nil {
+		// No mask means no updates to node sets
+		return false
+	}
+	for _, path := range updateMask.GetPaths() {
+		if strings.HasPrefix(path, "spec.node_sets") {
+			return true
+		}
+	}
+	return false
+}
+
+// isUpdatingOnlySizes checks if the update mask is only modifying size fields of node sets.
+func (s *PrivateClustersServer) isUpdatingOnlySizes(updateMask *fieldmaskpb.FieldMask) bool {
+	for _, path := range updateMask.GetPaths() {
+		if strings.HasPrefix(path, "spec.node_sets") {
+			if !strings.HasSuffix(path, ".size") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// validateAtLeastOneNodeSet ensures that clusters always have at least one node set.
+func (s *PrivateClustersServer) validateAtLeastOneNodeSet(nodeSets map[string]*privatev1.ClusterNodeSet) error {
+	if len(nodeSets) == 0 {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"cannot remove the last node set: clusters must have at least one node set",
+		)
+	}
+	return nil
+}
+
+// validateNodeSetHostClassImmutability ensures that the host_class field of existing node sets
+// cannot be changed. This is an existing documented restriction in the API specification.
+func (s *PrivateClustersServer) validateNodeSetHostClassImmutability(
+	existingNodeSets map[string]*privatev1.ClusterNodeSet,
+	newNodeSets map[string]*privatev1.ClusterNodeSet) error {
+	for nodeSetName, existingNodeSet := range existingNodeSets {
+		newNodeSet, exists := newNodeSets[nodeSetName]
+		if !exists {
+			// Node set is being removed, which is allowed (if at least one remains)
+			continue
+		}
+		existingHostClass := existingNodeSet.GetHostClass()
+		newHostClass := newNodeSet.GetHostClass()
+		if existingHostClass != newHostClass {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"cannot change host_class for node set '%s' from '%s' to '%s': host_class is immutable",
+				nodeSetName,
+				existingHostClass,
+				newHostClass,
+			)
+		}
 	}
 	return nil
 }
