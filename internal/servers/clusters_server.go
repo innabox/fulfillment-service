@@ -379,11 +379,37 @@ func (s *ClustersServer) applyNodeSetsReplacement(updateMask *fieldmaskpb.FieldM
 			if publicCluster.GetSpec() != nil && privateCluster.GetSpec() != nil {
 				publicNodeSets := publicCluster.GetSpec().GetNodeSets()
 				privateNodeSets := privateCluster.GetSpec().GetNodeSets()
+
+				// Debug logging
+				publicKeys := make([]string, 0, len(publicNodeSets))
+				for k := range publicNodeSets {
+					publicKeys = append(publicKeys, k)
+				}
+				privateKeysBefore := make([]string, 0, len(privateNodeSets))
+				for k := range privateNodeSets {
+					privateKeysBefore = append(privateKeysBefore, k)
+				}
+				s.logger.Debug(
+					"Applying node sets replacement",
+					slog.Any("public_keys", publicKeys),
+					slog.Any("private_keys_before", privateKeysBefore),
+				)
+
 				for nodeSetKey := range privateNodeSets {
 					if _, exists := publicNodeSets[nodeSetKey]; !exists {
+						s.logger.Debug("Removing node set", slog.String("key", nodeSetKey))
 						delete(privateNodeSets, nodeSetKey)
 					}
 				}
+
+				privateKeysAfter := make([]string, 0, len(privateNodeSets))
+				for k := range privateNodeSets {
+					privateKeysAfter = append(privateKeysAfter, k)
+				}
+				s.logger.Debug(
+					"After node sets replacement",
+					slog.Any("private_keys_after", privateKeysAfter),
+				)
 			}
 			break
 		}
