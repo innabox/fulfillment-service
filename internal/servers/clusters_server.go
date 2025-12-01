@@ -23,6 +23,7 @@ import (
 	"google.golang.org/genproto/googleapis/api/httpbody"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -113,7 +114,6 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
 		SetTable("hubs").
-		SetAttributionLogic(b.attributionLogic).
 		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
@@ -306,26 +306,17 @@ func (s *ClustersServer) Update(ctx context.Context,
 		return
 	}
 
-	// Determine how to prepare the private cluster based on whether there's a field mask. When there's a field mask,
-	// we don't want to merge into the existing object because that would prevent proper replacement of map fields
-	// (like node sets). Instead, we copy to a new object and let the generic server handle the merge with the
-	// database object, which correctly applies field mask semantics.
-	var privateCluster *privatev1.Cluster
-	updateMask := request.GetUpdateMask()
-	if len(updateMask.GetPaths()) > 0 {
-		privateCluster = &privatev1.Cluster{}
-		privateCluster.SetId(id)
-	} else {
-		getRequest := &privatev1.ClustersGetRequest{}
-		getRequest.SetId(id)
-		var getResponse *privatev1.ClustersGetResponse
-		getResponse, err = s.private.Get(ctx, getRequest)
-		if err != nil {
-			return nil, err
-		}
-		privateCluster = getResponse.GetObject()
+	// Get the existing object from the private server:
+	getRequest := &privatev1.ClustersGetRequest{}
+	getRequest.SetId(id)
+	getResponse, err := s.private.Get(ctx, getRequest)
+	if err != nil {
+		return nil, err
 	}
-	err = s.inMapper.Copy(ctx, publicCluster, privateCluster)
+	existingPrivateCluster := getResponse.GetObject()
+
+	// Map the public changes to the existing private object (preserving private data):
+	err = s.inMapper.Copy(ctx, publicCluster, existingPrivateCluster)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -336,9 +327,16 @@ func (s *ClustersServer) Update(ctx context.Context,
 		return
 	}
 
-	// Delegate to the private server:
+	// Apply field mask replacements for map fields. The mapper merges maps by default,
+	// but when a field mask explicitly specifies a map field, we want to replace it entirely.
+	updateMask := request.GetUpdateMask()
+	s.logger.Debug("clusters_server.Update: about to call applyNodeSetsReplacement",
+		slog.Any("update_mask", updateMask))
+	s.applyNodeSetsReplacement(updateMask, publicCluster, existingPrivateCluster)
+
+	// Delegate to the private server with the merged object:
 	privateRequest := &privatev1.ClustersUpdateRequest{}
-	privateRequest.SetObject(privateCluster)
+	privateRequest.SetObject(existingPrivateCluster)
 	privateRequest.SetUpdateMask(updateMask)
 	privateResponse, err := s.private.Update(ctx, privateRequest)
 	if err != nil {
@@ -571,14 +569,8 @@ func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId s
 	}
 
 	// Get the data of the hub:
-	getHubResponse, err := s.hubsDao.Get().
-		SetId(cluster.GetStatus().GetHub()).
-		Do(ctx)
-	if err != nil {
-		return
-	}
-	hub := getHubResponse.GetObject()
-	if hub == nil {
+	hub, err := s.hubsDao.Get(ctx, cluster.GetStatus().GetHub())
+	if err != nil || hub == nil {
 		return
 	}
 
@@ -706,4 +698,72 @@ func (s *ClustersServer) getKubeSecret(ctx context.Context, client clnt.Client,
 	}
 	result = object
 	return
+}
+
+// applyNodeSetsReplacement handles map field replacement when a field mask is used.
+// The mapper.Copy merges maps by default, which is usually desired behavior. However,
+// when a field mask explicitly specifies "spec.node_sets", we want to replace the entire
+// map rather than merge it. This function removes node sets from the private cluster
+// that don't exist in the public cluster when spec.node_sets is in the update mask.
+func (s *ClustersServer) applyNodeSetsReplacement(updateMask *fieldmaskpb.FieldMask,
+	publicCluster *ffv1.Cluster, privateCluster *privatev1.Cluster) {
+	s.logger.Debug("applyNodeSetsReplacement: function called")
+
+	if updateMask == nil {
+		s.logger.Debug("applyNodeSetsReplacement: updateMask is nil, returning")
+		return
+	}
+
+	s.logger.Debug("applyNodeSetsReplacement: checking update mask paths",
+		slog.Any("paths", updateMask.GetPaths()))
+
+	// Check if the update mask includes spec.node_sets
+	for _, path := range updateMask.GetPaths() {
+		s.logger.Debug("applyNodeSetsReplacement: checking path",
+			slog.String("path", path),
+			slog.Bool("matches", path == "spec.node_sets"))
+		if path == "spec.node_sets" {
+			s.logger.Debug("applyNodeSetsReplacement: found spec.node_sets in update mask")
+
+			// Remove node sets that exist in private but not in public
+			if publicCluster.GetSpec() != nil && privateCluster.GetSpec() != nil {
+				publicNodeSets := publicCluster.GetSpec().GetNodeSets()
+				privateNodeSets := privateCluster.GetSpec().GetNodeSets()
+
+				// Debug logging
+				publicKeys := make([]string, 0, len(publicNodeSets))
+				for k := range publicNodeSets {
+					publicKeys = append(publicKeys, k)
+				}
+				privateKeysBefore := make([]string, 0, len(privateNodeSets))
+				for k := range privateNodeSets {
+					privateKeysBefore = append(privateKeysBefore, k)
+				}
+				s.logger.Debug(
+					"Applying node sets replacement",
+					slog.Any("public_keys", publicKeys),
+					slog.Any("private_keys_before", privateKeysBefore),
+				)
+
+				for nodeSetKey := range privateNodeSets {
+					if _, exists := publicNodeSets[nodeSetKey]; !exists {
+						s.logger.Debug("Removing node set", slog.String("key", nodeSetKey))
+						delete(privateNodeSets, nodeSetKey)
+					}
+				}
+
+				privateKeysAfter := make([]string, 0, len(privateNodeSets))
+				for k := range privateNodeSets {
+					privateKeysAfter = append(privateKeysAfter, k)
+				}
+				s.logger.Debug(
+					"After node sets replacement",
+					slog.Any("private_keys_after", privateKeysAfter),
+				)
+			}
+			break
+		}
+	}
+
+	s.logger.Debug("applyNodeSetsReplacement: function completed")
 }
