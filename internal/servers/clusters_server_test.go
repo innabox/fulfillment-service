@@ -243,6 +243,30 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetId()).ToNot(BeEmpty())
 		})
 
+		It("Rejects creation when JWT user has empty groups", func() {
+			// Create a context with a JWT subject that has empty groups
+			subject := &auth.Subject{
+				Source: auth.SubjectSourceJwt,
+				User:   "test-user",
+				Groups: []string{},
+			}
+			ctxWithEmptyGroups := auth.ContextWithSubject(ctx, subject)
+
+			response, err := server.Create(ctxWithEmptyGroups, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(response).To(BeNil())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
+			Expect(status.Message()).To(ContainSubstring("user must belong to at least one group"))
+		})
+
 		It("Doesn't create object without template", func() {
 			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{}.Build(),

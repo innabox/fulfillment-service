@@ -42,3 +42,19 @@ func SubjectFromContext(ctx context.Context) *Subject {
 		panic("failed to get subject from context")
 	}
 }
+
+// HasJwtSubjectWithEmptyGroups returns true if the context contains a JWT subject with empty groups.
+// Returns false if there is no subject, or if the subject is not a JWT subject, or if it has groups.
+func HasJwtSubjectWithEmptyGroups(ctx context.Context) bool {
+	subjectValue := ctx.Value(subjectContextKey)
+	if subjectValue == nil {
+		return false
+	}
+
+	subject, ok := subjectValue.(*Subject)
+	if !ok {
+		return false
+	}
+
+	return subject.Source == SubjectSourceJwt && len(subject.Groups) == 0
+}

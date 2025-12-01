@@ -369,7 +369,22 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 	return nil
 }
 
+func (s *GenericServer[O]) validateSubjectGroups(ctx context.Context) error {
+	if auth.HasJwtSubjectWithEmptyGroups(ctx) {
+		return grpcstatus.Errorf(
+			grpccodes.PermissionDenied,
+			"user must belong to at least one group to create objects",
+		)
+	}
+	return nil
+}
+
 func (s *GenericServer[O]) Create(ctx context.Context, request any, response any) error {
+	// Validate that JWT users have at least one group before proceeding
+	if err := s.validateSubjectGroups(ctx); err != nil {
+		return err
+	}
+
 	type requestIface interface {
 		GetObject() O
 	}
