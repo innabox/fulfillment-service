@@ -126,8 +126,21 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 		return err
 	}
 	if !proto.Equal(cluster, oldCluster) {
+		// Re-fetch the cluster to get the latest version before updating.
+		// This ensures we don't overwrite concurrent changes to fields like spec.node_sets.
+		freshCluster, err := r.clustersClient.Get(ctx, privatev1.ClustersGetRequest_builder{
+			Id: cluster.GetId(),
+		}.Build())
+		if err != nil {
+			return err
+		}
+
+		// Apply only the changes made by the reconciler (finalizers and status) to the fresh cluster
+		freshCluster.Object.GetMetadata().SetFinalizers(cluster.GetMetadata().GetFinalizers())
+		freshCluster.Object.SetStatus(cluster.GetStatus())
+
 		_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-			Object: cluster,
+			Object: freshCluster.Object,
 		}.Build())
 	}
 	return err
