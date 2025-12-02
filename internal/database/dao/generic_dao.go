@@ -668,6 +668,12 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 
+	// Validate that tenants is not empty to ensure database integrity:
+	if len(tenants) == 0 {
+		err = errors.New("cannot create object with empty tenants")
+		return
+	}
+
 	// Save the object:
 	data, err := d.marshalData(object)
 	if err != nil {
@@ -810,6 +816,13 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	if err != nil {
 		return
 	}
+
+	// Validate that tenants is not empty to ensure database integrity:
+	if len(tenants) == 0 {
+		err = errors.New("cannot update object with empty tenants")
+		return
+	}
+
 	object = d.cloneObject(object)
 	metadata = d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)

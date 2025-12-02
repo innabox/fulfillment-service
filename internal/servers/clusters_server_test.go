@@ -49,7 +49,7 @@ var _ = Describe("Clusters server", func() {
 		ctx = context.Background()
 
 		// Create the tenancy logic:
-		tenancy, err = auth.NewEmptyTenancyLogic().
+		tenancy, err = auth.NewSystemTenancyLogic().
 			SetLogger(logger).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -243,16 +243,21 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetId()).ToNot(BeEmpty())
 		})
 
-		It("Rejects creation when JWT user has empty groups", func() {
-			// Create a context with a JWT subject that has empty groups
-			subject := &auth.Subject{
-				Source: auth.SubjectSourceJwt,
-				User:   "test-user",
-				Groups: []string{},
-			}
-			ctxWithEmptyGroups := auth.ContextWithSubject(ctx, subject)
+		It("Rejects creation when tenants are empty", func() {
+			// Create a tenancy logic that returns empty tenants
+			emptyTenancy, err := auth.NewEmptyTenancyLogic().
+				SetLogger(logger).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
 
-			response, err := server.Create(ctxWithEmptyGroups, ffv1.ClustersCreateRequest_builder{
+			// Create a server with the empty tenancy logic
+			serverWithEmptyTenancy, err := NewClustersServer().
+				SetLogger(logger).
+				SetTenancyLogic(emptyTenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			response, err := serverWithEmptyTenancy.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{
 					Spec: ffv1.ClusterSpec_builder{
 						Template: "my_template",
@@ -263,8 +268,8 @@ var _ = Describe("Clusters server", func() {
 			Expect(response).To(BeNil())
 			status, ok := grpcstatus.FromError(err)
 			Expect(ok).To(BeTrue())
-			Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
-			Expect(status.Message()).To(ContainSubstring("user must belong to at least one group"))
+			Expect(status.Code()).To(Equal(grpccodes.Internal))
+			Expect(status.Message()).To(Equal("failed to create object"))
 		})
 
 		It("Doesn't create object without template", func() {
