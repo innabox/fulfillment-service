@@ -23,6 +23,7 @@ import (
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -610,12 +611,12 @@ var _ = Describe("Private clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			object := createResponse.GetObject()
 
-			// Update the object:
+			// Update the object (keeping template unchanged):
 			updateResponse, err := server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
 				Object: privatev1.Cluster_builder{
 					Id: object.GetId(),
 					Spec: privatev1.ClusterSpec_builder{
-						Template: "your_template",
+						Template: object.GetSpec().GetTemplate(),
 					}.Build(),
 					Status: privatev1.ClusterStatus_builder{
 						Hub: "your_hub",
@@ -623,7 +624,7 @@ var _ = Describe("Private clusters server", func() {
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetSpec().GetTemplate()).To(Equal("your_template"))
+			Expect(updateResponse.GetObject().GetSpec().GetTemplate()).To(Equal("my-template-id"))
 			Expect(updateResponse.GetObject().GetStatus().GetHub()).To(Equal("your_hub"))
 
 			// Get and verify:
@@ -631,7 +632,7 @@ var _ = Describe("Private clusters server", func() {
 				Id: object.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetSpec().GetTemplate()).To(Equal("your_template"))
+			Expect(getResponse.GetObject().GetSpec().GetTemplate()).To(Equal("my-template-id"))
 			Expect(getResponse.GetObject().GetStatus().GetHub()).To(Equal("your_hub"))
 		})
 
@@ -949,6 +950,75 @@ var _ = Describe("Private clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			updatedObject := updateResponse.GetObject()
 			Expect(updatedObject.GetSpec().GetNodeSets()["compute"].GetSize()).To(Equal(newSize))
+		})
+
+		It("Rejects changing template field", func() {
+			oldTemplate := "my-template-id"
+			newTemplate := "my-template-id-0"
+
+			// Create a cluster
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: oldTemplate,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Try to change the template
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						Template: newTemplate,
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.template"},
+				},
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal(fmt.Sprintf(
+				"cannot change spec.template from '%s' to '%s': template is immutable",
+				oldTemplate, newTemplate,
+			)))
+		})
+
+		It("Rejects changing template_parameters field", func() {
+			// Create a cluster with template parameters
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Try to change the template parameters
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						Template:           object.GetSpec().GetTemplate(),
+						TemplateParameters: map[string]*anypb.Any{"key": nil},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.template_parameters"},
+				},
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal("cannot change spec.template_parameters: template parameters are immutable"))
 		})
 	})
 })

@@ -27,6 +27,8 @@ import (
 	"golang.org/x/exp/maps"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -183,6 +185,10 @@ func (s *PrivateClustersServer) Create(ctx context.Context,
 func (s *PrivateClustersServer) Update(ctx context.Context,
 	request *privatev1.ClustersUpdateRequest) (response *privatev1.ClustersUpdateResponse, err error) {
 	err = s.validateNoDuplicateConditions(request.GetObject())
+	if err != nil {
+		return
+	}
+	err = s.validateTemplateImmutability(ctx, request)
 	if err != nil {
 		return
 	}
@@ -361,8 +367,16 @@ func (s *PrivateClustersServer) updateAffectsNodeSets(updateMask *fieldmaskpb.Fi
 		// No mask means no updates to node sets
 		return false
 	}
+	return s.isFieldInMask(updateMask, "spec.node_sets")
+}
+
+// isFieldInMask checks if a field path is in the update mask.
+func (s *PrivateClustersServer) isFieldInMask(updateMask *fieldmaskpb.FieldMask, fieldPath string) bool {
+	if updateMask == nil {
+		return false
+	}
 	for _, path := range updateMask.GetPaths() {
-		if strings.HasPrefix(path, "spec.node_sets") {
+		if path == fieldPath || strings.HasPrefix(path, fieldPath+".") {
 			return true
 		}
 	}
@@ -415,6 +429,59 @@ func (s *PrivateClustersServer) validateNodeSetHostClassImmutability(
 			)
 		}
 	}
+	return nil
+}
+
+// validateTemplateImmutability ensures that the template and template_parameters fields
+// cannot be changed after cluster creation.
+func (s *PrivateClustersServer) validateTemplateImmutability(ctx context.Context,
+	request *privatev1.ClustersUpdateRequest) error {
+	// Check if template or template_parameters are being updated:
+	updateMask := request.GetUpdateMask()
+	updatingTemplate := s.isFieldInMask(updateMask, "spec.template")
+	updatingTemplateParams := s.isFieldInMask(updateMask, "spec.template_parameters")
+
+	// If neither field is being updated, no validation needed:
+	if !updatingTemplate && !updatingTemplateParams {
+		return nil
+	}
+
+	// Fetch the existing cluster from the database:
+	existingCluster, found, err := s.getExistingCluster(ctx, request)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	// Get the specs from both clusters:
+	existingSpec := existingCluster.GetSpec()
+	newSpec := request.GetObject().GetSpec()
+
+	// Check if template has changed:
+	if updatingTemplate && existingSpec.GetTemplate() != newSpec.GetTemplate() {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"cannot change spec.template from '%s' to '%s': template is immutable",
+			existingSpec.GetTemplate(),
+			newSpec.GetTemplate(),
+		)
+	}
+
+	// Check if template_parameters have changed:
+	if updatingTemplateParams {
+		templateParamsEqual := func(first, second *anypb.Any) bool {
+			return proto.Equal(first, second)
+		}
+		if !maps.EqualFunc(existingSpec.GetTemplateParameters(), newSpec.GetTemplateParameters(), templateParamsEqual) {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"cannot change spec.template_parameters: template parameters are immutable",
+			)
+		}
+	}
+
 	return nil
 }
 
