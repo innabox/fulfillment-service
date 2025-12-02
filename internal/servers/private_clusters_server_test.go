@@ -47,7 +47,7 @@ var _ = Describe("Private clusters server", func() {
 		ctx = context.Background()
 
 		// Create the tenancy logic:
-		tenancy, err = auth.NewEmptyTenancyLogic().
+		tenancy, err = auth.NewSystemTenancyLogic().
 			SetLogger(logger).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
