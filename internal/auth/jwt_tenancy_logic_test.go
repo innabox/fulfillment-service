@@ -64,7 +64,7 @@ var _ = Describe("JWT tenancy logic", func() {
 			Expect(result.Equal(collections.NewSet("group1", "group2"))).To(BeTrue())
 		})
 
-		It("Returns empty list when user has no groups", func() {
+		It("Returns error when user has no groups", func() {
 			subject := &Subject{
 				Source: SubjectSourceJwt,
 				User:   "my_user",
@@ -72,7 +72,8 @@ var _ = Describe("JWT tenancy logic", func() {
 			}
 			ctx = ContextWithSubject(ctx, subject)
 			result, err := logic.DetermineAssignedTenants(ctx)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("user must belong to at least one group"))
 			Expect(result.Empty()).To(BeTrue())
 		})
 	})

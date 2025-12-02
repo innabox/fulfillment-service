@@ -123,7 +123,8 @@ var _ = Describe("gRPC external authentication function", func() {
 
 		// Set the subject header:
 		subject := &Subject{
-			User: "my_user",
+			User:   "my_user",
+			Groups: []string{"my_group"},
 		}
 		value, err := json.Marshal(subject)
 		Expect(err).ToNot(HaveOccurred())
@@ -228,7 +229,8 @@ var _ = Describe("gRPC external authentication function", func() {
 
 		// Set the subject header:
 		subject := &Subject{
-			User: "  \t  my_user\n",
+			User:   "  \t  my_user\n",
+			Groups: []string{"my_group"},
 		}
 		value, err := json.Marshal(subject)
 		Expect(err).ToNot(HaveOccurred())
