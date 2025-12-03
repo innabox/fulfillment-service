@@ -60,16 +60,17 @@ func (b *JwtTenancyLogicBuilder) Build() (result *JwtTenancyLogic, err error) {
 
 // DetermineAssignedTenants extracts the subject from the auth context and returns the identifiers of the tenants.
 // For JWT-authenticated users, objects are assigned to the groups of the user.
-func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (collections.Set[string], error) {
+func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
-	result := collections.NewSet(subject.Groups...)
+	result = collections.NewSet(subject.Groups...)
 	if len(subject.Groups) == 0 {
 		p.logger.ErrorContext(
 			ctx,
 			"JWT user has no groups",
 			slog.String("user", subject.User),
 		)
-		return result, fmt.Errorf("user must belong to at least one group to create objects")
+		err = fmt.Errorf("user must belong to at least one group to create objects")
+		return
 	}
 	p.logger.DebugContext(
 		ctx,
@@ -77,14 +78,14 @@ func (p *JwtTenancyLogic) DetermineAssignedTenants(ctx context.Context) (collect
 		slog.String("user", subject.User),
 		slog.Any("tenants", result.Inclusions()),
 	)
-	return result, nil
+	return
 }
 
 // DetermineVisibleTenants extracts the subject from the context and returns a tenant for each group that the user
 // belongs to, as well as the shared tenant.
-func (p *JwtTenancyLogic) DetermineVisibleTenants(ctx context.Context) (collections.Set[string], error) {
+func (p *JwtTenancyLogic) DetermineVisibleTenants(ctx context.Context) (result collections.Set[string], err error) {
 	subject := SubjectFromContext(ctx)
-	result := SharedTenants.Union(collections.NewSet(subject.Groups...))
+	result = SharedTenants.Union(collections.NewSet(subject.Groups...))
 	p.logger.DebugContext(
 		ctx,
 		"Determined visible tenants for JWT user",
@@ -92,5 +93,5 @@ func (p *JwtTenancyLogic) DetermineVisibleTenants(ctx context.Context) (collecti
 		slog.Any("groups", subject.Groups),
 		slog.Any("tenants", result.Inclusions()),
 	)
-	return result, nil
+	return
 }
