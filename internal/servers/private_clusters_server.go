@@ -190,6 +190,10 @@ func (s *PrivateClustersServer) Update(ctx context.Context,
 	if err != nil {
 		return
 	}
+	err = s.applyNodeSetsReplacement(ctx, request)
+	if err != nil {
+		return
+	}
 	err = s.generic.Update(ctx, request, &response)
 	return
 }
@@ -204,6 +208,64 @@ func (s *PrivateClustersServer) Signal(ctx context.Context,
 	request *privatev1.ClustersSignalRequest) (response *privatev1.ClustersSignalResponse, err error) {
 	err = s.generic.Signal(ctx, request, &response)
 	return
+}
+
+// applyNodeSetsReplacement handles map field replacement when a field mask is used.
+// The field mask merge logic merges maps by default, which is usually desired behavior. However,
+// when a field mask explicitly specifies "spec.node_sets", we want to replace the entire
+// map rather than merge it.
+func (s *PrivateClustersServer) applyNodeSetsReplacement(ctx context.Context,
+	request *privatev1.ClustersUpdateRequest) error {
+	updateMask := request.GetUpdateMask()
+	if updateMask == nil {
+		return nil
+	}
+
+	// Check if the update mask includes spec.node_sets
+	for _, path := range updateMask.GetPaths() {
+		if path == "spec.node_sets" {
+			return s.replaceNodeSets(ctx, request)
+		}
+	}
+
+	return nil
+}
+
+// replaceNodeSets replaces the node sets in the existing cluster with those from the request.
+// It merges new node sets from the request and removes node sets not present in the request.
+func (s *PrivateClustersServer) replaceNodeSets(ctx context.Context,
+	request *privatev1.ClustersUpdateRequest) error {
+	existingCluster, found, err := s.getExistingCluster(ctx, request)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+
+	requestCluster := request.GetObject()
+
+	if requestCluster.GetSpec() != nil && existingCluster.GetSpec() != nil {
+		requestNodeSets := requestCluster.GetSpec().GetNodeSets()
+		existingNodeSets := existingCluster.GetSpec().GetNodeSets()
+
+		// First, copy all new node sets from request to existing
+		for key, value := range requestNodeSets {
+			existingNodeSets[key] = value
+		}
+
+		// Then, delete node sets from existing that aren't in request
+		for nodeSetKey := range existingNodeSets {
+			if _, exists := requestNodeSets[nodeSetKey]; !exists {
+				delete(existingNodeSets, nodeSetKey)
+			}
+		}
+
+		// Set the modified cluster back on the request
+		request.SetObject(existingCluster)
+	}
+
+	return nil
 }
 
 func (s *PrivateClustersServer) setDefaults(cluster *privatev1.Cluster) {
