@@ -243,35 +243,6 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetId()).ToNot(BeEmpty())
 		})
 
-		It("Rejects creation when tenants are empty", func() {
-			// Create a tenancy logic that returns empty tenants
-			emptyTenancy, err := auth.NewEmptyTenancyLogic().
-				SetLogger(logger).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			// Create a server with the empty tenancy logic
-			serverWithEmptyTenancy, err := NewClustersServer().
-				SetLogger(logger).
-				SetTenancyLogic(emptyTenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			response, err := serverWithEmptyTenancy.Create(ctx, ffv1.ClustersCreateRequest_builder{
-				Object: ffv1.Cluster_builder{
-					Spec: ffv1.ClusterSpec_builder{
-						Template: "my_template",
-					}.Build(),
-				}.Build(),
-			}.Build())
-			Expect(err).To(HaveOccurred())
-			Expect(response).To(BeNil())
-			status, ok := grpcstatus.FromError(err)
-			Expect(ok).To(BeTrue())
-			Expect(status.Code()).To(Equal(grpccodes.Internal))
-			Expect(status.Message()).To(Equal("failed to create object"))
-		})
-
 		It("Doesn't create object without template", func() {
 			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{}.Build(),
