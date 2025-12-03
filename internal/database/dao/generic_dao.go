@@ -816,13 +816,6 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, object O) (r
 	if err != nil {
 		return
 	}
-
-	// Validate that tenants is not empty to ensure database integrity:
-	if len(tenants) == 0 {
-		err = errors.New("cannot update object with empty tenants")
-		return
-	}
-
 	object = d.cloneObject(object)
 	metadata = d.makeMetadata(ctx, creationTs, deletionTs, finalizers, creators, tenants, name)
 	object.SetId(id)
