@@ -16,11 +16,17 @@ package servers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strconv"
+
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
+	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 type PrivateHostsServerBuilder struct {
@@ -35,8 +41,9 @@ var _ privatev1.HostsServer = (*PrivateHostsServer)(nil)
 type PrivateHostsServer struct {
 	privatev1.UnimplementedHostsServer
 
-	logger  *slog.Logger
-	generic *GenericServer[*privatev1.Host]
+	logger         *slog.Logger
+	hostClassesDao *dao.GenericDAO[*privatev1.HostClass]
+	generic        *GenericServer[*privatev1.Host]
 }
 
 func NewPrivateHostsServer() *PrivateHostsServerBuilder {
@@ -74,6 +81,17 @@ func (b *PrivateHostsServerBuilder) Build() (result *PrivateHostsServer, err err
 		return
 	}
 
+	// Create the host classes DAO:
+	hostClassesDao, err := dao.NewGenericDAO[*privatev1.HostClass]().
+		SetLogger(b.logger).
+		SetTable("host_classes").
+		SetAttributionLogic(b.attributionLogic).
+		SetTenancyLogic(b.tenancyLogic).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create the generic server:
 	generic, err := NewGenericServer[*privatev1.Host]().
 		SetLogger(b.logger).
@@ -89,8 +107,9 @@ func (b *PrivateHostsServerBuilder) Build() (result *PrivateHostsServer, err err
 
 	// Create and populate the object:
 	result = &PrivateHostsServer{
-		logger:  b.logger,
-		generic: generic,
+		logger:         b.logger,
+		hostClassesDao: hostClassesDao,
+		generic:        generic,
 	}
 	return
 }
@@ -110,12 +129,39 @@ func (s *PrivateHostsServer) Get(ctx context.Context,
 func (s *PrivateHostsServer) Create(ctx context.Context,
 	request *privatev1.HostsCreateRequest) (response *privatev1.HostsCreateResponse, err error) {
 	s.setDefaults(request.GetObject())
+
+	// The user may have specified the host class by name, but we want to save the identifier, so we need to look
+	// it up:
+	host := request.GetObject()
+	hostClassRef := host.GetSpec().GetClass()
+	if hostClassRef != "" {
+		var hostClass *privatev1.HostClass
+		hostClass, err = s.lookupHostClass(ctx, hostClassRef)
+		if err != nil {
+			return
+		}
+		host.GetSpec().SetClass(hostClass.GetId())
+	}
+
 	err = s.generic.Create(ctx, request, &response)
 	return
 }
 
 func (s *PrivateHostsServer) Update(ctx context.Context,
 	request *privatev1.HostsUpdateRequest) (response *privatev1.HostsUpdateResponse, err error) {
+	// The user may have specified the host class by name, but we want to save the identifier, so we need to look
+	// it up:
+	host := request.GetObject()
+	hostClassRef := host.GetSpec().GetClass()
+	if hostClassRef != "" {
+		var hostClass *privatev1.HostClass
+		hostClass, err = s.lookupHostClass(ctx, hostClassRef)
+		if err != nil {
+			return
+		}
+		host.GetSpec().SetClass(hostClass.GetId())
+	}
+
 	err = s.generic.Update(ctx, request, &response)
 	return
 }
@@ -136,4 +182,37 @@ func (s *PrivateHostsServer) setDefaults(host *privatev1.Host) {
 	if !host.HasStatus() {
 		host.SetStatus(&privatev1.HostStatus{})
 	}
+}
+
+// lookupHostClass looks up a host class by identifier or name. It returns the host class if found, or an error if not
+// found or if there are multiple matches.
+func (s *PrivateHostsServer) lookupHostClass(ctx context.Context,
+	key string) (result *privatev1.HostClass, err error) {
+	if key == "" {
+		return
+	}
+	response, err := s.hostClassesDao.List(ctx, dao.ListRequest{
+		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key)),
+		Limit:  1,
+	})
+	if err != nil {
+		return
+	}
+	switch response.Size {
+	case 0:
+		err = grpcstatus.Errorf(
+			grpccodes.NotFound,
+			"there is no host class with identifier or name '%s'",
+			key,
+		)
+	case 1:
+		result = response.Items[0]
+	default:
+		err = grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"there are multiple host classes with identifier or name '%s'",
+			key,
+		)
+	}
+	return
 }
