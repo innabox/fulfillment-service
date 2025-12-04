@@ -668,6 +668,12 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, object O) (r
 		return
 	}
 
+	// Validate that tenants is not empty to ensure database integrity:
+	if len(tenants) == 0 {
+		err = errors.New("cannot create object with empty tenants")
+		return
+	}
+
 	// Save the object:
 	data, err := d.marshalData(object)
 	if err != nil {
