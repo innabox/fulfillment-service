@@ -56,19 +56,33 @@ func NewStartServerCommand() *cobra.Command {
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	database.AddFlags(flags)
 	flags.StringVar(
-		&runner.args.grpcAuthnType,
+		&runner.args.authType,
 		"grpc-authn-type",
-		auth.GrpcGuestAuthnType,
+		auth.GrpcGuestAuthType,
 		fmt.Sprintf(
-			"Type of gRPC authentication. Valid values are \"%s\" and \"%s\"",
-			auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
+			"Type of authentication. Valid values are '%s' and '%s'.",
+			auth.GrpcGuestAuthType, auth.GrpcExternalAuthType,
 		),
 	)
+	flags.StringVar(
+		&runner.args.externalAuthAddress,
+		"grpc-authn-external-address",
+		"",
+		"Address of the external auth service using the Envoy ext_authz gRPC protocol. "+
+			"Required when --auth-type is set to 'external'.",
+	)
 	flags.StringSliceVar(
-		&runner.args.grpcAuthnTrustedTokenIssuers,
+		&runner.args.caFiles,
+		"ca-file",
+		[]string{},
+		"Files or directories containing trusted CA certificates in PEM format. "+
+			"Used for TLS connections to the external auth service.",
+	)
+	flags.StringSliceVar(
+		&runner.args.trustedTokenIssuers,
 		"grpc-authn-trusted-token-issuers",
 		[]string{},
-		"Comma separated list of token issuers that are adversised as trusted by the gRPC server.",
+		"Comma separated list of token issuers that are advertised as trusted by the gRPC server.",
 	)
 	flags.StringVar(
 		&runner.args.tenancyLogic,
@@ -84,10 +98,11 @@ type startServerCommandRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
-		caFiles                      []string
-		grpcAuthnType                string
-		grpcAuthnTrustedTokenIssuers []string
-		tenancyLogic                 string
+		caFiles             []string
+		authType            string
+		externalAuthAddress string
+		trustedTokenIssuers []string
+		tenancyLogic        string
 	}
 }
 
@@ -106,6 +121,15 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 
 	// Save the flags:
 	c.flags = cmd.Flags()
+
+	// Load the trusted CA certificates:
+	caPool, err := network.NewCertPool().
+		SetLogger(c.logger).
+		AddFiles(c.args.caFiles...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
+	}
 
 	// Wait till the database is available:
 	dbTool, err := database.NewTool().
@@ -154,43 +178,47 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return err
 	}
 
-	// Prepare the authentication interceptor:
+	// Prepare the auth interceptor:
 	c.logger.InfoContext(
 		ctx,
-		"Creating authentication interceptor",
-		slog.String("type", c.args.grpcAuthnType),
+		"Creating auth interceptor",
+		slog.String("type", c.args.authType),
 	)
-	var authnFunc auth.GrpcAuthnFunc
-	switch strings.ToLower(c.args.grpcAuthnType) {
-	case auth.GrpcGuestAuthnType:
-		authnFunc, err = auth.NewGrpcGuestAuthnFunc().
+	var authUnaryInterceptor grpc.UnaryServerInterceptor
+	var authStreamInterceptor grpc.StreamServerInterceptor
+	switch strings.ToLower(c.args.authType) {
+	case auth.GrpcGuestAuthType:
+		guestAuthInterceptor, err := auth.NewGrpcGuestAuthInterceptor().
 			SetLogger(c.logger).
-			SetFlags(c.flags).
 			Build()
 		if err != nil {
-			return fmt.Errorf("failed to create gRPC guest authentication function: %w", err)
+			return fmt.Errorf("failed to create guest auth interceptor: %w", err)
 		}
-	case auth.GrpcExternalAuthnType:
-		authnFunc, err = auth.NewGrpcExternalAuthnFunc().
+		authUnaryInterceptor = guestAuthInterceptor.UnaryServer
+		authStreamInterceptor = guestAuthInterceptor.StreamServer
+	case auth.GrpcExternalAuthType:
+		if c.args.externalAuthAddress == "" {
+			return fmt.Errorf(
+				"external auth address is required when auth type is '%s'",
+				auth.GrpcExternalAuthType,
+			)
+		}
+		externalAuthInterceptor, err := auth.NewGrpcExternalAuthInterceptor().
 			SetLogger(c.logger).
-			SetFlags(c.flags).
+			SetAddress(c.args.externalAuthAddress).
+			SetCaPool(caPool).
 			AddPublicMethodRegex(publicMethodRegex).
 			Build()
 		if err != nil {
-			return fmt.Errorf("failed to create gRPC external authentication function: %w", err)
+			return fmt.Errorf("failed to create external auth interceptor: %w", err)
 		}
+		authUnaryInterceptor = externalAuthInterceptor.UnaryServer
+		authStreamInterceptor = externalAuthInterceptor.StreamServer
 	default:
 		return fmt.Errorf(
-			"unknown gRPC authentication type '%s', valid values are '%s' and '%s'",
-			c.args.grpcAuthnType, auth.GrpcGuestAuthnType, auth.GrpcExternalAuthnType,
+			"unknown auth type '%s', valid values are '%s' and '%s'",
+			c.args.authType, auth.GrpcGuestAuthType, auth.GrpcExternalAuthType,
 		)
-	}
-	authnInterceptor, err := auth.NewGrpcAuthnInterceptor().
-		SetLogger(c.logger).
-		SetFunction(authnFunc).
-		Build()
-	if err != nil {
-		return err
 	}
 
 	// Prepare the panic interceptor:
@@ -225,13 +253,13 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		grpc.ChainUnaryInterceptor(
 			panicInterceptor.UnaryServer,
 			loggingInterceptor.UnaryServer,
-			authnInterceptor.UnaryServer,
+			authUnaryInterceptor,
 			txInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
 			panicInterceptor.StreamServer,
 			loggingInterceptor.StreamServer,
-			authnInterceptor.StreamServer,
+			authStreamInterceptor,
 		),
 	)
 
@@ -321,7 +349,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.InfoContext(ctx, "Creating metadata server")
 	metadataServer, err := servers.NewMetadataServer().
 		SetLogger(c.logger).
-		AddAutnTrustedTokenIssuers(c.args.grpcAuthnTrustedTokenIssuers...).
+		AddAutnTrustedTokenIssuers(c.args.trustedTokenIssuers...).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create metadata server: %w", err)

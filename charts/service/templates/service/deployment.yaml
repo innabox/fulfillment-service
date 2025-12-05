@@ -53,6 +53,10 @@ spec:
           mountPath: /run/sockets
         - name: cert
           mountPath: /secrets/cert
+        {{- if .Values.certs.caBundle.configMap }}
+        - name: cas
+          mountPath: /etc/fulfillment-service/tls/cas
+        {{- end }}
         command:
         - /usr/local/bin/fulfillment-service
         - start
@@ -69,6 +73,10 @@ spec:
         - --grpc-listener-address=/run/sockets/server.socket
         - --grpc-authn-trusted-token-issuers={{ required "auth.issuerUrl is required" .Values.auth.issuerUrl }}
         - --grpc-authn-type=external
+        - --grpc-authn-external-address=authorino-authorino-authorization:50051
+        {{- if .Values.certs.caBundle.configMap }}
+        - --ca-file=/etc/fulfillment-service/tls/cas
+        {{- end }}
         - --tenancy-logic=default
 
       - name: gateway

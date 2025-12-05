@@ -51,6 +51,8 @@ spec:
           mountPath: /run/sockets
         - name: cert
           mountPath: /secrets/cert
+        - name: cas
+          mountPath: /etc/fulfillment-service/tls/cas
         command:
         - /usr/local/bin/fulfillment-service
         - start
@@ -67,6 +69,8 @@ spec:
         - --grpc-listener-address=/run/sockets/server.socket
         - --grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
         - --grpc-authn-type=external
+        - --grpc-authn-external-address=authorino-authorino-authorization:50051
+        - --ca-file=/etc/fulfillment-service/tls/cas
         - --tenancy-logic=default
 
       - name: gateway

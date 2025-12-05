@@ -20,8 +20,8 @@ static_resources:
 
   listeners:
 
-  # This listener receives traffic from outside, so it needs to be secured with CORS, TLS, authentication and
-  # authorization.
+  # This listener receives traffic from outside, so it needs to be secured with CORS and TLS. Authentication and
+  # authorization are handled by the service itself.
   - name: ingress
     address:
       socket_address:
@@ -59,19 +59,13 @@ static_resources:
                   max_age: "86400"
               routes:
 
-              # This route is for the REST gateway, and for that we need to disable the auth filter because requests
-              # will go to the gateway and then again to Envoy, translated to gRPC, and it is then when the auth filter
-              # will be applied.
+              # This route is for the REST gateway.
               - name: gateway
                 match:
                   prefix: /api
                 route:
                   cluster: gateway
                   timeout: 300s
-                typed_per_filter_config:
-                  envoy.filters.http.ext_authz:
-                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
-                    disabled: true
 
               # This route is for the gRPC streaming requests used to watch events. Those streams can last very long,
               # so we don't want to set a timeout, as that would cause the connection to be closed and events to be
@@ -84,45 +78,14 @@ static_resources:
                   cluster: server
                   timeout: 0s
                   idle_timeout: 0s
-                typed_per_filter_config:
-                  envoy.filters.http.header_mutation:
-                    "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutationPerRoute
-                    mutations:
-                      request_mutations:
-                      - remove: authorization
 
-              # For the metadata, reflection and health methods we need to disable authentication, as they need to be
-              # publicly available.
-              - name: public
-                match:
-                  safe_regex:
-                    regex: ^/(metadata|grpc\.(reflection|health))\..*$
-                route:
-                  cluster: server
-                  timeout: 300s
-                typed_per_filter_config:
-                  envoy.filters.http.ext_authz:
-                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
-                    disabled: true
-                  envoy.filters.http.header_mutation:
-                    "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutationPerRoute
-                    mutations:
-                      request_mutations:
-                      - remove: authorization
-
-              # This route is for gRPC unary requests, which should be quite fast, so we can safely set a timeout
+              # This route is for gRPC unary requests, which should be quite fast, so we can safely set a timeout.
               - name: other
                 match:
                   prefix: /
                 route:
                   cluster: server
                   timeout: 300s
-                typed_per_filter_config:
-                  envoy.filters.http.header_mutation:
-                    "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutationPerRoute
-                    mutations:
-                      request_mutations:
-                      - remove: authorization
 
           http_filters:
           - name: envoy.filters.http.grpc_web
@@ -131,17 +94,6 @@ static_resources:
           - name: envoy.filters.http.cors
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
-          - name: envoy.filters.http.ext_authz
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
-              grpc_service:
-                envoy_grpc:
-                  cluster_name: authorino
-                timeout: 1s
-              failure_mode_allow: false
-          - name: envoy.filters.http.header_mutation
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -160,8 +112,8 @@ static_resources:
               private_key:
                 filename: /etc/envoy/tls/tls.key
 
-  # This listener is used only for requests from the REST gateway. Those are internal only, and always gRPC, so we don't
-  # need CORS or TLS, but we do need authentication and authorization.
+  # This listener is used only for requests from the REST gateway. Those are internal only, and always gRPC, so we
+  # don't need CORS or TLS. Authentication and authorization are handled by the service itself.
   - name: gateway
     address:
       pipe:
@@ -192,57 +144,12 @@ static_resources:
                 route:
                   cluster: server
                   timeout: 300s
-                typed_per_filter_config:
-                  envoy.filters.http.header_mutation:
-                    "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutationPerRoute
-                    mutations:
-                      request_mutations:
-                      - remove: authorization
-                      - remove: grpcgateway-authorization
           http_filters:
-          - name: envoy.filters.http.ext_authz
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
-              grpc_service:
-                envoy_grpc:
-                  cluster_name: authorino
-                timeout: 1s
-              failure_mode_allow: false
-          - name: envoy.filters.http.header_mutation
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.filters.http.header_mutation.v3.HeaderMutation
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
   clusters:
-
-  - name: authorino
-    connect_timeout: 1s
-    type: STRICT_DNS
-    lb_policy: RANDOM
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
-    load_assignment:
-      cluster_name: authorino
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: authorino-authorino-authorization
-                port_value: 50051
-    transport_socket:
-      name: envoy.transport_sockets.tls
-      typed_config:
-        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
-        common_tls_context:
-          validation_context:
-            trusted_ca:
-              filename: /etc/envoy/tls/ca.crt
 
   - name: server
     connect_timeout: 1s
