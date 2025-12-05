@@ -329,7 +329,8 @@ func (s *ClustersServer) Update(ctx context.Context,
 	// Delegate to the private server with the merged object:
 	privateRequest := &privatev1.ClustersUpdateRequest{}
 	privateRequest.SetObject(existingPrivateCluster)
-	privateRequest.SetUpdateMask(request.GetUpdateMask())
+	updateMask := request.GetUpdateMask()
+	privateRequest.SetUpdateMask(updateMask)
 	privateResponse, err := s.private.Update(ctx, privateRequest)
 	if err != nil {
 		return nil, err
