@@ -471,6 +471,63 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err.Error()).To(Equal("tenant 'invisible' doesn't exist"))
 	})
 
+	It("Rejects request when user explicitly tries to add two invisible tenants", func() {
+		// Create a tenancy logic that assigns one visible tenant and two invisible ones:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(
+				collections.NewSet(
+					"tenant-a",
+					"tenant-b",
+					"tenant-c",
+				),
+				nil,
+			).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
+			Return(
+				collections.NewSet(
+					"tenant-a",
+					"tenant-b",
+					"tenant-c",
+				),
+				nil,
+			).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(
+				collections.NewSet(
+					"tenant-a",
+				),
+				nil,
+			).
+			AnyTimes()
+
+		// Create the DAO:
+		dao, err := NewGenericDAO[*testsv1.Object]().
+			SetLogger(logger).
+			SetTable("objects").
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Try to create an object with two invisible tenants and verify that it fails:
+		_, err = dao.Create().
+			SetObject(
+				testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Tenants: []string{
+							"tenant-b",
+							"tenant-c",
+						},
+					}.Build(),
+				}.Build(),
+			).
+			Do(ctx)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(Equal("tenants 'tenant-b' and 'tenant-c' don't exist"))
+	})
+
 	It("Rejects request when user tries to add a tenant that isn't assignable", func() {
 		// Configure tenancy logic where the user can only assign specific tenants:
 		tenancy := auth.NewMockTenancyLogic(ctrl)
@@ -524,6 +581,61 @@ var _ = Describe("Tenancy logic", func() {
 		// Verify the request is rejected with an error indicating the tenant can't be assigned:
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(Equal("tenant 'tenant-c' can't be assigned"))
+	})
+
+	It("Rejects request when user tries to add two tenants that can't be assigned", func() {
+		// Create a tenancy logic that has three visible tenants, but only assigns the first one:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(
+				collections.NewSet(
+					"tenant-a",
+				),
+				nil,
+			).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
+			Return(
+				collections.NewSet(
+					"tenant-a",
+				),
+				nil,
+			).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(
+				collections.NewSet(
+					"tenant-a",
+					"tenant-b",
+					"tenant-c",
+				),
+				nil,
+			).
+			AnyTimes()
+
+		// Create the DAO:
+		dao, err := NewGenericDAO[*testsv1.Object]().
+			SetLogger(logger).
+			SetTable("objects").
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Try to create an object using two unassignable tenants and verify that it fails:
+		_, err = dao.Create().
+			SetObject(
+				testsv1.Object_builder{
+					Metadata: testsv1.Metadata_builder{
+						Tenants: []string{
+							"tenant-b",
+							"tenant-c",
+						},
+					}.Build(),
+				}.Build(),
+			).
+			Do(ctx)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(Equal("tenants 'tenant-b' and 'tenant-c' can't be assigned"))
 	})
 
 	It("Preserves existing tenants when updating without specifying tenants", func() {
