@@ -1135,7 +1135,10 @@ var _ = Describe("Tenancy logic", func() {
 	It("Rejects object creation when tenants are empty", func() {
 		// Create a tenancy logic that returns empty tenants:
 		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet[string](), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
 			Return(collections.NewSet[string](), nil).
 			AnyTimes()
 		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
@@ -1151,7 +1154,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Attempt to create an object and verify it fails:
-		_, err = dao.Create(ctx, testsv1.Object_builder{}.Build())
+		_, err = dao.Create().SetObject(testsv1.Object_builder{}.Build()).Do(ctx)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("empty tenants"))
 	})

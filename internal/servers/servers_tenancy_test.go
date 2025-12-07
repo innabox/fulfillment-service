@@ -147,7 +147,10 @@ var _ = Describe("Tenancy logic", func() {
 	It("Rejects object creation when assigned tenants are empty", func() {
 		// Create a tenancy logic that returns at least one tenant for setup:
 		setupTenancy := auth.NewMockTenancyLogic(ctrl)
-		setupTenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
+		setupTenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet("setup-tenant"), nil).
+			AnyTimes()
+		setupTenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
 			Return(collections.NewSet("setup-tenant"), nil).
 			AnyTimes()
 		setupTenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
@@ -161,16 +164,19 @@ var _ = Describe("Tenancy logic", func() {
 			SetTenancyLogic(setupTenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
-		_, err = templatesDao.Create(ctx, privatev1.ClusterTemplate_builder{
+		_, err = templatesDao.Create().SetObject(privatev1.ClusterTemplate_builder{
 			Id:          "my-template",
 			Title:       "My template",
 			Description: "My template",
-		}.Build())
+		}.Build()).Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create a tenancy logic that returns empty tenants:
 		emptyTenancy := auth.NewMockTenancyLogic(ctrl)
-		emptyTenancy.EXPECT().DetermineAssignedTenants(gomock.Any()).
+		emptyTenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet[string](), nil).
+			AnyTimes()
+		emptyTenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
 			Return(collections.NewSet[string](), nil).
 			AnyTimes()
 		emptyTenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).

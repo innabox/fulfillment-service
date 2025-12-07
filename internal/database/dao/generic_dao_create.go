@@ -82,6 +82,12 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 		return
 	}
 
+	// Validate that tenants is not empty:
+	if len(tenants) == 0 {
+		err = errors.New("cannot create object with empty tenants")
+		return
+	}
+
 	// Save the object:
 	data, err := r.marshalData(r.object)
 	if err != nil {
