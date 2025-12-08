@@ -20,6 +20,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -71,7 +73,7 @@ var _ = Describe("Private hosts server", func() {
 		ctx = database.TxIntoContext(ctx, tx)
 
 		// Create the tables:
-		err = dao.CreateTables(ctx, "hosts")
+		err = dao.CreateTables(ctx, "hosts", "host_classes")
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -96,6 +98,7 @@ var _ = Describe("Private hosts server", func() {
 
 	Describe("Behaviour", func() {
 		var server *PrivateHostsServer
+		var hostClassesDao *dao.GenericDAO[*privatev1.HostClass]
 
 		BeforeEach(func() {
 			var err error
@@ -105,6 +108,25 @@ var _ = Describe("Private hosts server", func() {
 				SetLogger(logger).
 				SetTenancyLogic(tenancy).
 				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create the host classes DAO:
+			hostClassesDao, err = dao.NewGenericDAO[*privatev1.HostClass]().
+				SetLogger(logger).
+				SetTable("host_classes").
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a host class that will be used in the tests:
+			_, err = hostClassesDao.Create(ctx, privatev1.HostClass_builder{
+				Id: "acme-1ti-id",
+				Metadata: privatev1.Metadata_builder{
+					Name: "acme-1ti-name",
+				}.Build(),
+				Title:       "ACME 1TiB",
+				Description: "Hosts with 1 TiB of memory",
+			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -122,6 +144,64 @@ var _ = Describe("Private hosts server", func() {
 			Expect(object).ToNot(BeNil())
 			Expect(object.GetId()).ToNot(BeEmpty())
 			Expect(object.GetSpec().GetPowerState()).To(Equal(privatev1.HostPowerState_HOST_POWER_STATE_OFF))
+		})
+
+		It("Creates object with host class specified by name", func() {
+			// Create a host specifying the host class by name:
+			response, err := server.Create(ctx, privatev1.HostsCreateRequest_builder{
+				Object: privatev1.Host_builder{
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_OFF,
+						Class:      "acme-1ti-name",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+
+			// Verify that the host class name was replaced by the identifier:
+			Expect(object.GetSpec().GetClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Creates object with host class specified by identifier", func() {
+			// Create a host specifying the host class by identifier:
+			response, err := server.Create(ctx, privatev1.HostsCreateRequest_builder{
+				Object: privatev1.Host_builder{
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_OFF,
+						Class:      "acme-1ti-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object).ToNot(BeNil())
+			Expect(object.GetId()).ToNot(BeEmpty())
+
+			// Verify that the host class identifier is preserved:
+			Expect(object.GetSpec().GetClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Fails when creating object with non-existent host class name", func() {
+			_, err := server.Create(ctx, privatev1.HostsCreateRequest_builder{
+				Object: privatev1.Host_builder{
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_OFF,
+						Class:      "does-not-exist",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			Expect(status.Message()).To(Equal(
+				"there is no host class with identifier or name 'does-not-exist'",
+			))
 		})
 
 		It("List objects", func() {
@@ -298,6 +378,95 @@ var _ = Describe("Private hosts server", func() {
 			Expect(getResponse.GetObject().GetSpec().GetPowerState()).To(Equal(privatev1.HostPowerState_HOST_POWER_STATE_ON))
 			Expect(getResponse.GetObject().GetStatus().GetPowerState()).To(Equal(privatev1.HostPowerState_HOST_POWER_STATE_ON))
 			Expect(getResponse.GetObject().GetStatus().GetHostPool()).To(Equal("updated_pool"))
+		})
+
+		It("Updates object with host class specified by name", func() {
+			// Create the object:
+			createResponse, err := server.Create(ctx, privatev1.HostsCreateRequest_builder{
+				Object: privatev1.Host_builder{
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_OFF,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Update the object with host class specified by name:
+			updateResponse, err := server.Update(ctx, privatev1.HostsUpdateRequest_builder{
+				Object: privatev1.Host_builder{
+					Id: object.GetId(),
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_ON,
+						Class:      "acme-1ti-name",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updateResponse).ToNot(BeNil())
+
+			// Verify that the host class name was replaced by the identifier:
+			Expect(updateResponse.GetObject().GetSpec().GetClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Updates object with host class specified by identifier", func() {
+			// Create the object:
+			createResponse, err := server.Create(ctx, privatev1.HostsCreateRequest_builder{
+				Object: privatev1.Host_builder{
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_OFF,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Update the object with host class specified by identifier:
+			updateResponse, err := server.Update(ctx, privatev1.HostsUpdateRequest_builder{
+				Object: privatev1.Host_builder{
+					Id: object.GetId(),
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_ON,
+						Class:      "acme-1ti-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updateResponse).ToNot(BeNil())
+
+			// Verify that the host class identifier is preserved:
+			Expect(updateResponse.GetObject().GetSpec().GetClass()).To(Equal("acme-1ti-id"))
+		})
+
+		It("Fails when updating object with non-existent host class name", func() {
+			// Create the object:
+			createResponse, err := server.Create(ctx, privatev1.HostsCreateRequest_builder{
+				Object: privatev1.Host_builder{
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_OFF,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Try to update with a non-existent host class:
+			_, err = server.Update(ctx, privatev1.HostsUpdateRequest_builder{
+				Object: privatev1.Host_builder{
+					Id: object.GetId(),
+					Spec: privatev1.HostSpec_builder{
+						PowerState: privatev1.HostPowerState_HOST_POWER_STATE_ON,
+						Class:      "does-not-exist",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			Expect(status.Message()).To(Equal(
+				"there is no host class with identifier or name 'does-not-exist'",
+			))
 		})
 
 		It("Delete object", func() {
