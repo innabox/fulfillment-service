@@ -400,10 +400,10 @@ func (s *EventsServer) extractMetadata(ctx context.Context, event *privatev1.Eve
 		return event.GetHost().GetMetadata()
 	case event.HasHostPool():
 		return event.GetHostPool().GetMetadata()
-	case event.HasVirtualMachineTemplate():
-		return event.GetVirtualMachineTemplate().GetMetadata()
-	case event.HasVirtualMachine():
-		return event.GetVirtualMachine().GetMetadata()
+	case event.HasComputeInstanceTemplate():
+		return event.GetComputeInstanceTemplate().GetMetadata()
+	case event.HasComputeInstance():
+		return event.GetComputeInstance().GetMetadata()
 	default:
 		s.logger.ErrorContext(
 			ctx,

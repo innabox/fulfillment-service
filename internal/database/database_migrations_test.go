@@ -21,12 +21,12 @@ import (
 )
 
 var _ = Describe("Migrations", func() {
-	It("All migrations have the '.up.sql' suffix", func() {
+	It("All migrations have the '.up.sql' or '.down.sql' suffix", func() {
 		files, err := filepath.Glob("migrations/*.sql")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(files).ToNot(BeEmpty())
 		for _, file := range files {
-			Expect(file).To(MatchRegexp(`\.up\.sql$`))
+			Expect(file).To(MatchRegexp(`\.(up|down)\.sql$`))
 		}
 	})
 })

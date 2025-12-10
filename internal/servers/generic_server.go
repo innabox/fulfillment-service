@@ -717,10 +717,10 @@ func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Messa
 		object = proto.Clone(object).(*privatev1.Hub)
 		object.SetKubeconfig(nil)
 		event.SetHub(object)
-	case *privatev1.VirtualMachineTemplate:
-		event.SetVirtualMachineTemplate(object)
-	case *privatev1.VirtualMachine:
-		event.SetVirtualMachine(object)
+	case *privatev1.ComputeInstanceTemplate:
+		event.SetComputeInstanceTemplate(object)
+	case *privatev1.ComputeInstance:
+		event.SetComputeInstance(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
 	}

@@ -170,13 +170,13 @@ func (a ClusterTemplateAdapter) GetParameters() []TemplateParameterDefinition {
 	return result
 }
 
-// VirtualMachineTemplateAdapter adapts VirtualMachineTemplate to the Template interface
-type VirtualMachineTemplateAdapter struct {
-	*privatev1.VirtualMachineTemplate
+// ComputeInstanceTemplateAdapter adapts ComputeInstanceTemplate to the Template interface
+type ComputeInstanceTemplateAdapter struct {
+	*privatev1.ComputeInstanceTemplate
 }
 
-func (a VirtualMachineTemplateAdapter) GetParameters() []TemplateParameterDefinition {
-	params := a.VirtualMachineTemplate.GetParameters()
+func (a ComputeInstanceTemplateAdapter) GetParameters() []TemplateParameterDefinition {
+	params := a.ComputeInstanceTemplate.GetParameters()
 	result := make([]TemplateParameterDefinition, len(params))
 	for i, param := range params {
 		result[i] = param
@@ -192,12 +192,12 @@ func ValidateClusterTemplateParameters(
 	return ValidateTemplateParameters(ClusterTemplateAdapter{template}, providedParameters)
 }
 
-// ValidateVirtualMachineTemplateParameters validates virtual machine template parameters
-func ValidateVirtualMachineTemplateParameters(
-	template *privatev1.VirtualMachineTemplate,
+// ValidateComputeInstanceTemplateParameters validates virtual machine template parameters
+func ValidateComputeInstanceTemplateParameters(
+	template *privatev1.ComputeInstanceTemplate,
 	providedParameters map[string]*anypb.Any,
 ) error {
-	return ValidateTemplateParameters(VirtualMachineTemplateAdapter{template}, providedParameters)
+	return ValidateTemplateParameters(ComputeInstanceTemplateAdapter{template}, providedParameters)
 }
 
 // ConvertTemplateParametersToJSON converts template parameters from protobuf Any format to JSON string.

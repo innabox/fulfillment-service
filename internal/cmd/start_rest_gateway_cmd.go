@@ -145,11 +145,11 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 	if err != nil {
 		return err
 	}
-	err = api.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, c.grpcClient)
+	err = api.RegisterComputeInstanceTemplatesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterVirtualMachinesHandler(ctx, gatewayMux, c.grpcClient)
+	err = api.RegisterComputeInstancesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
@@ -183,11 +183,11 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, c.grpcClient)
+	err = privateapi.RegisterComputeInstanceTemplatesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterVirtualMachinesHandler(ctx, gatewayMux, c.grpcClient)
+	err = privateapi.RegisterComputeInstancesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}

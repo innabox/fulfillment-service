@@ -50,14 +50,14 @@ type FunctionBuilder struct {
 type function struct {
 	logger         *slog.Logger
 	hubCache       *controllers.HubCache
-	vmsClient      privatev1.VirtualMachinesClient
+	vmsClient  privatev1.ComputeInstancesClient
 	hubsClient     privatev1.HubsClient
 	maskCalculator *masks.Calculator
 }
 
 type task struct {
 	r            *function
-	vm           *privatev1.VirtualMachine
+	vm           *privatev1.ComputeInstance
 	hubId        string
 	hubNamespace string
 	hubClient    clnt.Client
@@ -87,7 +87,7 @@ func (b *FunctionBuilder) SetHubCache(value *controllers.HubCache) *FunctionBuil
 }
 
 // Build uses the information stored in the builder to create a new virtual machine reconciler.
-func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.VirtualMachine], err error) {
+func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.ComputeInstance], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -105,7 +105,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	// Create and populate the object:
 	object := &function{
 		logger:         b.logger,
-		vmsClient:      privatev1.NewVirtualMachinesClient(b.connection),
+		vmsClient:  privatev1.NewComputeInstancesClient(b.connection),
 		hubsClient:     privatev1.NewHubsClient(b.connection),
 		hubCache:       b.hubCache,
 		maskCalculator: masks.NewCalculator().Build(),
@@ -114,8 +114,8 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	return
 }
 
-func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error {
-	oldVM := proto.Clone(vm).(*privatev1.VirtualMachine)
+func (r *function) run(ctx context.Context, vm *privatev1.ComputeInstance) error {
+	oldVM := proto.Clone(vm).(*privatev1.ComputeInstance)
 	t := task{
 		r:  r,
 		vm: vm,
@@ -134,8 +134,7 @@ func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error 
 	updateMask := r.maskCalculator.Calculate(oldVM, vm)
 
 	// Only send an update if there are actual changes
-	if len(updateMask.GetPaths()) > 0 {
-		_, err = r.vmsClient.Update(ctx, privatev1.VirtualMachinesUpdateRequest_builder{
+		_, err = r.vmsClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
 			Object:     vm,
 			UpdateMask: updateMask,
 		}.Build())
@@ -186,14 +185,14 @@ func (t *task) update(ctx context.Context) error {
 	// Create or update the Kubernetes object:
 	if object == nil {
 		object := &unstructured.Unstructured{}
-		object.SetGroupVersionKind(gvks.VirtualMachine)
+		object.SetGroupVersionKind(gvks.ComputeInstance)
 		object.SetNamespace(t.hubNamespace)
 		object.SetGenerateName(objectPrefix)
 		object.SetLabels(map[string]string{
-			labels.VirtualMachineUuid: t.vm.GetId(),
+			labels.ComputeInstanceUuid: t.vm.GetId(),
 		})
 		object.SetAnnotations(map[string]string{
-			annotations.VirtualMachineTenant: t.vm.GetMetadata().GetTenants()[0],
+			annotations.ComputeInstanceTenant: t.vm.GetMetadata().GetTenants()[0],
 		})
 		err = unstructured.SetNestedField(object.Object, spec, "spec")
 		if err != nil {
@@ -232,19 +231,19 @@ func (t *task) update(ctx context.Context) error {
 
 func (t *task) setDefaults() {
 	if !t.vm.HasStatus() {
-		t.vm.SetStatus(&privatev1.VirtualMachineStatus{})
+		t.vm.SetStatus(&privatev1.ComputeInstanceStatus{})
 	}
-	if t.vm.GetStatus().GetState() == privatev1.VirtualMachineState_VIRTUAL_MACHINE_STATE_UNSPECIFIED {
-		t.vm.GetStatus().SetState(privatev1.VirtualMachineState_VIRTUAL_MACHINE_STATE_PROGRESSING)
+	if t.vm.GetStatus().GetState() == privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_UNSPECIFIED {
+		t.vm.GetStatus().SetState(privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_PROGRESSING)
 	}
-	for value := range privatev1.VirtualMachineConditionType_name {
+	for value := range privatev1.ComputeInstanceConditionType_name {
 		if value != 0 {
-			t.setConditionDefaults(privatev1.VirtualMachineConditionType(value))
+			t.setConditionDefaults(privatev1.ComputeInstanceConditionType(value))
 		}
 	}
 }
 
-func (t *task) setConditionDefaults(value privatev1.VirtualMachineConditionType) {
+func (t *task) setConditionDefaults(value privatev1.ComputeInstanceConditionType) {
 	// Check if condition already exists
 	exists := false
 	for _, current := range t.vm.GetStatus().GetConditions() {
@@ -264,7 +263,7 @@ func (t *task) validateTenant() error {
 		message := "Virtual Machine must have exactly one tenant assigned"
 		err := errors.New(message)
 		t.updateCondition(
-			privatev1.VirtualMachineConditionType_VIRTUAL_MACHINE_CONDITION_TYPE_PROGRESSING,
+			privatev1.ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_PROGRESSING,
 			sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
 			"InvalidTenant",
 			message,
@@ -358,12 +357,12 @@ func (t *task) getHub(ctx context.Context) error {
 
 func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstructured, err error) {
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvks.VirtualMachineList)
+	list.SetGroupVersionKind(gvks.ComputeInstanceList)
 	err = t.hubClient.List(
 		ctx, list,
 		clnt.InNamespace(t.hubNamespace),
 		clnt.MatchingLabels{
-			labels.VirtualMachineUuid: t.vm.GetId(),
+			labels.ComputeInstanceUuid: t.vm.GetId(),
 		},
 	)
 	if err != nil {
@@ -413,13 +412,13 @@ func (t *task) removeFinalizer() {
 }
 
 // updateCondition updates or creates a condition with the specified type, status, reason, and message.
-func (t *task) updateCondition(conditionType privatev1.VirtualMachineConditionType, status sharedv1.ConditionStatus,
+func (t *task) updateCondition(conditionType privatev1.ComputeInstanceConditionType, status sharedv1.ConditionStatus,
 	reason string, message string) {
 	conditions := t.vm.GetStatus().GetConditions()
 	updated := false
 	for i, condition := range conditions {
 		if condition.GetType() == conditionType {
-			conditions[i] = privatev1.VirtualMachineCondition_builder{
+			conditions[i] = privatev1.ComputeInstanceCondition_builder{
 				Type:    conditionType,
 				Status:  status,
 				Reason:  &reason,
@@ -430,7 +429,7 @@ func (t *task) updateCondition(conditionType privatev1.VirtualMachineConditionTy
 		}
 	}
 	if !updated {
-		conditions = append(conditions, privatev1.VirtualMachineCondition_builder{
+		conditions = append(conditions, privatev1.ComputeInstanceCondition_builder{
 			Type:    conditionType,
 			Status:  status,
 			Reason:  &reason,

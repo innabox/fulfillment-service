@@ -31,13 +31,13 @@ var HostedCluster = schema.GroupVersionKind{
 
 var HostedClusterList = listGVK(HostedCluster)
 
-var VirtualMachine = schema.GroupVersionKind{
+var ComputeInstance = schema.GroupVersionKind{
 	Group:   "cloudkit.openshift.io",
 	Version: "v1alpha1",
-	Kind:    "VirtualMachine",
+	Kind:    "ComputeInstance",
 }
 
-var VirtualMachineList = listGVK(VirtualMachine)
+var ComputeInstanceList = listGVK(ComputeInstance)
 
 var Host = schema.GroupVersionKind{
 	Group:   "cloudkit.openshift.io",

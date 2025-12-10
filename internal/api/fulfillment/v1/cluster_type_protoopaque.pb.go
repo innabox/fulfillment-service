@@ -452,7 +452,10 @@ type ClusterSpec_builder struct {
 	//
 	// The user will not be allowed to change the `host_class` field.
 	//
-	// The user will not be allowed to remove existing node sets, or add new node sets.
+	// The user will be allowed to add new node sets.
+	//
+	// The user will be allowed to remove existing node sets, except when only one node set remains. Clusters
+	// must have at least one node set.
 	//
 	// The user will be allowed to update `size` field.
 	//

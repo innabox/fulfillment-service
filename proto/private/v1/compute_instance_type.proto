@@ -1,0 +1,69 @@
+//
+// Copyright (c) 2025 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+
+syntax = "proto3";
+
+package private.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+import "private/v1/metadata_type.proto";
+import "shared/v1/condition_status_type.proto";
+
+// Contains the details about the compute instance that are available only for the system.
+message ComputeInstance {
+  // Public data.
+  string id = 1;
+  Metadata metadata = 2;
+  ComputeInstanceSpec spec = 3;
+  ComputeInstanceStatus status = 4;
+}
+
+message ComputeInstanceSpec {
+  // Copies of the public fields.
+  string template = 1;
+  map<string, google.protobuf.Any> template_parameters = 2;
+}
+
+message ComputeInstanceStatus {
+  // Copies of the public fields.
+  ComputeInstanceState state = 1;
+  repeated ComputeInstanceCondition conditions = 2;
+  string ip_address = 3;
+
+  // Identifier of the hub that was selected for this compute instance.
+  string hub = 4;
+}
+
+enum ComputeInstanceState {
+  COMPUTE_INSTANCE_STATE_UNSPECIFIED = 0;
+  COMPUTE_INSTANCE_STATE_PROGRESSING = 1;
+  COMPUTE_INSTANCE_STATE_READY = 2;
+  COMPUTE_INSTANCE_STATE_FAILED = 3;
+}
+
+message ComputeInstanceCondition {
+  ComputeInstanceConditionType type = 1;
+  shared.v1.ConditionStatus status = 2;
+  google.protobuf.Timestamp last_transition_time = 3;
+  optional string reason = 4;
+  optional string message = 5;
+}
+
+enum ComputeInstanceConditionType {
+  COMPUTE_INSTANCE_CONDITION_TYPE_UNSPECIFIED = 0;
+  COMPUTE_INSTANCE_CONDITION_TYPE_PROGRESSING = 1;
+  COMPUTE_INSTANCE_CONDITION_TYPE_READY = 2;
+  COMPUTE_INSTANCE_CONDITION_TYPE_FAILED = 3;
+  COMPUTE_INSTANCE_CONDITION_TYPE_DEGRADED = 4;
+}

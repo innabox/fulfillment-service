@@ -136,13 +136,13 @@ spec:
               "/fulfillment.v1.Hosts/Get",
               "/fulfillment.v1.Hosts/List",
               "/fulfillment.v1.Hosts/Update",
-              "/fulfillment.v1.VirtualMachineTemplates/Get",
-              "/fulfillment.v1.VirtualMachineTemplates/List",
-              "/fulfillment.v1.VirtualMachines/Create",
-              "/fulfillment.v1.VirtualMachines/Delete",
-              "/fulfillment.v1.VirtualMachines/Get",
-              "/fulfillment.v1.VirtualMachines/List",
-              "/fulfillment.v1.VirtualMachines/Update",
+              "/fulfillment.v1.ComputeInstanceTemplates/Get",
+              "/fulfillment.v1.ComputeInstanceTemplates/List",
+              "/fulfillment.v1.ComputeInstances/Create",
+              "/fulfillment.v1.ComputeInstances/Delete",
+              "/fulfillment.v1.ComputeInstances/Get",
+              "/fulfillment.v1.ComputeInstances/List",
+              "/fulfillment.v1.ComputeInstances/Update",
             }
           }
 

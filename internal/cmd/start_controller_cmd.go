@@ -250,12 +250,12 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create virtual machine reconciler function: %w", err)
 	}
-	vmReconciler, err := controllers.NewReconciler[*privatev1.VirtualMachine]().
+	vmReconciler, err := controllers.NewReconciler[*privatev1.ComputeInstance]().
 		SetLogger(r.logger).
 		SetName("virtual_machine").
 		SetClient(r.client).
 		SetFunction(vmReconcilerFunction).
-		SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetEventFilter("has(event.compute_instance) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
 		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {

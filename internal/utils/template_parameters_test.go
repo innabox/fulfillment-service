@@ -217,9 +217,9 @@ var _ = Describe("ValidateTemplateParameters", func() {
 		})
 
 		It("should validate virtual machine template parameters correctly", func() {
-			vmTemplate := &privatev1.VirtualMachineTemplate{
+			vmTemplate := &privatev1.ComputeInstanceTemplate{
 				Id: "vm-template",
-				Parameters: []*privatev1.VirtualMachineTemplateParameterDefinition{
+				Parameters: []*privatev1.ComputeInstanceTemplateParameterDefinition{
 					{
 						Name:     "vm_name",
 						Required: true,
@@ -227,7 +227,7 @@ var _ = Describe("ValidateTemplateParameters", func() {
 					},
 				},
 			}
-			template = VirtualMachineTemplateAdapter{vmTemplate}
+			template = ComputeInstanceTemplateAdapter{vmTemplate}
 
 			stringValue := wrapperspb.String("my-vm")
 			anyValue, err := anypb.New(stringValue)
