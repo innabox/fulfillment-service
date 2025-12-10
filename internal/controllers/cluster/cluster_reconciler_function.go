@@ -23,6 +23,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -450,16 +451,132 @@ func (t *task) removeFinalizer() {
 
 // computeFieldMask returns a field mask of fields that changed between before and after.
 // This prevents the reconciler from overwriting concurrent user changes to fields it doesn't own.
+// Uses deep recursive comparison to detect changes at any level of nesting.
 func computeFieldMask(before, after *privatev1.Cluster) *fieldmaskpb.FieldMask {
+	paths := compareMessages(before.ProtoReflect(), after.ProtoReflect(), "")
+	return &fieldmaskpb.FieldMask{Paths: paths}
+}
+
+// compareMessages recursively compares two protobuf messages and returns paths of changed fields.
+func compareMessages(before, after protoreflect.Message, prefix string) []string {
 	var paths []string
 
-	if !slices.Equal(before.GetMetadata().GetFinalizers(), after.GetMetadata().GetFinalizers()) {
-		paths = append(paths, "metadata.finalizers")
+	// Iterate through all fields in the 'before' message
+	before.Range(func(fd protoreflect.FieldDescriptor, beforeVal protoreflect.Value) bool {
+		afterVal := after.Get(fd)
+
+		// Build the field path (e.g., "status.state" or "metadata.finalizers")
+		fieldPath := string(fd.Name())
+		if prefix != "" {
+			fieldPath = prefix + "." + fieldPath
+		}
+
+		// Handle different field types
+		switch {
+		case fd.IsMap():
+			// Compare map fields
+			if !compareMaps(beforeVal.Map(), afterVal.Map(), fd) {
+				paths = append(paths, fieldPath)
+			}
+
+		case fd.IsList():
+			// Compare list/repeated fields
+			if !compareLists(beforeVal.List(), afterVal.List(), fd) {
+				paths = append(paths, fieldPath)
+			}
+
+		case fd.Message() != nil:
+			// Recursively compare message fields for granularity
+			subPaths := compareMessages(beforeVal.Message(), afterVal.Message(), fieldPath)
+			if len(subPaths) > 0 {
+				paths = append(paths, subPaths...)
+			}
+
+		default:
+			// Compare scalar fields (string, int32, int64, bool, enum, bytes, float, double, etc.)
+			if !beforeVal.Equal(afterVal) {
+				paths = append(paths, fieldPath)
+			}
+		}
+
+		return true
+	})
+
+	// Check for fields that exist in 'after' but not in 'before' (newly set fields)
+	after.Range(func(fd protoreflect.FieldDescriptor, afterVal protoreflect.Value) bool {
+		if !before.Has(fd) {
+			fieldPath := string(fd.Name())
+			if prefix != "" {
+				fieldPath = prefix + "." + fieldPath
+			}
+			paths = append(paths, fieldPath)
+		}
+		return true
+	})
+
+	return paths
+}
+
+// compareLists compares two protobuf list fields element by element.
+// Handles both scalar and message element types.
+func compareLists(a, b protoreflect.List, fd protoreflect.FieldDescriptor) bool {
+	if a.Len() != b.Len() {
+		return false
 	}
 
-	if !proto.Equal(before.GetStatus(), after.GetStatus()) {
-		paths = append(paths, "status")
+	for i := 0; i < a.Len(); i++ {
+		aVal := a.Get(i)
+		bVal := b.Get(i)
+
+		// For message elements, use proto.Equal for deep comparison
+		if fd.Message() != nil {
+			if !proto.Equal(aVal.Message().Interface(), bVal.Message().Interface()) {
+				return false
+			}
+		} else {
+			// For scalar elements (string, int, bool, bytes, etc.), use direct comparison
+			if !aVal.Equal(bVal) {
+				return false
+			}
+		}
 	}
 
-	return &fieldmaskpb.FieldMask{Paths: paths}
+	return true
+}
+
+// compareMaps compares two protobuf map fields key by key.
+// Handles both scalar and message value types.
+func compareMaps(a, b protoreflect.Map, fd protoreflect.FieldDescriptor) bool {
+	if a.Len() != b.Len() {
+		return false
+	}
+
+	equal := true
+	a.Range(func(k protoreflect.MapKey, aVal protoreflect.Value) bool {
+		// Check if key exists in both maps
+		if !b.Has(k) {
+			equal = false
+			return false
+		}
+
+		bVal := b.Get(k)
+
+		// For message values, use proto.Equal for deep comparison
+		if fd.MapValue().Message() != nil {
+			if !proto.Equal(aVal.Message().Interface(), bVal.Message().Interface()) {
+				equal = false
+				return false
+			}
+		} else {
+			// For scalar values (string, int, bool, bytes, etc.), use direct comparison
+			if !aVal.Equal(bVal) {
+				equal = false
+				return false
+			}
+		}
+
+		return true
+	})
+
+	return equal
 }
