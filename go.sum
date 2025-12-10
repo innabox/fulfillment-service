@@ -115,8 +115,8 @@ github.com/hashicorp/go-multierror v1.1.1 h1:H5DkEtf6CXdFp0N0Em5UCwQpXMWke8IA0+l
 github.com/hashicorp/go-multierror v1.1.1/go.mod h1:iw975J/qwKPdAO1clOe2L8331t/9/fmwbPZ6JB6eMoM=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/innabox/fulfillment-common v0.0.22 h1:PheLbLcjGYI062fQ2HAzGOVt3voS02vS3JukjQbUh68=
-github.com/innabox/fulfillment-common v0.0.22/go.mod h1:B860RSo86YZucRU2uNzx5k/0LV85VbWWZKZUmYH7PNY=
+github.com/innabox/fulfillment-common v0.0.24 h1:p5nmxnADNRY+qerw3WZBZ96tJEemyzx/h4lQhPLaExo=
+github.com/innabox/fulfillment-common v0.0.24/go.mod h1:B860RSo86YZucRU2uNzx5k/0LV85VbWWZKZUmYH7PNY=
 github.com/itchyny/gojq v0.12.17 h1:8av8eGduDb5+rvEdaOO+zQUjA04MS0m3Ps8HiD+fceg=
 github.com/itchyny/gojq v0.12.17/go.mod h1:WBrEMkgAfAGO1LUcGOckBl5O726KPp+OlkKug0I/FEY=
 github.com/itchyny/timefmt-go v0.1.6 h1:ia3s54iciXDdzWzwaVKXZPbiXzxxnv1SPGFfM/myJ5Q=
