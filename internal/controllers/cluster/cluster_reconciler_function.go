@@ -127,27 +127,14 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 		return err
 	}
 	if !proto.Equal(cluster, oldCluster) {
-		// Re-fetch the cluster to get the latest version before updating.
-		// This ensures we don't overwrite concurrent changes to fields like spec.node_sets.
-		freshCluster, err := r.clustersClient.Get(ctx, privatev1.ClustersGetRequest_builder{
-			Id: cluster.GetId(),
-		}.Build())
-		if err != nil {
-			return err
-		}
-
-		// Apply only the changes made by the reconciler (finalizers and status) to the fresh cluster
-		freshCluster.Object.GetMetadata().SetFinalizers(cluster.GetMetadata().GetFinalizers())
-		freshCluster.Object.SetStatus(cluster.GetStatus())
+		// Compute which fields the reconciler actually modified and use a field mask
+		// to update only those fields. This prevents overwriting concurrent user changes
+		// to fields like spec.node_sets.
+		updateMask := computeFieldMask(oldCluster, cluster)
 
 		_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-			Object: freshCluster.Object,
-			UpdateMask: &fieldmaskpb.FieldMask{
-				Paths: []string{
-					"metadata.finalizers",
-					"status",
-				},
-			},
+			Object:     cluster,
+			UpdateMask: updateMask,
 		}.Build())
 	}
 	return err
@@ -459,4 +446,20 @@ func (t *task) removeFinalizer() {
 		})
 		t.cluster.GetMetadata().SetFinalizers(list)
 	}
+}
+
+// computeFieldMask returns a field mask of fields that changed between before and after.
+// This prevents the reconciler from overwriting concurrent user changes to fields it doesn't own.
+func computeFieldMask(before, after *privatev1.Cluster) *fieldmaskpb.FieldMask {
+	var paths []string
+
+	if !slices.Equal(before.GetMetadata().GetFinalizers(), after.GetMetadata().GetFinalizers()) {
+		paths = append(paths, "metadata.finalizers")
+	}
+
+	if !proto.Equal(before.GetStatus(), after.GetStatus()) {
+		paths = append(paths, "status")
+	}
+
+	return &fieldmaskpb.FieldMask{Paths: paths}
 }
