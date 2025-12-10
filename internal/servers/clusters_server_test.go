@@ -1033,6 +1033,55 @@ var _ = Describe("Clusters server", func() {
 			verify(object)
 		})
 
+		It("Allows removing a node set when multiple exist", func() {
+			// Create a cluster with the default node sets from the template (compute and gpu):
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+			Expect(object.GetSpec().GetNodeSets()).To(HaveLen(2))
+			Expect(object.GetSpec().GetNodeSets()).To(HaveKey("compute"))
+			Expect(object.GetSpec().GetNodeSets()).To(HaveKey("gpu"))
+
+			// Remove the gpu node set by updating with only the compute node set:
+			updateResponse, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: ffv1.ClusterSpec_builder{
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								HostClass: "acme_1tib",
+								Size:      3,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.node_sets"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = updateResponse.GetObject()
+			Expect(object.GetSpec().GetNodeSets()).To(HaveLen(1))
+			Expect(object.GetSpec().GetNodeSets()).To(HaveKey("compute"))
+			Expect(object.GetSpec().GetNodeSets()).ToNot(HaveKey("gpu"))
+
+			// Get and verify the node set was removed:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			Expect(object.GetSpec().GetNodeSets()).To(HaveLen(1))
+			Expect(object.GetSpec().GetNodeSets()).To(HaveKey("compute"))
+			Expect(object.GetSpec().GetNodeSets()).ToNot(HaveKey("gpu"))
+		})
+
 		It("Sets name when creating", func() {
 			response, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{
