@@ -121,7 +121,7 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 	// Create the tenancy logic:
 	tenancyLogic := b.tenancyLogic
 	if tenancyLogic == nil {
-		tenancyLogic, err = auth.NewEmptyTenancyLogic().
+		tenancyLogic, err = auth.NewGuestTenancyLogic().
 			SetLogger(b.logger).
 			Build()
 		if err != nil {

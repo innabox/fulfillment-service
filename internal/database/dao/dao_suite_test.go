@@ -17,10 +17,15 @@ import (
 	"log/slog"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/innabox/fulfillment-common/logging"
 	. "github.com/innabox/fulfillment-common/testing"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+
+	"github.com/innabox/fulfillment-service/internal/auth"
+	"github.com/innabox/fulfillment-service/internal/collections"
 )
 
 func TestDAO(t *testing.T) {
@@ -29,19 +34,48 @@ func TestDAO(t *testing.T) {
 }
 
 var (
-	logger *slog.Logger
-	server *DatabaseServer
+	logger      *slog.Logger
+	server      *DatabaseServer
+	ctrl        *gomock.Controller
+	attribution *auth.MockAttributionLogic
+	tenancy     *auth.MockTenancyLogic
 )
 
 var _ = BeforeSuite(func() {
 	var err error
 
+	// Create the logger:
 	logger, err = logging.NewLogger().
 		SetLevel(slog.LevelDebug.String()).
 		SetWriter(GinkgoWriter).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 
+	// Create the mock controller:
+	ctrl = gomock.NewController(GinkgoT())
+	DeferCleanup(ctrl.Finish)
+
+	// Create the attribution logic:
+	creators := collections.NewSet("my-user")
+	attribution = auth.NewMockAttributionLogic(ctrl)
+	attribution.EXPECT().DetermineAssignedCreators(gomock.Any()).
+		Return(creators, nil).
+		AnyTimes()
+
+	// Create the tenancy logic:
+	tenants := collections.NewSet("my-tenant")
+	tenancy = auth.NewMockTenancyLogic(ctrl)
+	tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+		Return(tenants, nil).
+		AnyTimes()
+	tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
+		Return(tenants, nil).
+		AnyTimes()
+	tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+		Return(tenants, nil).
+		AnyTimes()
+
+	// Create the database server:
 	server = MakeDatabaseServer()
 	DeferCleanup(server.Close)
 })

@@ -179,6 +179,10 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		)
 		return
 	}
+	if b.attributionLogic == nil {
+		err = errors.New("attribution logic is mandatory")
+		return
+	}
 	if b.tenancyLogic == nil {
 		err = errors.New("tenancy logic is mandatory")
 		return
@@ -247,16 +251,6 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		return
 	}
 
-	// Set the default attribution logic so that it will never be nil:
-	attributionLogic := b.attributionLogic
-	if attributionLogic == nil {
-		attributionLogic, err = auth.NewEmptyAttributionLogic().Build()
-		if err != nil {
-			err = fmt.Errorf("failed to create default attribution logic: %w", err)
-			return
-		}
-	}
-
 	// Create and populate the object:
 	result = &GenericDAO[O]{
 		logger:           b.logger,
@@ -272,7 +266,7 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		marshalOptions:   marshalOptions,
 		unmarshalOptions: unmarshalOptions,
 		filterTranslator: filterTranslator,
-		attributionLogic: attributionLogic,
+		attributionLogic: b.attributionLogic,
 		tenancyLogic:     b.tenancyLogic,
 	}
 	return

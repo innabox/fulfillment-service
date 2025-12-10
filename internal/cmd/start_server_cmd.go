@@ -74,7 +74,7 @@ func NewStartServerCommand() *cobra.Command {
 		&runner.args.tenancyLogic,
 		"tenancy-logic",
 		"default",
-		"Type of tenancy logic to use. Valid values are 'empty', 'default' and 'serviceaccount'.",
+		"Type of tenancy logic to use. Valid values are 'guest', 'default' and 'serviceaccount'.",
 	)
 	return command
 }
@@ -271,13 +271,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	)
 	var publicTenancyLogic auth.TenancyLogic
 	switch strings.ToLower(c.args.tenancyLogic) {
-	case "empty":
-		publicTenancyLogic, err = auth.NewEmptyTenancyLogic().
-			SetLogger(c.logger).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create empty tenancy logic: %w", err)
-		}
 	case "default":
 		publicTenancyLogic, err = auth.NewDefaultTenancyLogic().
 			SetLogger(c.logger).

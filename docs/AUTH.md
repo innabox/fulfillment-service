@@ -484,16 +484,6 @@ Example:
 - When listing resources:
   - Can see resources from: `["guest", "shared"]`
 
-#### Empty
-
-Use `--tenancy-logic=empty` to disable tenant assignment and filtering:
-
-- **Assignable Tenants**: Empty set (no tenants can be assigned)
-- **Default Tenants**: Empty set (no tenants assigned by default)
-- **Visible Tenants**: All resources are visible (no tenant filtering applied)
-
-This is primarily used for testing or development scenarios where tenancy should be disabled.
-
 ### Configuring Tenancy in Keycloak
 
 To configure multi-tenant access in Keycloak:

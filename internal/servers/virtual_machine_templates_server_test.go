@@ -24,16 +24,14 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
-	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Virtual machine templates server", func() {
 	var (
-		ctx     context.Context
-		tx      database.Tx
-		tenancy auth.TenancyLogic
+		ctx context.Context
+		tx  database.Tx
 	)
 
 	BeforeEach(func() {
@@ -41,12 +39,6 @@ var _ = Describe("Virtual machine templates server", func() {
 
 		// Create a context:
 		ctx = context.Background()
-
-		// Create the tenancy logic:
-		tenancy, err = auth.NewSystemTenancyLogic().
-			SetLogger(logger).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -82,6 +74,7 @@ var _ = Describe("Virtual machine templates server", func() {
 			// Create the public server:
 			server, err := NewVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -91,15 +84,27 @@ var _ = Describe("Virtual machine templates server", func() {
 		It("Doesn't create server without logger", func() {
 			// Try to create the public server without logger:
 			server, err := NewVirtualMachineTemplatesServer().
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(server).To(BeNil())
 		})
 
+		It("Fails if attribution logic is not set", func() {
+			server, err := NewVirtualMachineTemplatesServer().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("attribution logic is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
 		It("Fails if tenancy logic is not set", func() {
 			server, err := NewVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
@@ -115,6 +120,7 @@ var _ = Describe("Virtual machine templates server", func() {
 			// Create the public server:
 			server, err = NewVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

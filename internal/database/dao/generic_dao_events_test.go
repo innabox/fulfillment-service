@@ -22,16 +22,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Generic DAO events", func() {
 	var (
-		ctx     context.Context
-		pool    *pgxpool.Pool
-		tm      database.TxManager
-		tenancy auth.TenancyLogic
+		ctx  context.Context
+		pool *pgxpool.Pool
+		tm   database.TxManager
 	)
 
 	BeforeEach(func() {
@@ -39,12 +37,6 @@ var _ = Describe("Generic DAO events", func() {
 
 		// Create a context:
 		ctx = context.Background()
-
-		// Create the tenancy logic:
-		tenancy, err = auth.NewSystemTenancyLogic().
-			SetLogger(logger).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database connection pool:
 		db := server.MakeDatabase()
@@ -85,6 +77,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, e Event) error {
 				event = &e
@@ -108,6 +101,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, e Event) error {
 				event = &e
@@ -145,6 +139,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, e Event) error {
 				event = &e
@@ -175,6 +170,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				return errors.New("my error")
@@ -203,6 +199,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -220,6 +217,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err = NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				return errors.New("my error")
@@ -250,6 +248,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, event Event) error {
 				if event.Type == EventTypeUpdated {
@@ -284,6 +283,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -305,6 +305,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err = NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, _ Event) error {
 				return errors.New("my error")
@@ -344,6 +345,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				called1 = true
@@ -370,6 +372,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				called1 = true
@@ -396,6 +399,7 @@ var _ = Describe("Generic DAO events", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, event Event) error {
 				events = append(events, event)

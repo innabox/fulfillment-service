@@ -43,10 +43,8 @@ var _ = Describe("Generic DAO", func() {
 	)
 
 	var (
-		ctrl    *gomock.Controller
-		ctx     context.Context
-		tx      database.Tx
-		tenancy auth.TenancyLogic
+		ctx context.Context
+		tx  database.Tx
 	)
 
 	sort := func(objects []*testsv1.Object) {
@@ -58,18 +56,8 @@ var _ = Describe("Generic DAO", func() {
 	BeforeEach(func() {
 		var err error
 
-		// Create the mock conntroller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
 		// Create a context:
 		ctx = context.Background()
-
-		// Create the tenancy logic:
-		tenancy, err = auth.NewEmptyTenancyLogic().
-			SetLogger(logger).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -100,6 +88,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -109,6 +98,8 @@ var _ = Describe("Generic DAO", func() {
 		It("Fails if logger is not set", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetTable("objects").
+				SetAttributionLogic(attribution).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(generic).To(BeNil())
@@ -117,8 +108,20 @@ var _ = Describe("Generic DAO", func() {
 		It("Fails if table is not set", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("table is mandatory"))
+			Expect(generic).To(BeNil())
+		})
+
+		It("Fails if attribution logic is not set", func() {
+			generic, err := NewGenericDAO[*testsv1.Object]().
+				SetLogger(logger).
+				SetTable("objects").
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).To(MatchError("attribution logic is mandatory"))
 			Expect(generic).To(BeNil())
 		})
 
@@ -126,6 +129,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(generic).To(BeNil())
@@ -135,6 +139,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				SetDefaultLimit(0).
 				Build()
@@ -146,6 +151,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				SetDefaultLimit(-1).
 				Build()
@@ -157,6 +163,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				SetMaxLimit(0).
 				Build()
@@ -168,6 +175,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				SetMaxLimit(-1).
 				Build()
@@ -179,6 +187,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				SetMaxLimit(100).
 				SetDefaultLimit(1000).
@@ -235,7 +244,7 @@ var _ = Describe("Generic DAO", func() {
 				SetTable("objects").
 				SetDefaultLimit(defaultLimit).
 				SetMaxLimit(maxLimit).
-				SetAttributionLogic(attributionLogic).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancyLogic).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -243,7 +252,9 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Creates object", func() {
 			object := &testsv1.Object{}
-			createResponse, err := generic.Create().SetObject(object).Do(ctx)
+			createResponse, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			created := createResponse.GetObject()
 			getResponse, err := generic.Get().SetId(created.GetId()).Do(ctx)
@@ -254,7 +265,9 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Sets metadata when creating", func() {
 			object := &testsv1.Object{}
-			response, err := generic.Create().SetObject(object).Do(ctx)
+			response, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			result := response.GetObject()
 			Expect(result.Metadata).ToNot(BeNil())
@@ -263,21 +276,27 @@ var _ = Describe("Generic DAO", func() {
 		It("Sets creators when creating", func() {
 			// Create the object and verify that the result has the creator set:
 			object := &testsv1.Object{}
-			response, err := generic.Create().SetObject(object).Do(ctx)
+			response, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = response.GetObject()
-			Expect(object.GetMetadata().GetCreators()).To(ConsistOf("my_user"))
+			Expect(object.GetMetadata().GetCreators()).To(ConsistOf("my-user"))
 
 			// Get the object and verify that the result has the creators set:
-			getResponse, err := generic.Get().SetId(object.GetId()).Do(ctx)
+			getResponse, err := generic.Get().
+				SetId(object.GetId()).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = getResponse.GetObject()
-			Expect(object.GetMetadata().GetCreators()).To(ConsistOf("my_user"))
+			Expect(object.GetMetadata().GetCreators()).To(ConsistOf("my-user"))
 		})
 
 		It("Sets creation timestamp when creating", func() {
 			object := &testsv1.Object{}
-			response, err := generic.Create().SetObject(object).Do(ctx)
+			response, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			result := response.GetObject()
 			Expect(result).ToNot(BeNil())
@@ -287,7 +306,9 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Doesn't set deletion timestamp when creating", func() {
-			response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+			response, err := generic.Create().
+				SetObject(&testsv1.Object{}).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 			Expect(object).ToNot(BeNil())
@@ -302,7 +323,9 @@ var _ = Describe("Generic DAO", func() {
 					Name: "my-name",
 				},
 			}
-			response, err := generic.Create().SetObject(object).Do(ctx)
+			response, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = response.GetObject()
 			Expect(object.GetMetadata().GetName()).To(Equal("my-name"))
@@ -315,7 +338,9 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Generates non empty identifiers", func() {
-			response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+			response, err := generic.Create().
+				SetObject(&testsv1.Object{}).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 			Expect(object).ToNot(BeNil())
@@ -324,14 +349,18 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Doesn't put the generated identifier inside the input object", func() {
 			object := &testsv1.Object{}
-			_, err := generic.Create().SetObject(object).Do(ctx)
+			_, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.GetId()).To(BeEmpty())
 		})
 
 		It("Doesn't put the generated metadata inside the input object", func() {
 			object := &testsv1.Object{}
-			_, err := generic.Create().SetObject(object).Do(ctx)
+			_, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.Metadata).To(BeNil())
 		})
@@ -339,15 +368,23 @@ var _ = Describe("Generic DAO", func() {
 		It("Returns 'already exists' when creating object with existing identifier", func() {
 			// Create an object with a specific identifier:
 			id := uuid.New()
-			_, err := generic.Create().SetObject(testsv1.Object_builder{
-				Id: id,
-			}.Build()).Do(ctx)
+			_, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Id: id,
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Try to create another object with the same identifier:
-			_, err = generic.Create().SetObject(testsv1.Object_builder{
-				Id: id,
-			}.Build()).Do(ctx)
+			_, err = generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Id: id,
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).To(HaveOccurred())
 			var alreadyExistsErr *ErrAlreadyExists
 			Expect(errors.As(err, &alreadyExistsErr)).To(BeTrue())
@@ -355,17 +392,23 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Gets object", func() {
-			createResponse, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+			createResponse, err := generic.Create().
+				SetObject(&testsv1.Object{}).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := createResponse.GetObject()
-			getResponse, err := generic.Get().SetId(object.GetId()).Do(ctx)
+			getResponse, err := generic.Get().
+				SetId(object.GetId()).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			result := getResponse.GetObject()
 			Expect(result).ToNot(BeNil())
 		})
 
 		It("Returns not found error when getting object that doesn't exist", func() {
-			_, err := generic.Get().SetId("does-not-exist").Do(ctx)
+			_, err := generic.Get().
+				SetId("does-not-exist").
+				Do(ctx)
 			Expect(err).To(HaveOccurred())
 			var notFoundErr *ErrNotFound
 			Expect(errors.As(err, &notFoundErr)).To(BeTrue())
@@ -376,7 +419,9 @@ var _ = Describe("Generic DAO", func() {
 			// Insert a couple of rows:
 			const count = 2
 			for range count {
-				_, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+				_, err := generic.Create().
+					SetObject(&testsv1.Object{}).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
@@ -394,9 +439,13 @@ var _ = Describe("Generic DAO", func() {
 			ids := []string{"zebra", "apple", "banana"}
 			objects := make([]*testsv1.Object, len(ids))
 			for i, id := range ids {
-				createResponse, err := generic.Create().SetObject(testsv1.Object_builder{
-					Id: id,
-				}.Build()).Do(ctx)
+				createResponse, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: id,
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				objects[i] = createResponse.GetObject()
 			}
@@ -415,7 +464,9 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Doesn't save the creation identifier in the 'data' column", func() {
 			// Create an object:
-			response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+			response, err := generic.Create().
+				SetObject(&testsv1.Object{}).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 
@@ -429,7 +480,9 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Doesn't save the creation timestamp in the 'data' column", func() {
 			// Create an object:
-			response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+			response, err := generic.Create().
+				SetObject(&testsv1.Object{}).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 
@@ -446,16 +499,22 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Archives object if it has no finalizers when it is deleted", func() {
 			// Create an object without finalizers:
-			response, err := generic.Create().SetObject(testsv1.Object_builder{
-				MyString: "my value",
-				MyBool:   true,
-				MyInt32:  123,
-			}.Build()).Do(ctx)
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						MyString: "my value",
+						MyBool:   true,
+						MyInt32:  123,
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 
 			// Delete the object:
-			_, err = generic.Delete().SetId(object.GetId()).Do(ctx)
+			_, err = generic.Delete().
+				SetId(object.GetId()).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify that the object has been deleted and the data copied to the archive table:
@@ -506,19 +565,25 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Archives object when it is updated removing the finalizers", func() {
 			// Create an object with finalizers:
-			response, err := generic.Create().SetObject(testsv1.Object_builder{
-				Metadata: testsv1.Metadata_builder{
-					Finalizers: []string{"a"},
-				}.Build(),
-				MyString: "my value",
-				MyBool:   true,
-				MyInt32:  123,
-			}.Build()).Do(ctx)
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
+						MyString: "my value",
+						MyBool:   true,
+						MyInt32:  123,
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 
 			// Delete the object:
-			_, err = generic.Delete().SetId(object.GetId()).Do(ctx)
+			_, err = generic.Delete().
+				SetId(object.GetId()).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify that it hasn't been archived:
@@ -529,15 +594,19 @@ var _ = Describe("Generic DAO", func() {
 			Expect(count).To(BeZero())
 
 			// Update the object removing the finalizers:
-			updateResponse, err := generic.Update().SetObject(testsv1.Object_builder{
-				Id: object.GetId(),
-				Metadata: testsv1.Metadata_builder{
-					Finalizers: []string{},
-				}.Build(),
-				MyString: "your value",
-				MyBool:   false,
-				MyInt32:  456,
-			}.Build()).Do(ctx)
+			updateResponse, err := generic.Update().
+				SetObject(
+					testsv1.Object_builder{
+						Id: object.GetId(),
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{},
+						}.Build(),
+						MyString: "your value",
+						MyBool:   false,
+						MyInt32:  456,
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = updateResponse.GetObject()
 
@@ -582,7 +651,9 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Returns not found error when deleting object that doesn't exist", func() {
-			_, err := generic.Delete().SetId("does_not_exist").Do(ctx)
+			_, err := generic.Delete().
+				SetId("does_not_exist").
+				Do(ctx)
 			Expect(err).To(HaveOccurred())
 			var notFoundErr *ErrNotFound
 			Expect(errors.As(err, &notFoundErr)).To(BeTrue())
@@ -603,25 +674,34 @@ var _ = Describe("Generic DAO", func() {
 			}
 
 			It("Gets finalizers", func() {
-				response, err := generic.Create().SetObject(testsv1.Object_builder{
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a", "b"},
+				response, err := generic.Create().
+					SetObject(testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a", "b"},
+						}.Build(),
 					}.Build(),
-				}.Build()).Do(ctx)
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
-				getResponse, err := generic.Get().SetId(object.GetId()).Do(ctx)
+				getResponse, err := generic.Get().
+					SetId(object.GetId()).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object = getResponse.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
 			})
 
 			It("Lists finalizers", func() {
-				createResponse, err := generic.Create().SetObject(testsv1.Object_builder{
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a", "b"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				createResponse, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a", "b"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := createResponse.GetObject()
 				listResponse, err := generic.List().
@@ -635,7 +715,9 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Creates object without finalizers", func() {
-				response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+				response, err := generic.Create().
+					SetObject(&testsv1.Object{}).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(BeEmpty())
@@ -643,11 +725,14 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Creates object with one finalizer", func() {
-				response, err := generic.Create().SetObject(testsv1.Object_builder{
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				response, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build()).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
@@ -655,11 +740,15 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Creates object with two finalizers", func() {
-				response, err := generic.Create().SetObject(testsv1.Object_builder{
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a", "b"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				response, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a", "b"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
@@ -667,11 +756,15 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Eliminates duplicated finalizers when object is created", func() {
-				response, err := generic.Create().SetObject(testsv1.Object_builder{
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a", "a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				response, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a", "a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
@@ -679,11 +772,15 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Adds one finalizer when object is updated", func() {
-				response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+				response, err := generic.Create().
+					SetObject(&testsv1.Object{}).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				object.GetMetadata().SetFinalizers([]string{"a"})
-				updateResponse, err := generic.Update().SetObject(object).Do(ctx)
+				updateResponse, err := generic.Update().
+					SetObject(object).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object = updateResponse.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
@@ -691,11 +788,17 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Adds two finalizers when object is updated", func() {
-				response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+				response, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				object.GetMetadata().SetFinalizers([]string{"a", "b"})
-				updateResponse, err := generic.Update().SetObject(object).Do(ctx)
+				updateResponse, err := generic.Update().
+					SetObject(object).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object = updateResponse.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "b"))
@@ -703,15 +806,21 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Replaces finalizers when object is updated", func() {
-				response, err := generic.Create().SetObject(testsv1.Object_builder{
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a", "b"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				response, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a", "b"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				object.GetMetadata().SetFinalizers([]string{"a", "c"})
-				updateResponse, err := generic.Update().SetObject(object).Do(ctx)
+				updateResponse, err := generic.Update().
+					SetObject(object).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object = updateResponse.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a", "c"))
@@ -719,11 +828,15 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Eliminates duplicated finalizers when object is updated", func() {
-				response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+				response, err := generic.Create().
+					SetObject(&testsv1.Object{}).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				object.GetMetadata().SetFinalizers([]string{"a", "a"})
-				updateResponse, err := generic.Update().SetObject(object).Do(ctx)
+				updateResponse, err := generic.Update().
+					SetObject(object).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object = updateResponse.GetObject()
 				Expect(object.GetMetadata().GetFinalizers()).To(ConsistOf("a"))
@@ -742,54 +855,73 @@ var _ = Describe("Generic DAO", func() {
 					objects[i] = &testsv1.Object{
 						Id: uuid.New(),
 					}
-					_, err := generic.Create().SetObject(objects[i]).Do(ctx)
+					_, err := generic.Create().
+						SetObject(objects[i]).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
 				sort(objects)
 			})
 
 			It("Uses zero as default offset", func() {
-				response, err := generic.List().SetLimit(1).Do(ctx)
+				response, err := generic.List().
+					SetLimit(1).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetItems()[0].Id).To(Equal(objects[0].Id))
 			})
 
 			It("Honours valid offset", func() {
 				for i := range len(objects) {
-					response, err := generic.List().SetOffset(int32(i)).SetLimit(1).Do(ctx)
+					response, err := generic.List().
+						SetOffset(int32(i)).
+						SetLimit(1).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(response.GetItems()[0].Id).To(Equal(objects[i].Id))
 				}
 			})
 
 			It("Returns empty list if offset is greater or equal than available items", func() {
-				response, err := generic.List().SetOffset(objectCount).SetLimit(1).Do(ctx)
+				response, err := generic.List().
+					SetOffset(objectCount).
+					SetLimit(1).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetItems()).To(BeEmpty())
 			})
 
 			It("Ignores negative offset", func() {
-				response, err := generic.List().SetOffset(-123).SetLimit(1).Do(ctx)
+				response, err := generic.List().
+					SetOffset(-123).
+					SetLimit(1).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetItems()[0].Id).To(Equal(objects[0].Id))
 			})
 
 			It("Interprets negative limit as requesting zero items", func() {
-				response, err := generic.List().SetLimit(-123).Do(ctx)
+				response, err := generic.List().
+					SetLimit(-123).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeZero())
 				Expect(response.GetItems()).To(BeEmpty())
 			})
 
 			It("Interprets zero limit as requesting the default number of items", func() {
-				response, err := generic.List().SetLimit(0).Do(ctx)
+				response, err := generic.List().
+					SetLimit(0).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", defaultLimit))
 				Expect(response.GetItems()).To(HaveLen(defaultLimit))
 			})
 
 			It("Truncates limit to the maximum", func() {
-				response, err := generic.List().SetLimit(maxLimit + 1).Do(ctx)
+				response, err := generic.List().
+					SetLimit(maxLimit + 1).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", maxLimit))
 				Expect(response.GetItems()).To(HaveLen(maxLimit))
@@ -797,7 +929,9 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Honours valid limit", func() {
 				for i := 1; i < maxLimit; i++ {
-					response, err := generic.List().SetLimit(int32(i)).Do(ctx)
+					response, err := generic.List().
+						SetLimit(int32(i)).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(response.GetSize()).To(BeNumerically("==", i))
 					Expect(response.GetItems()).To(HaveLen(i))
@@ -805,14 +939,19 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Returns less items than requested if there are not enough", func() {
-				response, err := generic.List().SetOffset(objectCount - 2).SetLimit(10).Do(ctx)
+				response, err := generic.List().
+					SetOffset(objectCount - 2).
+					SetLimit(10).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", 2))
 				Expect(response.GetItems()).To(HaveLen(2))
 			})
 
 			It("Returns the total number of items", func() {
-				response, err := generic.List().SetLimit(1).Do(ctx)
+				response, err := generic.List().
+					SetLimit(1).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetTotal()).To(BeNumerically("==", objectCount))
 			})
@@ -820,29 +959,41 @@ var _ = Describe("Generic DAO", func() {
 
 		Describe("Check if object exists", func() {
 			It("Returns true if the object exists", func() {
-				response, err := generic.Create().SetObject(&testsv1.Object{}).Do(ctx)
+				response, err := generic.Create().
+					SetObject(&testsv1.Object{}).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
-				existsResponse, err := generic.Exists().SetId(object.GetId()).Do(ctx)
+				existsResponse, err := generic.Exists().
+					SetId(object.GetId()).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(existsResponse.GetExists()).To(BeTrue())
 			})
 
 			It("Returns false if the object doesn't exist", func() {
-				response, err := generic.Exists().SetId(uuid.New()).Do(ctx)
+				response, err := generic.Exists().
+					SetId(uuid.New()).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetExists()).To(BeFalse())
 			})
 		})
 
 		It("Updates object", func() {
-			response, err := generic.Create().SetObject(&testsv1.Object{
-				MyString: "my_value",
-			}).Do(ctx)
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						MyString: "my_value",
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 			object.MyString = "your_value"
-			updateResponse, err := generic.Update().SetObject(object).Do(ctx)
+			updateResponse, err := generic.Update().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = updateResponse.GetObject()
 			Expect(object).ToNot(BeNil())
@@ -879,34 +1030,46 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Updates name", func() {
 			// Create an object with an initial name:
-			response, err := generic.Create().SetObject(&testsv1.Object{
-				Metadata: &testsv1.Metadata{
-					Name: "my-name",
-				},
-			}).Do(ctx)
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Name: "my-name",
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 			Expect(object.GetMetadata().GetName()).To(Equal("my-name"))
 
 			// Update the name:
 			object.GetMetadata().SetName("your-name")
-			updateResponse, err := generic.Update().SetObject(object).Do(ctx)
+			updateResponse, err := generic.Update().
+				SetObject(object).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = updateResponse.GetObject()
 			Expect(object.GetMetadata().GetName()).To(Equal("your-name"))
 
 			// Get the object and verify the name was updated:
-			getResponse, err := generic.Get().SetId(object.GetId()).Do(ctx)
+			getResponse, err := generic.Get().
+				SetId(object.GetId()).
+				Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object = getResponse.GetObject()
 			Expect(object.GetMetadata().GetName()).To(Equal("your-name"))
 		})
 
 		It("Returns not found error when updating object that doesn't exist", func() {
-			_, err := generic.Update().SetObject(testsv1.Object_builder{
-				Id:       "does-not-exist",
-				MyString: "some-value",
-			}.Build()).Do(ctx)
+			_, err := generic.Update().
+				SetObject(
+					testsv1.Object_builder{
+						Id:       "does-not-exist",
+						MyString: "some-value",
+					}.Build(),
+				).
+				Do(ctx)
 			Expect(err).To(HaveOccurred())
 			var notFoundErr *ErrNotFound
 			Expect(errors.As(err, &notFoundErr)).To(BeTrue())
@@ -916,12 +1079,18 @@ var _ = Describe("Generic DAO", func() {
 		Describe("Filtering", func() {
 			It("Filters by identifier", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						Id: fmt.Sprintf("%d", i),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id: fmt.Sprintf("%d", i),
+							}.Build(),
+						).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("this.id == '5'").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.id == '5'").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -930,12 +1099,18 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by identifier set", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						Id: fmt.Sprintf("%d", i),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id: fmt.Sprintf("%d", i),
+							}.Build(),
+						).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("this.id in ['1', '3', '5', '7', '9']").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.id in ['1', '3', '5', '7', '9']").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				sort(items)
@@ -949,12 +1124,18 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by string JSON field", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						MyString: fmt.Sprintf("my_value_%d", i),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								MyString: fmt.Sprintf("my_value_%d", i),
+							}.Build(),
+						).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("this.my_string == 'my_value_5'").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_string == 'my_value_5'").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -963,13 +1144,19 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by identifier or JSON field", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						Id:       fmt.Sprintf("%d", i),
-						MyString: fmt.Sprintf("my_value_%d", i),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id:       fmt.Sprintf("%d", i),
+								MyString: fmt.Sprintf("my_value_%d", i),
+							}.Build(),
+						).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("this.id == '1' || this.my_string == 'my_value_3'").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.id == '1' || this.my_string == 'my_value_3'").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				sort(items)
@@ -982,13 +1169,19 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by identifier and JSON field", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						Id:       fmt.Sprintf("%d", i),
-						MyString: fmt.Sprintf("my_value_%d", i),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id:       fmt.Sprintf("%d", i),
+								MyString: fmt.Sprintf("my_value_%d", i),
+							}.Build(),
+						).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("this.id == '1' && this.my_string == 'my_value_1'").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.id == '1' && this.my_string == 'my_value_1'").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -998,12 +1191,17 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by calculated value", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						MyInt32: int32(i),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								MyInt32: int32(i),
+							}.Build(),
+						).Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("(this.my_int32 + 1) == 2").Do(ctx)
+				response, err := generic.List().
+					SetFilter("(this.my_int32 + 1) == 2").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1012,14 +1210,20 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by nested JSON string field", func() {
 				for i := range 10 {
-					_, err := generic.Create().SetObject(testsv1.Object_builder{
-						Spec: testsv1.Spec_builder{
-							SpecString: fmt.Sprintf("my_value_%d", i),
-						}.Build(),
-					}.Build()).Do(ctx)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Spec: testsv1.Spec_builder{
+									SpecString: fmt.Sprintf("my_value_%d", i),
+								}.Build(),
+							}.Build(),
+						).
+						Do(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List().SetFilter("this.spec.spec_string == 'my_value_5'").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.spec.spec_string == 'my_value_5'").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1028,17 +1232,25 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Filters deleted", func() {
-				createResponse, err := generic.Create().SetObject(testsv1.Object_builder{
-					Id: "0",
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				createResponse, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "0",
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := createResponse.GetObject()
-				_, err = generic.Delete().SetId(object.GetId()).Do(ctx)
+				_, err = generic.Delete().
+					SetId(object.GetId()).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.metadata.deletion_timestamp != null").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.metadata.deletion_timestamp != null").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1046,17 +1258,25 @@ var _ = Describe("Generic DAO", func() {
 			})
 
 			It("Filters not deleted", func() {
-				createResponse, err := generic.Create().SetObject(testsv1.Object_builder{
-					Id: "0",
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				createResponse, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "0",
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := createResponse.GetObject()
-				_, err = generic.Delete().SetId(object.GetId()).Do(ctx)
+				_, err = generic.Delete().
+					SetId(object.GetId()).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.metadata.deletion_timestamp == null").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.metadata.deletion_timestamp == null").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(0))
@@ -1065,17 +1285,27 @@ var _ = Describe("Generic DAO", func() {
 			It("Filters by timestamp in the future", func() {
 				var err error
 				now := time.Now()
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:          "old",
-					MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "old",
+							MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:          "new",
-					MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "new",
+							MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.my_timestamp > now").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_timestamp > now").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1085,17 +1315,27 @@ var _ = Describe("Generic DAO", func() {
 			It("Filters by timestamp in the past", func() {
 				var err error
 				now := time.Now()
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:          "old",
-					MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "old",
+							MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:          "new",
-					MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "new",
+							MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.my_timestamp < now").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_timestamp < now").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1104,17 +1344,27 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by presence of message field", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:   "good",
-					Spec: testsv1.Spec_builder{}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:   "good",
+							Spec: testsv1.Spec_builder{}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:   "bad",
-					Spec: nil,
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:   "bad",
+							Spec: nil,
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("has(this.spec)").Do(ctx)
+				response, err := generic.List().
+					SetFilter("has(this.spec)").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1123,17 +1373,26 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by presence of string field", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "good",
-					MyString: "my value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "bad",
-					MyString: "",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("has(this.my_string)").Do(ctx)
+				response, err := generic.List().
+					SetFilter("has(this.my_string)").Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1142,23 +1401,33 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by presence of deletion timestamp", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "good",
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "good",
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "bad",
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "bad",
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				_, err = generic.Delete().SetId("good").Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("has(this.metadata.deletion_timestamp)").Do(ctx)
+				response, err := generic.List().
+					SetFilter("has(this.metadata.deletion_timestamp)").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1167,23 +1436,33 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by absence of deletion timestamp", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "good",
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "good",
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "bad",
-					Metadata: testsv1.Metadata_builder{
-						Finalizers: []string{"a"},
-					}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "bad",
+							Metadata: testsv1.Metadata_builder{
+								Finalizers: []string{"a"},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				_, err = generic.Delete().SetId("bad").Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("!has(this.metadata.deletion_timestamp)").Do(ctx)
+				response, err := generic.List().
+					SetFilter("!has(this.metadata.deletion_timestamp)").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1192,21 +1471,31 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by presence of nested string field", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "good",
-					Spec: testsv1.Spec_builder{
-						SpecString: "my value",
-					}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "good",
+							Spec: testsv1.Spec_builder{
+								SpecString: "my value",
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "bad",
-					Spec: testsv1.Spec_builder{
-						SpecString: "",
-					}.Build(),
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "bad",
+							Spec: testsv1.Spec_builder{
+								SpecString: "",
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("has(this.spec.spec_string)").Do(ctx)
+				response, err := generic.List().
+					SetFilter("has(this.spec.spec_string)").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1215,17 +1504,27 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by string prefix", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "good",
-					MyString: "my value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "bad",
-					MyString: "your value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "your value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.my_string.startsWith('my')").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_string.startsWith('my')").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1234,17 +1533,27 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by string suffix", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "good",
-					MyString: "value my",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "value my",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "bad",
-					MyString: "value your",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "value your",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.my_string.endsWith('my')").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_string.endsWith('my')").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1253,17 +1562,27 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Escapes percent in prefix", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "good",
-					MyString: "my% value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my% value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "bad",
-					MyString: "my value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "my value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.my_string.startsWith('my%')").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_string.startsWith('my%')").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1272,17 +1591,27 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Escapes underscore in prefix", func() {
 				var err error
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "good",
-					MyString: "my_ value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my_ value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id:       "bad",
-					MyString: "my value",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "my value",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List().SetFilter("this.my_string.startsWith('my_')").Do(ctx)
+				response, err := generic.List().
+					SetFilter("this.my_string.startsWith('my_')").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
@@ -1291,17 +1620,27 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by tenant", func() {
 				// Create objects - they will have 'my_tenant' assigned by the tenancy logic
-				_, err := generic.Create().SetObject(testsv1.Object_builder{
-					Id: "object_1",
-				}.Build()).Do(ctx)
+				_, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "object_1",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create().SetObject(testsv1.Object_builder{
-					Id: "object_2",
-				}.Build()).Do(ctx)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "object_2",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Filter by the tenant that should be assigned by the tenancy logic
-				response, err := generic.List().SetFilter("'my_tenant' in this.metadata.tenants").Do(ctx)
+				response, err := generic.List().
+					SetFilter("'my_tenant' in this.metadata.tenants").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items := response.GetItems()
 				Expect(items).To(HaveLen(2)) // Both objects should have 'my_tenant'
@@ -1310,7 +1649,9 @@ var _ = Describe("Generic DAO", func() {
 				}
 
 				// Filter by a non-existent tenant
-				response, err = generic.List().SetFilter("'non_existent_tenant' in this.metadata.tenants").Do(ctx)
+				response, err = generic.List().
+					SetFilter("'non_existent_tenant' in this.metadata.tenants").
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				items = response.GetItems()
 				Expect(items).To(HaveLen(0)) // No objects should match
@@ -1334,14 +1675,19 @@ var _ = Describe("Generic DAO", func() {
 					SetTable("objects").
 					SetDefaultLimit(defaultLimit).
 					SetMaxLimit(maxLimit).
+					SetAttributionLogic(attribution).
 					SetTenancyLogic(restrictedTenancyLogic).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create objects with tenant_a (should be visible)
-				_, err = restrictedDAO.Create().SetObject(testsv1.Object_builder{
-					Id: "visible_object",
-				}.Build()).Do(ctx)
+				_, err = restrictedDAO.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "visible_object",
+						}.Build(),
+					).
+					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Manually insert an object with tenant_b (should not be visible)

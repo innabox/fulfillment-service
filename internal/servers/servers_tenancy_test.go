@@ -107,6 +107,7 @@ var _ = Describe("Tenancy logic", func() {
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
 			SetTable("cluster_templates").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -120,6 +121,7 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the public clusters server that uses the tenancy logic:
 		clustersServer, err := NewClustersServer().
 			SetLogger(logger).
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -164,6 +166,7 @@ var _ = Describe("Tenancy logic", func() {
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
 			SetTable("cluster_templates").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(setupTenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -189,6 +192,7 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the clusters server with the empty tenancy logic:
 		clustersServer, err := NewClustersServer().
 			SetLogger(logger).
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(emptyTenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -227,6 +231,7 @@ var _ = Describe("Tenancy logic", func() {
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
 			SetTable("cluster_templates").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -240,6 +245,7 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the clusters server:
 		clustersServer, err := NewClustersServer().
 			SetLogger(logger).
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())

@@ -32,17 +32,12 @@ import (
 
 var _ = Describe("Tenancy logic", func() {
 	var (
-		ctrl *gomock.Controller
-		ctx  context.Context
-		tx   database.Tx
+		ctx context.Context
+		tx  database.Tx
 	)
 
 	BeforeEach(func() {
 		var err error
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
 
 		// Create a context:
 		ctx = context.Background()
@@ -112,6 +107,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -182,6 +178,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -220,6 +217,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -266,6 +264,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -321,6 +320,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -387,6 +387,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -452,6 +453,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -509,6 +511,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -567,6 +570,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -621,6 +625,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -677,6 +682,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -741,6 +747,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -809,6 +816,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -878,6 +886,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -952,6 +961,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -1011,6 +1021,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -1061,6 +1072,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -1108,6 +1120,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -1156,6 +1169,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -1184,6 +1198,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -1212,6 +1227,7 @@ var _ = Describe("Tenancy logic", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
 			SetTable("objects").
+			SetAttributionLogic(attribution).
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())

@@ -21,6 +21,8 @@ import (
 	. "github.com/innabox/fulfillment-common/testing"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+
+	"github.com/innabox/fulfillment-service/internal/auth"
 )
 
 func TestServers(t *testing.T) {
@@ -29,19 +31,35 @@ func TestServers(t *testing.T) {
 }
 
 var (
-	logger *slog.Logger
-	server *DatabaseServer
+	logger      *slog.Logger
+	server      *DatabaseServer
+	attribution auth.AttributionLogic
+	tenancy     auth.TenancyLogic
 )
 
 var _ = BeforeSuite(func() {
 	var err error
 
+	// Create the logger:
 	logger, err = logging.NewLogger().
 		SetLevel(slog.LevelDebug.String()).
 		SetWriter(GinkgoWriter).
 		Build()
 	Expect(err).ToNot(HaveOccurred())
 
+	// Create the attribution logic:
+	attribution, err = auth.NewSystemAttributionLogic().
+		SetLogger(logger).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create the tenancy logic:
+	tenancy, err = auth.NewSystemTenancyLogic().
+		SetLogger(logger).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create the database server:
 	server = MakeDatabaseServer()
 	DeferCleanup(server.Close)
 })

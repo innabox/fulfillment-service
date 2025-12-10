@@ -26,16 +26,14 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Private virtual machines server", func() {
 	var (
-		ctx     context.Context
-		tx      database.Tx
-		tenancy auth.TenancyLogic
+		ctx context.Context
+		tx  database.Tx
 	)
 
 	BeforeEach(func() {
@@ -43,12 +41,6 @@ var _ = Describe("Private virtual machines server", func() {
 
 		// Create a context:
 		ctx = context.Background()
-
-		// Create the tenancy logic:
-		tenancy, err = auth.NewSystemTenancyLogic().
-			SetLogger(logger).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -86,6 +78,7 @@ var _ = Describe("Private virtual machines server", func() {
 		It("Creates server with logger", func() {
 			server, err := NewPrivateVirtualMachinesServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -94,15 +87,26 @@ var _ = Describe("Private virtual machines server", func() {
 
 		It("Doesn't create server without logger", func() {
 			server, err := NewPrivateVirtualMachinesServer().
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(server).To(BeNil())
 		})
 
+		It("Fails if attribution logic is not set", func() {
+			server, err := NewPrivateVirtualMachinesServer().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).To(MatchError("attribution logic is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
 		It("Fails if tenancy logic is not set", func() {
 			server, err := NewPrivateVirtualMachinesServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
@@ -118,6 +122,7 @@ var _ = Describe("Private virtual machines server", func() {
 			// Create the server:
 			server, err = NewPrivateVirtualMachinesServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -129,6 +134,7 @@ var _ = Describe("Private virtual machines server", func() {
 			templatesDao, err := dao.NewGenericDAO[*privatev1.VirtualMachineTemplate]().
 				SetLogger(logger).
 				SetTable("virtual_machine_templates").
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

@@ -23,16 +23,14 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Private hosts server", func() {
 	var (
-		ctx     context.Context
-		tx      database.Tx
-		tenancy auth.TenancyLogic
+		ctx context.Context
+		tx  database.Tx
 	)
 
 	BeforeEach(func() {
@@ -40,12 +38,6 @@ var _ = Describe("Private hosts server", func() {
 
 		// Create a context:
 		ctx = context.Background()
-
-		// Create the tenancy logic:
-		tenancy, err = auth.NewSystemTenancyLogic().
-			SetLogger(logger).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -79,6 +71,7 @@ var _ = Describe("Private hosts server", func() {
 		It("Can be built if all the required parameters are set", func() {
 			server, err := NewPrivateHostsServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -87,9 +80,29 @@ var _ = Describe("Private hosts server", func() {
 
 		It("Fails if logger is not set", func() {
 			server, err := NewPrivateHostsServer().
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
+		It("Fails if attribution logic is not set", func() {
+			server, err := NewPrivateHostsServer().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("attribution logic is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
+		It("Fails if tenancy logic is not set", func() {
+			server, err := NewPrivateHostsServer().
+				SetLogger(logger).
+				SetAttributionLogic(attribution).
+				Build()
+			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
 		})
 	})
@@ -103,6 +116,7 @@ var _ = Describe("Private hosts server", func() {
 			// Create the server:
 			server, err = NewPrivateHostsServer().
 				SetLogger(logger).
+				SetAttributionLogic(attribution).
 				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
