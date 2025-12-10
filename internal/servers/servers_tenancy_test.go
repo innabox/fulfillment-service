@@ -20,9 +20,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/collections"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -198,7 +201,66 @@ var _ = Describe("Tenancy logic", func() {
 				}.Build(),
 			}.Build(),
 		}.Build())
-		Expect(err).To(HaveOccurred())
 		Expect(response).To(BeNil())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
+		Expect(status.Message()).To(Equal("there are no assignable tenants"))
+	})
+
+	It("Uses default tenants when tenants are explicitly empty", func() {
+		// Create a tenancy logic that returns valid tenants:
+		tenant := collections.NewSet("my-tenant")
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(tenant, nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
+			Return(tenant, nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(tenant, nil).
+			AnyTimes()
+
+		// Create the template using the DAO:
+		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+			SetLogger(logger).
+			SetTable("cluster_templates").
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		_, err = templatesDao.Create().SetObject(privatev1.ClusterTemplate_builder{
+			Id:          "my-template",
+			Title:       "My template",
+			Description: "My template",
+		}.Build()).Do(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create the clusters server:
+		clustersServer, err := NewClustersServer().
+			SetLogger(logger).
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Attempt to create a cluster with explicitly empty tenants and verify it fails:
+		response, err := clustersServer.Create(ctx, ffv1.ClustersCreateRequest_builder{
+			Object: ffv1.Cluster_builder{
+				Metadata: sharedv1.Metadata_builder{
+					Tenants: []string{},
+				}.Build(),
+				Spec: ffv1.ClusterSpec_builder{
+					Template: "my-template",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify that the cluster metadata contains the expected tenants:
+		cluster := response.GetObject()
+		Expect(cluster).ToNot(BeNil())
+		tenants := cluster.GetMetadata().GetTenants()
+		Expect(tenants).To(ConsistOf("my-tenant"))
 	})
 })

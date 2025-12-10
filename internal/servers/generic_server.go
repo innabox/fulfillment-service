@@ -319,6 +319,10 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		SetLimit(requestMsg.GetLimit()).
 		Do(ctx)
 	if err != nil {
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to list",
@@ -353,6 +357,10 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		var notFoundErr *dao.ErrNotFound
 		if errors.As(err, &notFoundErr) {
 			return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+		}
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
 		}
 		s.logger.ErrorContext(
 			ctx,
@@ -400,6 +408,10 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 				alreadyExistsErr.ID,
 			)
 		}
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to create",
@@ -444,6 +456,10 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 				"object with identifier '%s' not found",
 				id,
 			)
+		}
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
 		}
 		s.logger.ErrorContext(
 			ctx,
@@ -499,6 +515,10 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 		SetObject(object).
 		Do(ctx)
 	if err != nil {
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to update object",
@@ -569,6 +589,10 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 				id,
 			)
 		}
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		}
 		s.logger.ErrorContext(
 			ctx,
 			"Failed to delete object",
@@ -606,6 +630,10 @@ func (s *GenericServer[O]) Signal(ctx context.Context, request any, response any
 				"object with identifier '%s' not found",
 				id,
 			)
+		}
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
 		}
 		s.logger.ErrorContext(
 			ctx,

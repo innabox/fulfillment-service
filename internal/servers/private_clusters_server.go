@@ -231,6 +231,10 @@ func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
 		SetLimit(1).
 		Do(ctx)
 	if err != nil {
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			err = grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		}
 		return
 	}
 	switch response.GetSize() {
@@ -262,6 +266,10 @@ func (s *PrivateClustersServer) lookupHostClass(ctx context.Context,
 		SetLimit(1).
 		Do(ctx)
 	if err != nil {
+		var deniedErr *dao.ErrDenied
+		if errors.As(err, &deniedErr) {
+			err = grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		}
 		return
 	}
 	switch response.GetSize() {

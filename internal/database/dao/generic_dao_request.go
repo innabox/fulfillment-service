@@ -51,18 +51,36 @@ type request[O Object] struct {
 // initTenants initializes the tenants for the request.
 func (r *request[O]) initTenants(ctx context.Context) error {
 	var err error
-	r.tenants.assignable, err = r.dao.tenancyLogic.DetermineAssignableTenants(ctx)
+	assignableTenants, err := r.dao.tenancyLogic.DetermineAssignableTenants(ctx)
 	if err != nil {
 		return err
 	}
-	r.tenants.def, err = r.dao.tenancyLogic.DetermineDefaultTenants(ctx)
+	if assignableTenants.Empty() {
+		return &ErrDenied{
+			Reason: "there are no assignable tenants",
+		}
+	}
+	defaultTenants, err := r.dao.tenancyLogic.DetermineDefaultTenants(ctx)
 	if err != nil {
 		return err
 	}
-	r.tenants.visible, err = r.dao.tenancyLogic.DetermineVisibleTenants(ctx)
+	if defaultTenants.Empty() {
+		return &ErrDenied{
+			Reason: "there are no default tenants",
+		}
+	}
+	visibleTenants, err := r.dao.tenancyLogic.DetermineVisibleTenants(ctx)
 	if err != nil {
 		return err
 	}
+	if visibleTenants.Empty() {
+		return &ErrDenied{
+			Reason: "there are no visible tenants",
+		}
+	}
+	r.tenants.assignable = assignableTenants
+	r.tenants.def = defaultTenants
+	r.tenants.visible = visibleTenants
 	return nil
 }
 
@@ -232,9 +250,15 @@ func (r *request[O]) addTenancyFilter() error {
 		return nil
 	}
 
-	// If we are here then the tenant set is infinite, and we don't know how to apply filtening for that at the
+	// If we are here then the tenant set is infinite, and we don't know how to apply filtering for that at the
 	// moment, so return an error.
-	return errors.New("infinite tenant sets are not supported")
+	r.dao.logger.Warn(
+		"Operation not permitted because visible tenant set is infinite",
+		slog.Any("exclusions", r.tenants.visible.Exclusions()),
+	)
+	return &ErrDenied{
+		Reason: "operation not permitted",
+	}
 }
 
 func (r *request[O]) calculateCreators(ctx context.Context) (result []string, err error) {
@@ -289,6 +313,12 @@ func (r *request[O]) calculateTenants(ctx context.Context, object, update O) (re
 			requested = current
 		}
 	}
+	if requested.Empty() {
+		err = &ErrDenied{
+			Reason: "at least one tenant is required",
+		}
+		return
+	}
 
 	// The result should be whatever the user requested plus the tenants that are assignble and invisible:
 	calculated = requested.Union(r.tenants.assignable.Intersection(r.tenants.visible.Negate()))
@@ -318,13 +348,17 @@ func (r *request[O]) checkTenants(ctx context.Context, requested collections.Set
 			slog.Any("requested", ids),
 		)
 		if len(ids) == 1 {
-			return fmt.Errorf("tenant '%s' doesn't exist", ids[0])
+			return &ErrDenied{
+				Reason: fmt.Sprintf("tenant '%s' doesn't exist", ids[0]),
+			}
 		}
 		sort.Strings(ids)
 		for i, tenantId := range ids {
 			ids[i] = fmt.Sprintf("'%s'", tenantId)
 		}
-		return fmt.Errorf("tenants %s don't exist", english.WordSeries(ids, "and"))
+		return &ErrDenied{
+			Reason: fmt.Sprintf("tenants %s don't exist", english.WordSeries(ids, "and")),
+		}
 	}
 
 	// Make sure that the user ins't requesting tenants that aren't assignable to them:
@@ -338,13 +372,17 @@ func (r *request[O]) checkTenants(ctx context.Context, requested collections.Set
 			slog.Any("requested", ids),
 		)
 		if len(ids) == 1 {
-			return fmt.Errorf("tenant '%s' can't be assigned", ids[0])
+			return &ErrDenied{
+				Reason: fmt.Sprintf("tenant '%s' can't be assigned", ids[0]),
+			}
 		}
 		sort.Strings(ids)
 		for i, tenantId := range ids {
 			ids[i] = fmt.Sprintf("'%s'", tenantId)
 		}
-		return fmt.Errorf("tenants %s can't be assigned", english.WordSeries(ids, "and"))
+		return &ErrDenied{
+			Reason: fmt.Sprintf("tenants %s can't be assigned", english.WordSeries(ids, "and")),
+		}
 	}
 
 	return nil

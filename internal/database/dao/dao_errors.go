@@ -38,3 +38,15 @@ type ErrAlreadyExists struct {
 func (e *ErrAlreadyExists) Error() string {
 	return fmt.Sprintf("object with identifier '%s' already exists", e.ID)
 }
+
+// ErrDenied is an error type that indicates a requested operation is not allowed. The reason string is a human friendly
+// description that will never contain technical details, so it can be safely returned to the user as part of the error
+// response, for example as the message of a gRPC status error.
+type ErrDenied struct {
+	Reason string
+}
+
+// Error returns the error message.
+func (e *ErrDenied) Error() string {
+	return e.Reason
+}

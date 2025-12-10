@@ -15,6 +15,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -467,8 +468,9 @@ var _ = Describe("Tenancy logic", func() {
 			Do(ctx)
 
 		// Verify the request is rejected with an error indicating the tenant doesn't exist:
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("tenant 'invisible' doesn't exist"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("tenant 'invisible' doesn't exist"))
 	})
 
 	It("Rejects request when user explicitly tries to add two invisible tenants", func() {
@@ -524,8 +526,9 @@ var _ = Describe("Tenancy logic", func() {
 				}.Build(),
 			).
 			Do(ctx)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("tenants 'tenant-b' and 'tenant-c' don't exist"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("tenants 'tenant-b' and 'tenant-c' don't exist"))
 	})
 
 	It("Rejects request when user tries to add a tenant that isn't assignable", func() {
@@ -579,8 +582,9 @@ var _ = Describe("Tenancy logic", func() {
 			).Do(ctx)
 
 		// Verify the request is rejected with an error indicating the tenant can't be assigned:
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("tenant 'tenant-c' can't be assigned"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("tenant 'tenant-c' can't be assigned"))
 	})
 
 	It("Rejects request when user tries to add two tenants that can't be assigned", func() {
@@ -634,8 +638,9 @@ var _ = Describe("Tenancy logic", func() {
 				}.Build(),
 			).
 			Do(ctx)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("tenants 'tenant-b' and 'tenant-c' can't be assigned"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("tenants 'tenant-b' and 'tenant-c' can't be assigned"))
 	})
 
 	It("Preserves existing tenants when updating without specifying tenants", func() {
@@ -966,8 +971,9 @@ var _ = Describe("Tenancy logic", func() {
 			Do(ctx)
 
 		// Verify the request is rejected:
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("tenant 'invisible' doesn't exist"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("tenant 'invisible' doesn't exist"))
 	})
 
 	It("Rejects update when user tries to add a tenant that isn't assignable", func() {
@@ -1024,8 +1030,9 @@ var _ = Describe("Tenancy logic", func() {
 			Do(ctx)
 
 		// Verify the request is rejected:
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(Equal("tenant 'tenant-c' can't be assigned"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("tenant 'tenant-c' can't be assigned"))
 	})
 
 	It("Allows user with universal assignability and visibility to create objects", func() {
@@ -1132,14 +1139,70 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(tenants).To(ConsistOf("tenant-a", "tenant-b"))
 	})
 
-	It("Rejects object creation when tenants are empty", func() {
+	It("Rejects object creation when there are no assignable tenants", func() {
 		// Create a tenancy logic that returns empty tenants:
 		tenancy := auth.NewMockTenancyLogic(ctrl)
 		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
 			Return(collections.NewSet[string](), nil).
 			AnyTimes()
 		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant"), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant"), nil).
+			AnyTimes()
+
+		// Create the DAO:
+		dao, err := NewGenericDAO[*testsv1.Object]().
+			SetLogger(logger).
+			SetTable("objects").
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Attempt to create an object and verify it fails:
+		_, err = dao.Create().SetObject(testsv1.Object_builder{}.Build()).Do(ctx)
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("there are no assignable tenants"))
+	})
+
+	It("Rejects object creation when there are no default tenants", func() {
+		// Create a tenancy logic that returns assignable and visible tenants, but no default tenants:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant"), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
 			Return(collections.NewSet[string](), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant"), nil).
+			AnyTimes()
+
+		// Create the DAO:
+		dao, err := NewGenericDAO[*testsv1.Object]().
+			SetLogger(logger).
+			SetTable("objects").
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Attempt to create an object and verify it fails:
+		_, err = dao.Create().SetObject(testsv1.Object_builder{}.Build()).Do(ctx)
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("there are no default tenants"))
+	})
+
+	It("Rejects object creation when there are no visible tenants", func() {
+		// Create a tenancy logic that returns assignable and default tenants, but no visible tenants:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant"), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant"), nil).
 			AnyTimes()
 		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
 			Return(collections.NewSet[string](), nil).
@@ -1155,7 +1218,8 @@ var _ = Describe("Tenancy logic", func() {
 
 		// Attempt to create an object and verify it fails:
 		_, err = dao.Create().SetObject(testsv1.Object_builder{}.Build()).Do(ctx)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("empty tenants"))
+		var deniedErr *ErrDenied
+		Expect(errors.As(err, &deniedErr)).To(BeTrue())
+		Expect(deniedErr.Reason).To(Equal("there are no visible tenants"))
 	})
 })
