@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi10/ubi:10.0-1758699521 AS builder
+FROM registry.access.redhat.com/ubi10/ubi:10.1-1763341459 AS builder
 
 # Install packages:
 RUN \
@@ -19,7 +19,7 @@ RUN go mod download
 COPY . /source
 RUN go build
 
-FROM registry.access.redhat.com/ubi10/ubi:10.0-1758699521 AS runtime
+FROM registry.access.redhat.com/ubi10/ubi:10.1-1763341459 AS runtime
 
 # Install the binary:
 COPY --from=builder /source/fulfillment-service /usr/local/bin
