@@ -133,8 +133,11 @@ func (r *function) run(ctx context.Context, hostPool *privatev1.HostPool) error 
 }
 
 func (t *task) update(ctx context.Context) error {
-	// Add the finalizer:
-	t.addFinalizer()
+	// Add the finalizer and return immediately if it was added. This ensures the finalizer is persisted before any
+	// other work is done, reducing the chance of the object being deleted before the finalizer is saved.
+	if t.addFinalizer() {
+		return nil
+	}
 
 	// Set the default values:
 	t.setDefaults()
@@ -362,12 +365,16 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 	return
 }
 
-func (t *task) addFinalizer() {
+// addFinalizer adds the controller finalizer if it is not already present. Returns true if the finalizer was added,
+// false if it was already present.
+func (t *task) addFinalizer() bool {
 	list := t.hostPool.GetMetadata().GetFinalizers()
 	if !slices.Contains(list, finalizers.Controller) {
 		list = append(list, finalizers.Controller)
 		t.hostPool.GetMetadata().SetFinalizers(list)
+		return true
 	}
+	return false
 }
 
 func (t *task) removeFinalizer() {
