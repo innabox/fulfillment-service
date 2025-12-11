@@ -17,5 +17,5 @@ metadata:
   namespace: {{ .Release.Namespace }}
   name: keycloak-database-config
 data:
-  server.conf: {{ .Files.Get "files/database/server.conf" | quote }}
-  access.conf: {{ .Files.Get "files/database/access.conf" | quote }}
+  server.conf: {{ include "database.server.conf" . | quote }}
+  access.conf: {{ include "database.access.conf" . | quote }}

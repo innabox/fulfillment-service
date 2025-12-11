@@ -11,6 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
+{{ if ne .Values.variant "kind" }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -22,3 +23,4 @@ spec:
   resources:
     requests:
       storage: 10Gi
+{{ end }}

@@ -36,8 +36,12 @@ spec:
         configMap:
           name: keycloak-database-config
       - name: data
+        {{ if eq .Values.variant "kind" }}
+        emptyDir: {}
+        {{ else }}
         persistentVolumeClaim:
           claimName: keycloak-database
+        {{ end }}
       containers:
       - name: server
         image: "{{ .Values.images.postgres }}"

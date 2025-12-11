@@ -36,8 +36,12 @@ spec:
         configMap:
           name: fulfillment-database
       - name: data
+        {{ if eq .Values.variant "kind" }}
+        emptyDir: {}
+        {{ else }}
         persistentVolumeClaim:
           claimName: fulfillment-database
+        {{ end }}
       containers:
       - name: server
         image: {{ .Values.images.postgres }}

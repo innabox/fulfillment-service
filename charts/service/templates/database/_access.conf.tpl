@@ -11,11 +11,11 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  namespace: {{ .Release.Namespace }}
-  name: fulfillment-database
-data:
-  server.conf: {{ include "database.server.conf" . | quote }}
-  access.conf: {{ include "database.access.conf" . | quote }}
+{{- define "database.access.conf" -}}
+# This is needed by the scripts that setup the database.
+local all all peer
+
+# For any other user we only allow access with certificates.
+hostssl all all 0.0.0.0/0 cert
+hostssl all all ::0/0 cert
+{{- end -}}
