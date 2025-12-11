@@ -22,6 +22,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -127,6 +128,12 @@ func (r *function) run(ctx context.Context, host *privatev1.Host) error {
 	if !proto.Equal(host, oldHost) {
 		_, err = r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
 			Object: host,
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{
+					"metadata.finalizers",
+					"status",
+				},
+			},
 		}.Build())
 	}
 	return err
