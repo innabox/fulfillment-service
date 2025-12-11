@@ -263,6 +263,19 @@ var _ = Describe("Generic DAO", func() {
 			Expect(result).ToNot(BeNil())
 		})
 
+		It("Creates empty object if no object is provided", func() {
+			createResponse, err := generic.Create().Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			created := createResponse.GetObject()
+			Expect(created).ToNot(BeNil())
+			Expect(created.GetId()).ToNot(BeEmpty())
+			getResponse, err := generic.Get().SetId(created.GetId()).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			result := getResponse.GetObject()
+			Expect(result).ToNot(BeNil())
+			Expect(result.GetId()).To(Equal(created.GetId()))
+		})
+
 		It("Sets metadata when creating", func() {
 			object := &testsv1.Object{}
 			response, err := generic.Create().
@@ -306,9 +319,7 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Doesn't set deletion timestamp when creating", func() {
-			response, err := generic.Create().
-				SetObject(&testsv1.Object{}).
-				Do(ctx)
+			response, err := generic.Create().Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 			Expect(object).ToNot(BeNil())
@@ -338,9 +349,7 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Generates non empty identifiers", func() {
-			response, err := generic.Create().
-				SetObject(&testsv1.Object{}).
-				Do(ctx)
+			response, err := generic.Create().Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 			Expect(object).ToNot(BeNil())
@@ -392,9 +401,7 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Gets object", func() {
-			createResponse, err := generic.Create().
-				SetObject(&testsv1.Object{}).
-				Do(ctx)
+			createResponse, err := generic.Create().Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := createResponse.GetObject()
 			getResponse, err := generic.Get().
@@ -419,9 +426,7 @@ var _ = Describe("Generic DAO", func() {
 			// Insert a couple of rows:
 			const count = 2
 			for range count {
-				_, err := generic.Create().
-					SetObject(&testsv1.Object{}).
-					Do(ctx)
+				_, err := generic.Create().Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
@@ -464,9 +469,7 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Doesn't save the creation identifier in the 'data' column", func() {
 			// Create an object:
-			response, err := generic.Create().
-				SetObject(&testsv1.Object{}).
-				Do(ctx)
+			response, err := generic.Create().Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 
@@ -480,9 +483,7 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Doesn't save the creation timestamp in the 'data' column", func() {
 			// Create an object:
-			response, err := generic.Create().
-				SetObject(&testsv1.Object{}).
-				Do(ctx)
+			response, err := generic.Create().Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			object := response.GetObject()
 
@@ -716,7 +717,6 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Creates object without finalizers", func() {
 				response, err := generic.Create().
-					SetObject(&testsv1.Object{}).
 					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
@@ -773,7 +773,6 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Adds one finalizer when object is updated", func() {
 				response, err := generic.Create().
-					SetObject(&testsv1.Object{}).
 					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
@@ -789,9 +788,6 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Adds two finalizers when object is updated", func() {
 				response, err := generic.Create().
-					SetObject(
-						testsv1.Object_builder{}.Build(),
-					).
 					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
@@ -829,7 +825,6 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Eliminates duplicated finalizers when object is updated", func() {
 				response, err := generic.Create().
-					SetObject(&testsv1.Object{}).
 					Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
@@ -959,9 +954,7 @@ var _ = Describe("Generic DAO", func() {
 
 		Describe("Check if object exists", func() {
 			It("Returns true if the object exists", func() {
-				response, err := generic.Create().
-					SetObject(&testsv1.Object{}).
-					Do(ctx)
+				response, err := generic.Create().Do(ctx)
 				Expect(err).ToNot(HaveOccurred())
 				object := response.GetObject()
 				existsResponse, err := generic.Exists().

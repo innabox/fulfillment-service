@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/jackc/pgerrcode"
@@ -54,6 +55,11 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 	err = r.initTenants(ctx)
 	if err != nil {
 		return
+	}
+
+	// If the object is nil, create an empty one:
+	if reflect.ValueOf(r.object).IsNil() {
+		r.object = r.newObject()
 	}
 
 	// Generate an identifier if needed:

@@ -688,9 +688,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object with default tenants:
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(object.GetMetadata().GetTenants()).To(ConsistOf("tenant-a", "tenant-b"))
@@ -753,9 +751,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object with default tenants:
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())
@@ -822,9 +818,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object with default tenants:
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())
@@ -892,9 +886,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object (will get default tenants including invisible one):
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())
@@ -967,9 +959,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object with visible tenants only:
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())
@@ -1027,9 +1017,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object:
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())
@@ -1078,9 +1066,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object without specifying tenants (should get default):
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())
@@ -1126,9 +1112,7 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create an object with default tenants:
-		createResponse, err := dao.Create().
-			SetObject(testsv1.Object_builder{}.Build()).
-			Do(ctx)
+		createResponse, err := dao.Create().Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 		Expect(err).ToNot(HaveOccurred())

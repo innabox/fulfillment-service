@@ -386,19 +386,20 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 	}
 	requestMsg := request.(requestIface)
 	object := requestMsg.GetObject()
-	if s.isNil(object) {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
-	}
-	metadata := s.getMetadata(object)
-	if metadata != nil {
-		err := s.validateMetadata(metadata)
-		if err != nil {
-			return err
+	if !s.isNil(object) {
+		metadata := s.getMetadata(object)
+		if metadata != nil {
+			err := s.validateMetadata(metadata)
+			if err != nil {
+				return err
+			}
 		}
 	}
-	daoResponse, err := s.dao.Create().
-		SetObject(object).
-		Do(ctx)
+	daoRequest := s.dao.Create()
+	if !s.isNil(object) {
+		daoRequest.SetObject(object)
+	}
+	daoResponse, err := daoRequest.Do(ctx)
 	if err != nil {
 		var alreadyExistsErr *dao.ErrAlreadyExists
 		if errors.As(err, &alreadyExistsErr) {

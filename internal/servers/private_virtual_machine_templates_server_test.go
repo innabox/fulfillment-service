@@ -401,11 +401,12 @@ var _ = Describe("Private virtual machine templates server", func() {
 			Expect(getResponse).To(BeNil())
 		})
 
-		It("Handles empty object in create request", func() {
-			// Try to create with nil object:
+		It("Creates empty object if no object is provided", func() {
 			response, err := server.Create(ctx, privatev1.VirtualMachineTemplatesCreateRequest_builder{}.Build())
-			Expect(err).To(HaveOccurred())
-			Expect(response).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).ToNot(BeNil())
+			Expect(response.GetObject()).ToNot(BeNil())
+			Expect(response.GetObject().GetId()).ToNot(BeEmpty())
 		})
 
 		It("Handles empty object in update request", func() {
