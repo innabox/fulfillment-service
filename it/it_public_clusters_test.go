@@ -50,9 +50,9 @@ var _ = Describe("Public clusters", func() {
 		ctx = context.Background()
 
 		// Create the clients:
-		clustersClient = ffv1.NewClustersClient(clientConn)
-		hostClassesClient = privatev1.NewHostClassesClient(adminConn)
-		templatesClient = privatev1.NewClusterTemplatesClient(adminConn)
+		clustersClient = ffv1.NewClustersClient(tool.ClientConn())
+		hostClassesClient = privatev1.NewHostClassesClient(tool.AdminConn())
+		templatesClient = privatev1.NewClusterTemplatesClient(tool.AdminConn())
 
 		// Create a host class for testing:
 		hostClassId = fmt.Sprintf("my-host-class-%s", uuid.New())
@@ -320,7 +320,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := cluster.Client()
+		kubeClient := tool.KubeClient()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -432,7 +432,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := cluster.Client()
+		kubeClient := tool.KubeClient()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -543,7 +543,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := cluster.Client()
+		kubeClient := tool.KubeClient()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured
@@ -652,7 +652,7 @@ var _ = Describe("Public clusters", func() {
 		})
 
 		// Wait till the Kubernetes object has been created:
-		kubeClient := cluster.Client()
+		kubeClient := tool.KubeClient()
 		clusterOrderList := &unstructured.UnstructuredList{}
 		clusterOrderList.SetGroupVersionKind(gvks.ClusterOrderList)
 		var clusterOrderObj *unstructured.Unstructured

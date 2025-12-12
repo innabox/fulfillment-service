@@ -40,9 +40,9 @@ var _ = Describe("Node set removal", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 
-		clustersClient = ffv1.NewClustersClient(clientConn)
-		hostClassesClient = privatev1.NewHostClassesClient(adminConn)
-		templatesClient = privatev1.NewClusterTemplatesClient(adminConn)
+		clustersClient = ffv1.NewClustersClient(tool.ClientConn())
+		hostClassesClient = privatev1.NewHostClassesClient(tool.AdminConn())
+		templatesClient = privatev1.NewClusterTemplatesClient(tool.AdminConn())
 
 		// Create worker host class:
 		workerHostClassId = fmt.Sprintf("worker_class_%s", uuid.New())

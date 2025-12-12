@@ -1,0 +1,804 @@
+/*
+Copyright (c) 2025 Red Hat Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+*/
+
+package it
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"time"
+
+	"github.com/innabox/fulfillment-common/auth"
+	"github.com/innabox/fulfillment-common/network"
+	"github.com/innabox/fulfillment-common/testing"
+	"github.com/onsi/gomega/ghttp"
+	"google.golang.org/grpc"
+	grpccodes "google.golang.org/grpc/codes"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
+	grpcstatus "google.golang.org/grpc/status"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+)
+
+// ToolBuilder contains the data and logic needed to create an instance of the integration test tool. Don't create
+// instances of this directly, use the NewTool function instead.
+type ToolBuilder struct {
+	logger      *slog.Logger
+	projectDir  string
+	crdFiles    []string
+	keepCluster bool
+	keepService bool
+}
+
+// Tool is an instance of the integration test tool that sets up the test environment. Don't create instances of this
+// directly, use the NewTool function instead.
+type Tool struct {
+	logger        *slog.Logger
+	projectDir    string
+	crdFiles      []string
+	keepKind      bool
+	keepService   bool
+	tmpDir        string
+	cluster       *testing.Kind
+	kubeClient    crclient.Client
+	kubeClientSet *kubernetes.Clientset
+	caPool        *x509.CertPool
+	kcFile        string
+	clientConn    *grpc.ClientConn
+	adminConn     *grpc.ClientConn
+	userClient    *http.Client
+	adminClient   *http.Client
+}
+
+// NewTool creates a builder that can then be used to configure and create an instance of the integration test tool.
+func NewTool() *ToolBuilder {
+	return &ToolBuilder{}
+}
+
+// SetLogger sets the logger that the tool will use to write messages to the log. This is mandatory.
+func (b *ToolBuilder) SetLogger(value *slog.Logger) *ToolBuilder {
+	b.logger = value
+	return b
+}
+
+// SetProjectDir sets the root directory of the project. This is optional, if not specified, the tool will search for
+// the 'go.mod' file starting from the current directory.
+func (b *ToolBuilder) SetProjectDir(value string) *ToolBuilder {
+	b.projectDir = value
+	return b
+}
+
+// AddCrdFile adds a CRD file to be installed in the cluster.
+func (b *ToolBuilder) AddCrdFile(value string) *ToolBuilder {
+	b.crdFiles = append(b.crdFiles, value)
+	return b
+}
+
+// AddCrdFiles adds multiple CRD files to be installed in the cluster.
+func (b *ToolBuilder) AddCrdFiles(values ...string) *ToolBuilder {
+	b.crdFiles = append(b.crdFiles, values...)
+	return b
+}
+
+// SetKeepCluster sets whether to keep the cluster after the tests complete. The default is to destroy the cluster.
+func (b *ToolBuilder) SetKeepCluster(value bool) *ToolBuilder {
+	b.keepCluster = value
+	return b
+}
+
+// SetKeepService sets whether to keep the service after the tests complete. The default is to undeploy the service.
+func (b *ToolBuilder) SetKeepService(value bool) *ToolBuilder {
+	b.keepService = value
+	return b
+}
+
+// Build uses the data stored in the builder to create a new instance of the integration test tool.
+func (b *ToolBuilder) Build() (result *Tool, err error) {
+	// Check parameters:
+	if b.logger == nil {
+		err = errors.New("logger is mandatory")
+		return
+	}
+
+	// Find the project directory if not specified:
+	projectDir := b.projectDir
+	if projectDir == "" {
+		projectDir, err = b.findProjectDir()
+		if err != nil {
+			return
+		}
+	}
+
+	// Create and populate the object:
+	result = &Tool{
+		logger:      b.logger,
+		projectDir:  projectDir,
+		crdFiles:    slices.Clone(b.crdFiles),
+		keepKind:    b.keepCluster,
+		keepService: b.keepService,
+	}
+	return
+}
+
+// findProjectDir finds the project directory by searching for the go.mod file starting from the current directory.
+func (b *ToolBuilder) findProjectDir() (result string, err error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		err = fmt.Errorf("failed to get current directory: %w", err)
+		return
+	}
+	for {
+		modFile := filepath.Join(currentDir, "go.mod")
+		_, statErr := os.Stat(modFile)
+		if statErr == nil {
+			result = currentDir
+			return
+		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			err = fmt.Errorf("failed to stat '%s': %w", modFile, statErr)
+			return
+		}
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			err = fmt.Errorf("failed to find 'go.mod' file starting from '%s'", currentDir)
+			return
+		}
+		currentDir = parentDir
+	}
+}
+
+// Setup prepares the integration test environment. This includes building the binary and container image, starting
+// the Kind cluster, installing Keycloak and the service, and creating the necessary clients.
+func (t *Tool) Setup(ctx context.Context) error {
+	var err error
+
+	// Create a temporary directory:
+	t.tmpDir, err = os.MkdirTemp("", "*.it")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+
+	// Check that the required command line tools are available:
+	err = t.checkCommands(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Build the binary:
+	err = t.buildBinary(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Build the container image:
+	imageRef, err := t.buildImage(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Save the container image to a tar file:
+	imageTar, err := t.saveImage(ctx, imageRef)
+	if err != nil {
+		return err
+	}
+
+	// Start the cluster:
+	if err = t.startCluster(ctx); err != nil {
+		return err
+	}
+
+	// Load the container image into the cluster:
+	err = t.cluster.LoadArchive(ctx, imageTar)
+	if err != nil {
+		return fmt.Errorf("failed to load container image into cluster: %w", err)
+	}
+
+	// Write the kubeconfig file:
+	t.kcFile = filepath.Join(t.tmpDir, "kubeconfig")
+	err = os.WriteFile(t.kcFile, t.cluster.Kubeconfig(), 0400)
+	if err != nil {
+		return fmt.Errorf("failed to write kubeconfig file: %w", err)
+	}
+
+	// Get the clients:
+	t.kubeClient = t.cluster.Client()
+	t.kubeClientSet = t.cluster.ClientSet()
+
+	// Load the CA bundle:
+	err = t.loadCaBundle(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Install Keycloak:
+	err = t.deployKeycloak(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Install the service:
+	err = t.deployService(ctx, imageRef)
+	if err != nil {
+		return err
+	}
+
+	// Create the gRPC and HTTP clients:
+	err = t.createClients(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Wait for the service to be healthy:
+	err = t.waitForHealth(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Create the hub namespace:
+	err = t.createHubNamespace(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Register the hub:
+	if err = t.registerHub(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkCommands checks that the required command line tools are available.
+func (t *Tool) checkCommands(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Checking command line tools")
+	commands := []string{
+		kubectlCmd,
+		podmanCmd,
+		helmCmd,
+	}
+	for _, command := range commands {
+		_, err := exec.LookPath(command)
+		if err != nil {
+			return fmt.Errorf("command '%s' is not available: %w", command, err)
+		}
+	}
+	return nil
+}
+
+func (t *Tool) buildBinary(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Building binary")
+	buildCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetDir(t.projectDir).
+		SetHome(t.projectDir).
+		SetName("go").
+		SetArgs("build").
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create command to build binary: %w", err)
+	}
+	err = buildCmd.Execute(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to build binary: %w", err)
+	}
+	return nil
+}
+
+// buildImage builds the container image and returns the full image reference.
+func (t *Tool) buildImage(ctx context.Context) (result string, err error) {
+	t.logger.DebugContext(ctx, "Building image")
+	imageTag := time.Now().Format("20060102150405")
+	imageRef := fmt.Sprintf("%s:%s", imageName, imageTag)
+	buildCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetDir(t.projectDir).
+		SetName(podmanCmd).
+		SetArgs(
+			"build",
+			"--tag", imageRef,
+			"--file", filepath.Join("it", "Containerfile"),
+			".",
+		).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create command to build image: %w", err)
+		return
+	}
+	err = buildCmd.Execute(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to build image: %w", err)
+		return
+	}
+	result = imageRef
+	return
+}
+
+// saveImage saves the given container image to a tar file and returns the path to that tar file.
+func (t *Tool) saveImage(ctx context.Context, imageRef string) (result string, err error) {
+	t.logger.DebugContext(ctx, "Saving container image to tar file")
+	imageTar := filepath.Join(t.tmpDir, "image.tar")
+	saveCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetDir(t.projectDir).
+		SetName(podmanCmd).
+		SetArgs(
+			"save",
+			"--output", imageTar,
+			imageRef,
+		).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create command to save image: %w", err)
+		return
+	}
+	err = saveCmd.Execute(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to save container image: %w", err)
+		return
+	}
+	result = imageTar
+	return
+}
+
+func (t *Tool) startCluster(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Starting cluster")
+	builder := testing.NewKind()
+	builder.SetLogger(t.logger)
+	builder.SetName("fulfillment-service-it")
+	builder.SetHome(t.projectDir)
+	for _, crdFile := range t.crdFiles {
+		builder.AddCrdFile(crdFile)
+	}
+	var err error
+	t.cluster, err = builder.Build()
+	if err != nil {
+		return fmt.Errorf("failed to create cluster: %w", err)
+	}
+	err = t.cluster.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start cluster: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) loadCaBundle(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Loading CA bundle")
+
+	// Wait for the CA bundle to be available:
+	caBundleKey := crclient.ObjectKey{
+		Namespace: "default",
+		Name:      "ca-bundle",
+	}
+	caBundleMap := &corev1.ConfigMap{}
+	var err error
+	for i := 0; i < 60; i++ {
+		err = t.kubeClient.Get(ctx, caBundleKey, caBundleMap)
+		if err == nil {
+			break
+		}
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get CA bundle: %w", err)
+		}
+		time.Sleep(time.Second)
+	}
+	if err != nil {
+		return fmt.Errorf("CA bundle not available after waiting: %w", err)
+	}
+
+	// Write CA files:
+	var caFiles []string
+	for caKey, caText := range caBundleMap.Data {
+		caFile := filepath.Join(t.tmpDir, caKey)
+		err = os.WriteFile(caFile, []byte(caText), 0400)
+		if err != nil {
+			return fmt.Errorf("failed to write CA file: %w", err)
+		}
+		caFiles = append(caFiles, caFile)
+	}
+
+	// Create the CA pool:
+	t.caPool, err = network.NewCertPool().
+		SetLogger(t.logger).
+		AddFiles(caFiles...).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create CA pool: %w", err)
+	}
+	return nil
+}
+
+// deployKeycloak installs the Keycloak chart.
+func (t *Tool) deployKeycloak(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Installing Keycloak chart")
+	installCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetDir(t.projectDir).
+		SetHome(t.projectDir).
+		SetName(helmCmd).
+		SetArgs(
+			"upgrade",
+			"--install",
+			"keycloak",
+			"charts/keycloak",
+			"--kubeconfig", t.kcFile,
+			"--namespace", "keycloak",
+			"--create-namespace",
+			"--set", "variant=kind",
+			"--set", "hostname=keycloak.keycloak.svc.cluster.local",
+			"--set", "certs.issuerRef.name=default-ca",
+			"--wait",
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create Keycloak install command: %w", err)
+	}
+	if err = installCmd.Execute(ctx); err != nil {
+		return fmt.Errorf("failed to install Keycloak: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) deployService(ctx context.Context, imageRef string) error {
+	t.logger.DebugContext(ctx, "Deploying service")
+	installCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetDir(t.projectDir).
+		SetHome(t.projectDir).
+		SetName(helmCmd).
+		SetArgs(
+			"upgrade",
+			"--install",
+			"fulfillment-service",
+			"charts/service",
+			"--kubeconfig", t.kcFile,
+			"--namespace", "innabox",
+			"--create-namespace",
+			"--set", "log.level=debug",
+			"--set", "log.headers=true",
+			"--set", "log.bodies=true",
+			"--set", "variant=kind",
+			"--set", fmt.Sprintf("images.service=%s", imageRef),
+			"--set", "certs.issuerRef.kind=ClusterIssuer",
+			"--set", "certs.issuerRef.name=default-ca",
+			"--set", "certs.caBundle.configMap=ca-bundle",
+			"--set", "auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox",
+			"--wait",
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create service install command: %w", err)
+	}
+	if err = installCmd.Execute(ctx); err != nil {
+		return fmt.Errorf("failed to install service: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) undeployService(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Undeploying service")
+	uninstallCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetDir(t.projectDir).
+		SetHome(t.projectDir).
+		SetName(helmCmd).
+		SetArgs(
+			"uninstall",
+			"fulfillment-service",
+			"--kubeconfig", t.kcFile,
+			"--namespace", "innabox",
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create service uninstall command: %w", err)
+	}
+	if err = uninstallCmd.Execute(ctx); err != nil {
+		return fmt.Errorf("failed to uninstall service: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) createClients(ctx context.Context) error {
+	// Create token sources:
+	clientTokenSource, err := t.makeTokenSource(ctx, "client")
+	if err != nil {
+		return err
+	}
+	adminTokenSource, err := t.makeTokenSource(ctx, "admin")
+	if err != nil {
+		return err
+	}
+
+	// Create gRPC clients:
+	t.clientConn, err = t.makeGrpcConn(clientTokenSource)
+	if err != nil {
+		return err
+	}
+	t.adminConn, err = t.makeGrpcConn(adminTokenSource)
+	if err != nil {
+		return err
+	}
+
+	// Create HTTP clients:
+	t.userClient = t.makeHttpClient(clientTokenSource)
+	t.adminClient = t.makeHttpClient(adminTokenSource)
+
+	return nil
+}
+
+func (t *Tool) makeTokenSource(ctx context.Context, sa string) (result auth.TokenSource, err error) {
+	response, err := t.kubeClientSet.CoreV1().ServiceAccounts("innabox").CreateToken(
+		ctx,
+		sa,
+		&authenticationv1.TokenRequest{
+			Spec: authenticationv1.TokenRequestSpec{
+				ExpirationSeconds: ptr.To(int64(3600)),
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		err = fmt.Errorf("failed to create token for service account '%s': %w", sa, err)
+		return
+	}
+	token := &auth.Token{
+		Access: response.Status.Token,
+	}
+	result, err = auth.NewStaticTokenSource().
+		SetLogger(t.logger).
+		SetToken(token).
+		Build()
+	return
+}
+
+func (t *Tool) makeGrpcConn(tokenSource auth.TokenSource) (result *grpc.ClientConn, err error) {
+	result, err = network.NewGrpcClient().
+		SetLogger(t.logger).
+		SetCaPool(t.caPool).
+		SetAddress("localhost:8000").
+		SetTokenSource(tokenSource).
+		Build()
+	return
+}
+
+func (t *Tool) makeHttpClient(tokenSource auth.TokenSource) *http.Client {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: t.caPool,
+		},
+	}
+	return &http.Client{
+		Transport: ghttp.RoundTripperFunc(
+			func(request *http.Request) (response *http.Response, err error) {
+				token, err := tokenSource.Token(request.Context())
+				if err != nil {
+					return nil, err
+				}
+				request.Header.Set(
+					"Authorization",
+					fmt.Sprintf("Bearer %s", token.Access),
+				)
+				response, err = transport.RoundTrip(request)
+				return
+			},
+		),
+	}
+}
+
+func (t *Tool) waitForHealth(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Waiting for service to be healthy")
+	healthClient := healthv1.NewHealthClient(t.adminConn)
+	healthRequest := &healthv1.HealthCheckRequest{}
+	var lastErr error
+	for i := 0; i < 12; i++ {
+		healthResponse, err := healthClient.Check(ctx, healthRequest)
+		if err == nil && healthResponse.Status == healthv1.HealthCheckResponse_SERVING {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(5 * time.Second)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("service not healthy after waiting: %w", lastErr)
+	}
+	return fmt.Errorf("service not healthy after waiting")
+}
+
+func (t *Tool) createHubNamespace(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Creating hub namespace")
+	hubNamespaceObject := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hubNamespace,
+		},
+	}
+	err := t.kubeClient.Create(ctx, hubNamespaceObject)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create hub namespace: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) registerHub(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Registering hub")
+
+	// Prepare the kubeconfig for the hub:
+	hubKcBytes := t.cluster.Kubeconfig()
+	hubKcObject, err := clientcmd.Load(hubKcBytes)
+	if err != nil {
+		return fmt.Errorf("failed to load hub kubeconfig: %w", err)
+	}
+	for clusterKey := range hubKcObject.Clusters {
+		hubKcObject.Clusters[clusterKey].Server = "https://kubernetes.default.svc"
+	}
+	hubKcBytes, err = clientcmd.Write(*hubKcObject)
+	if err != nil {
+		return fmt.Errorf("failed to write hub Kc: %w", err)
+	}
+
+	// Create the hubs client:
+	hubsClient := privatev1.NewHubsClient(t.adminConn)
+
+	// Wait for Authorino authorization to be ready:
+	for range 30 {
+		_, err = hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if err != nil {
+		return fmt.Errorf("authorization not ready after waiting: %w", err)
+	}
+
+	// Create the hub:
+	_, err = hubsClient.Create(ctx, privatev1.HubsCreateRequest_builder{
+		Object: privatev1.Hub_builder{
+			Id:         hubId,
+			Kubeconfig: hubKcBytes,
+			Namespace:  hubNamespace,
+		}.Build(),
+	}.Build())
+	if err != nil {
+		status, ok := grpcstatus.FromError(err)
+		if ok && status.Code() == grpccodes.AlreadyExists {
+			return nil
+		}
+		return fmt.Errorf("failed to create hub: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) Cleanup(ctx context.Context) error {
+	var errs []error
+
+	// Close gRPC connections:
+	if t.clientConn != nil {
+		err := t.clientConn.Close()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to close client connection: %w", err))
+		}
+	}
+	if t.adminConn != nil {
+		err := t.adminConn.Close()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to close admin connection: %w", err))
+		}
+	}
+
+	// Undeploy the service:
+	if t.cluster != nil && t.keepKind && !t.keepService {
+		err := t.undeployService(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to undeploy service: %w", err))
+		}
+	}
+
+	// Stop the cluster:
+	if t.cluster != nil && !t.keepKind {
+		err := t.cluster.Stop(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop cluster: %w", err))
+		}
+	}
+
+	// Remove temporary directory:
+	if t.tmpDir != "" {
+		err := os.RemoveAll(t.tmpDir)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to remove temporary directory: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+func (t *Tool) Dump(ctx context.Context) error {
+	if t.cluster == nil {
+		return nil
+	}
+	logsDir := filepath.Join(t.projectDir, "logs")
+	return t.cluster.Dump(ctx, logsDir)
+}
+
+// Cluster returns the Kind cluster.
+func (t *Tool) Cluster() *testing.Kind {
+	return t.cluster
+}
+
+// KubeClient returns the Kubernetes client.
+func (t *Tool) KubeClient() crclient.Client {
+	return t.kubeClient
+}
+
+// KubeClientSet returns the Kubernetes clientset.
+func (t *Tool) KubeClientSet() *kubernetes.Clientset {
+	return t.kubeClientSet
+}
+
+// ClientConn returns the gRPC client connection for regular clients.
+func (t *Tool) ClientConn() *grpc.ClientConn {
+	return t.clientConn
+}
+
+// AdminConn returns the gRPC client connection for admin clients.
+func (t *Tool) AdminConn() *grpc.ClientConn {
+	return t.adminConn
+}
+
+// UserClient returns the HTTP client for regular users.
+func (t *Tool) UserClient() *http.Client {
+	return t.userClient
+}
+
+// AdminClient returns the HTTP client for admin users.
+func (t *Tool) AdminClient() *http.Client {
+	return t.adminClient
+}
+
+// ProjectDir returns the project directory.
+func (t *Tool) ProjectDir() string {
+	return t.projectDir
+}
+
+// Names of the command line tools:
+const (
+	helmCmd    = "helm"
+	kubectlCmd = "kubectl"
+	podmanCmd  = "podman"
+)
+
+// Name and namespace of the hub:
+const hubId = "local"
+const hubNamespace = "cloudkit-operator-system"
+
+// Image details:
+const imageName = "ghcr.io/innabox/fulfillment-service"

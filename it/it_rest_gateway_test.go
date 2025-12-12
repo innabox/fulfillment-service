@@ -36,8 +36,8 @@ var _ = Describe("REST gateway", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		templatesClient = privatev1.NewClusterTemplatesClient(adminConn)
-		hostClassesClient = privatev1.NewHostClassesClient(adminConn)
+		templatesClient = privatev1.NewClusterTemplatesClient(tool.AdminConn())
+		hostClassesClient = privatev1.NewHostClassesClient(tool.AdminConn())
 	})
 
 	It("Should use protobuf field names in JSON representation", func() {
@@ -105,7 +105,7 @@ var _ = Describe("REST gateway", func() {
 		url := fmt.Sprintf("https://localhost:8000/api/fulfillment/v1/cluster_templates/%s", templateID)
 		request, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		Expect(err).ToNot(HaveOccurred())
-		response, err := userClient.Do(request)
+		response, err := tool.UserClient().Do(request)
 		Expect(err).ToNot(HaveOccurred())
 		defer response.Body.Close()
 		Expect(response.StatusCode).To(Equal(http.StatusOK))
@@ -184,7 +184,7 @@ var _ = Describe("REST gateway", func() {
 		url := fmt.Sprintf("https://localhost:8000/api/private/v1/cluster_templates/%s", templateID)
 		request, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		Expect(err).ToNot(HaveOccurred())
-		response, err := adminClient.Do(request)
+		response, err := tool.AdminClient().Do(request)
 		Expect(err).ToNot(HaveOccurred())
 		defer response.Body.Close()
 		Expect(response.StatusCode).To(Equal(http.StatusOK))

@@ -30,7 +30,7 @@ var _ = Describe("Cluster templates", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		client = ffv1.NewClusterTemplatesClient(clientConn)
+		client = ffv1.NewClusterTemplatesClient(tool.ClientConn())
 	})
 
 	It("Can get the list of templates", func() {

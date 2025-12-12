@@ -32,7 +32,7 @@ var _ = Describe("Priate host classes", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		client = privatev1.NewHostClassesClient(adminConn)
+		client = privatev1.NewHostClassesClient(tool.AdminConn())
 	})
 
 	It("Can get the list of host classes", func() {
