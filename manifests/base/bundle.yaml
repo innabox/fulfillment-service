@@ -12,7 +12,7 @@
 #
 
 # Note that this is empty on purpose. It will be populated with the trusted CA certificaes, either using trust-manager,
-# like in the integratoin testing environment or with a Kustomize overlay. All the certificates that end up here will
+# like in the integration testing environment or with a Kustomize overlay. All the certificates that end up here will
 # be loaded and trusted by all the components of the service that use TLS.
 
 apiVersion: v1

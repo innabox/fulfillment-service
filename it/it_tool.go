@@ -47,6 +47,12 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
 
+// Deplyment modes:
+const (
+	deployModeHelm      = "helm"
+	deployModeKustomize = "kustomize"
+)
+
 // ToolBuilder contains the data and logic needed to create an instance of the integration test tool. Don't create
 // instances of this directly, use the NewTool function instead.
 type ToolBuilder struct {
@@ -55,26 +61,28 @@ type ToolBuilder struct {
 	crdFiles    []string
 	keepCluster bool
 	keepService bool
+	deployMode  string
 }
 
 // Tool is an instance of the integration test tool that sets up the test environment. Don't create instances of this
 // directly, use the NewTool function instead.
 type Tool struct {
-	logger        *slog.Logger
-	projectDir    string
-	crdFiles      []string
-	keepKind      bool
-	keepService   bool
-	tmpDir        string
-	cluster       *testing.Kind
-	kubeClient    crclient.Client
-	kubeClientSet *kubernetes.Clientset
-	caPool        *x509.CertPool
-	kcFile        string
-	clientConn    *grpc.ClientConn
-	adminConn     *grpc.ClientConn
-	userClient    *http.Client
-	adminClient   *http.Client
+	logger         *slog.Logger
+	projectDir     string
+	crdFiles       []string
+	keepKind       bool
+	keepService    bool
+	deploymentMode string
+	tmpDir         string
+	cluster        *testing.Kind
+	kubeClient     crclient.Client
+	kubeClientSet  *kubernetes.Clientset
+	caPool         *x509.CertPool
+	kcFile         string
+	clientConn     *grpc.ClientConn
+	adminConn      *grpc.ClientConn
+	userClient     *http.Client
+	adminClient    *http.Client
 }
 
 // NewTool creates a builder that can then be used to configure and create an instance of the integration test tool.
@@ -119,11 +127,24 @@ func (b *ToolBuilder) SetKeepService(value bool) *ToolBuilder {
 	return b
 }
 
+// SetDeployMode sets how the service should be deployed. Valid values are 'heml' and 'kustomize'. The default is 'helm'.
+func (b *ToolBuilder) SetDeployMode(value string) *ToolBuilder {
+	b.deployMode = value
+	return b
+}
+
 // Build uses the data stored in the builder to create a new instance of the integration test tool.
 func (b *ToolBuilder) Build() (result *Tool, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
+		return
+	}
+	if b.deployMode != deployModeHelm && b.deployMode != deployModeKustomize {
+		err = fmt.Errorf(
+			"invalid deploy mode '%s'i must be '%s' or '%s'",
+			b.deployMode, deployModeHelm, deployModeKustomize,
+		)
 		return
 	}
 
@@ -138,11 +159,12 @@ func (b *ToolBuilder) Build() (result *Tool, err error) {
 
 	// Create and populate the object:
 	result = &Tool{
-		logger:      b.logger,
-		projectDir:  projectDir,
-		crdFiles:    slices.Clone(b.crdFiles),
-		keepKind:    b.keepCluster,
-		keepService: b.keepService,
+		logger:         b.logger,
+		projectDir:     projectDir,
+		crdFiles:       slices.Clone(b.crdFiles),
+		keepKind:       b.keepCluster,
+		keepService:    b.keepService,
+		deploymentMode: b.deployMode,
 	}
 	return
 }
@@ -282,6 +304,7 @@ func (t *Tool) checkCommands(ctx context.Context) error {
 		kubectlCmd,
 		podmanCmd,
 		helmCmd,
+		kustomizeCmd,
 	}
 	for _, command := range commands {
 		_, err := exec.LookPath(command)
@@ -296,8 +319,8 @@ func (t *Tool) buildBinary(ctx context.Context) error {
 	t.logger.DebugContext(ctx, "Building binary")
 	buildCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
-		SetDir(t.projectDir).
 		SetHome(t.projectDir).
+		SetDir(t.projectDir).
 		SetName("go").
 		SetArgs("build").
 		Build()
@@ -318,6 +341,7 @@ func (t *Tool) buildImage(ctx context.Context) (result string, err error) {
 	imageRef := fmt.Sprintf("%s:%s", imageName, imageTag)
 	buildCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
+		SetHome(t.projectDir).
 		SetDir(t.projectDir).
 		SetName(podmanCmd).
 		SetArgs(
@@ -346,6 +370,7 @@ func (t *Tool) saveImage(ctx context.Context, imageRef string) (result string, e
 	imageTar := filepath.Join(t.tmpDir, "image.tar")
 	saveCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
+		SetHome(t.projectDir).
 		SetDir(t.projectDir).
 		SetName(podmanCmd).
 		SetArgs(
@@ -371,8 +396,8 @@ func (t *Tool) startCluster(ctx context.Context) error {
 	t.logger.DebugContext(ctx, "Starting cluster")
 	builder := testing.NewKind()
 	builder.SetLogger(t.logger)
-	builder.SetName("fulfillment-service-it")
 	builder.SetHome(t.projectDir)
+	builder.SetName("fulfillment-service-it")
 	for _, crdFile := range t.crdFiles {
 		builder.AddCrdFile(crdFile)
 	}
@@ -439,8 +464,8 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 	t.logger.DebugContext(ctx, "Installing Keycloak chart")
 	installCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
-		SetDir(t.projectDir).
 		SetHome(t.projectDir).
+		SetDir(t.projectDir).
 		SetName(helmCmd).
 		SetArgs(
 			"upgrade",
@@ -466,11 +491,22 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 }
 
 func (t *Tool) deployService(ctx context.Context, imageRef string) error {
-	t.logger.DebugContext(ctx, "Deploying service")
+	switch t.deploymentMode {
+	case deployModeHelm:
+		return t.deployServiceWithHelm(ctx, imageRef)
+	case deployModeKustomize:
+		return t.deployServiceWithKustomize(ctx, imageRef)
+	default:
+		return fmt.Errorf("unknown deploy mode '%s'", t.deploymentMode)
+	}
+}
+
+func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error {
+	t.logger.DebugContext(ctx, "Deploying service with Helm")
 	installCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
-		SetDir(t.projectDir).
 		SetHome(t.projectDir).
+		SetDir(t.projectDir).
 		SetName(helmCmd).
 		SetArgs(
 			"upgrade",
@@ -501,12 +537,124 @@ func (t *Tool) deployService(ctx context.Context, imageRef string) error {
 	return nil
 }
 
+func (t *Tool) deployServiceWithKustomize(ctx context.Context, imageRef string) error {
+	t.logger.DebugContext(ctx, "Deploying service with Kustomize")
+
+	// Copy manifests to temporary directory:
+	srcDir := filepath.Join(t.projectDir, "manifests")
+	tmpDir := filepath.Join(t.tmpDir, "manifests")
+	err := t.copyDir(srcDir, tmpDir)
+	if err != nil {
+		return fmt.Errorf("failed to copy manifests to temporary directory: %w", err)
+	}
+
+	// Update the image reference using kustomize edit:
+	baseDir := filepath.Join(tmpDir, "base")
+	editCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetHome(t.projectDir).
+		SetDir(baseDir).
+		SetName(kustomizeCmd).
+		SetArgs(
+			"edit",
+			"set",
+			"image",
+			fmt.Sprintf("fulfillment-service=%s", imageRef),
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create kustomize edit command: %w", err)
+	}
+	err = editCmd.Execute(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to set image with kustomize edit: %w", err)
+	}
+
+	// Apply the manifests:
+	overlayDir := filepath.Join(tmpDir, "overlays", "kind")
+	applyCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetHome(t.projectDir).
+		SetDir(t.projectDir).
+		SetName(kubectlCmd).
+		SetArgs(
+			"apply",
+			"--kubeconfig", t.kcFile,
+			"--kustomize", overlayDir,
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create kubectl apply command: %w", err)
+	}
+	err = applyCmd.Execute(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to apply manifests: %w", err)
+	}
+
+	// Wait for all deployments to be ready:
+	waitCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetHome(t.projectDir).
+		SetDir(t.projectDir).
+		SetName(kubectlCmd).
+		SetArgs(
+			"wait",
+			"--kubeconfig", t.kcFile,
+			"--namespace", "innabox",
+			"--for=condition=available",
+			"--timeout=5m",
+			"deployment", "--all",
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create kubectl wait command: %w", err)
+	}
+	err = waitCmd.Execute(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to wait for deployments: %w", err)
+	}
+
+	return nil
+}
+
+func (t *Tool) copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		dstPath := filepath.Join(dst, relPath)
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dstPath, data, info.Mode())
+	})
+}
+
 func (t *Tool) undeployService(ctx context.Context) error {
-	t.logger.DebugContext(ctx, "Undeploying service")
+	switch t.deploymentMode {
+	case deployModeHelm:
+		return t.undeployServiceWithHelm(ctx)
+	case deployModeKustomize:
+		return t.undeployServiceWithKustomize(ctx)
+	default:
+		return fmt.Errorf("unknown deploy mode '%s'", t.deploymentMode)
+	}
+}
+
+func (t *Tool) undeployServiceWithHelm(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Undeploying service with Helm")
 	uninstallCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
-		SetDir(t.projectDir).
 		SetHome(t.projectDir).
+		SetDir(t.projectDir).
 		SetName(helmCmd).
 		SetArgs(
 			"uninstall",
@@ -520,6 +668,19 @@ func (t *Tool) undeployService(ctx context.Context) error {
 	}
 	if err = uninstallCmd.Execute(ctx); err != nil {
 		return fmt.Errorf("failed to uninstall service: %w", err)
+	}
+	return nil
+}
+
+func (t *Tool) undeployServiceWithKustomize(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Undeploying service with Kustomize")
+	err := t.cluster.Client().Delete(ctx, &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "innabox",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 	return nil
 }
@@ -791,9 +952,10 @@ func (t *Tool) ProjectDir() string {
 
 // Names of the command line tools:
 const (
-	helmCmd    = "helm"
-	kubectlCmd = "kubectl"
-	podmanCmd  = "podman"
+	helmCmd      = "helm"
+	kubectlCmd   = "kubectl"
+	kustomizeCmd = "kustomize"
+	podmanCmd    = "podman"
 )
 
 // Name and namespace of the hub:

@@ -232,6 +232,17 @@ The integration tests will automatically:
 4. Run all test cases.
 5. Clean up the kind cluster.
 
+### Deployment mode
+
+By default, the integration tests deploy the service using _Helm_. You can also deploy using
+_Kustomize_ by setting the `IT_DEPLOY_MODE` environment variable:
+
+```bash
+$ IT_DEPLOY_MODE=kustomize ginkgo run it
+```
+
+Valid values are `helm` (default) and `kustomize`.
+
 ### Preserving the test cluster
 
 By default, the kind cluster is deleted after the tests complete. If you want to preserve the cluster

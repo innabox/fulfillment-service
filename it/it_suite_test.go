@@ -38,6 +38,10 @@ type Config struct {
 	// KeepService indicates whether to preserve the application chart after tests complete.
 	// By default, the application chart is uninstalled after running the tests.
 	KeepService bool `json:"keep_service" envconfig:"keep_service" default:"false"`
+
+	// DeployMode indicates how to deploy the service. Valid values are 'helm' and 'kustomize'.
+	// By default, the service is deployed using Helm.
+	DeployMode string `json:"deploy_mode" envconfig:"deploy_mode" default:"helm"`
 }
 
 var (
@@ -83,6 +87,7 @@ var _ = BeforeSuite(func() {
 		SetLogger(logger).
 		SetKeepCluster(config.KeepKind).
 		SetKeepService(config.KeepService).
+		SetDeployMode(config.DeployMode).
 		AddCrdFile(filepath.Join("crds", "clusterorders.cloudkit.openshift.io.yaml")).
 		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
