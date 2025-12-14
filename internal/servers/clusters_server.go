@@ -561,8 +561,14 @@ func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId s
 	}
 
 	// Get the data of the hub:
-	hub, err := s.hubsDao.Get(ctx, cluster.GetStatus().GetHub())
-	if err != nil || hub == nil {
+	getHubResponse, err := s.hubsDao.Get().
+		SetId(cluster.GetStatus().GetHub()).
+		Do(ctx)
+	if err != nil {
+		return
+	}
+	hub := getHubResponse.GetObject()
+	if hub == nil {
 		return
 	}
 
