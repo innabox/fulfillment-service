@@ -126,12 +126,13 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if err != nil {
 		return err
 	}
-	if !proto.Equal(cluster, oldCluster) {
-		// Compute which fields the reconciler actually modified and use a field mask
-		// to update only those fields. This prevents overwriting concurrent user changes
-		// to fields like spec.node_sets.
-		updateMask := masks.Compute(oldCluster, cluster)
+	// Compute which fields the reconciler actually modified and use a field mask
+	// to update only those fields. This prevents overwriting concurrent user changes
+	// to fields like spec.node_sets.
+	updateMask := masks.Compute(oldCluster, cluster)
 
+	// Only send an update if there are actual changes
+	if len(updateMask.GetPaths()) > 0 {
 		_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
 			Object:     cluster,
 			UpdateMask: updateMask,

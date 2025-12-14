@@ -348,7 +348,7 @@ var _ = Describe("Compute", func() {
 	})
 
 	Context("when transitioning from empty to populated", func() {
-		It("should detect all new fields", func() {
+		It("should detect all new fields at top level", func() {
 			before := privatev1.Cluster_builder{}.Build()
 
 			after := privatev1.Cluster_builder{
@@ -362,9 +362,13 @@ var _ = Describe("Compute", func() {
 			}.Build()
 
 			mask := Compute(before, after)
+			// For newly added fields, only the top-level paths are included
+			// since field masks are hierarchical (e.g., "metadata" includes all metadata sub-fields)
 			Expect(mask.Paths).To(ContainElement("id"))
-			Expect(mask.Paths).To(ContainElement("metadata.finalizers"))
-			Expect(mask.Paths).To(ContainElement("status.state"))
+			Expect(mask.Paths).To(ContainElement("metadata"))
+			Expect(mask.Paths).To(ContainElement("status"))
+			Expect(mask.Paths).NotTo(ContainElement("metadata.finalizers"))
+			Expect(mask.Paths).NotTo(ContainElement("status.state"))
 		})
 	})
 })
