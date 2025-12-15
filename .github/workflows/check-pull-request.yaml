@@ -70,7 +70,7 @@ jobs:
     - run: |
         IT_DEPLOY_MODE=helm ginkgo run -v it
     - if: always()
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: logs-helm
         path: logs
@@ -85,7 +85,7 @@ jobs:
     - run: |
         IT_DEPLOY_MODE=kustomize ginkgo run -v it
     - if: always()
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: logs-kustomize
         path: logs
