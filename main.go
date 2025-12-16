@@ -34,6 +34,7 @@ func main() {
 		SetOut(os.Stdout).
 		SetErr(os.Stderr).
 		AddCommand(cmd.NewDevCommand).
+		AddCommand(cmd.NewProbeCommand).
 		AddCommand(cmd.NewStartCommand).
 		AddCommand(cmd.NewVersionCommand).
 		Build()

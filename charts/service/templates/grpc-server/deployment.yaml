@@ -73,3 +73,29 @@ spec:
         - --grpc-authn-type=external
         - --grpc-authn-external-address=authorino-authorino-authorization:50051
         - --tenancy-logic=default
+        ports:
+        - name: grpc
+          containerPort: 8000
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - /usr/local/bin/fulfillment-service
+            - probe
+            - grpc-server
+            - --ca-file=/etc/fulfillment-grpc-server/tls/ca.crt
+            - --grpc-server-address=localhost:8000
+            - --grpc-server-timeout=1s
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /usr/local/bin/fulfillment-service
+            - probe
+            - grpc-server
+            - --ca-file=/etc/fulfillment-grpc-server/tls/ca.crt
+            - --grpc-server-address=localhost:8000
+            - --grpc-server-timeout=1s
+          initialDelaySeconds: 5
+          periodSeconds: 10
