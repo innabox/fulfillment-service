@@ -14,16 +14,16 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: fulfillment-grpc-server
+  name: fulfillment-controller
 spec:
   issuerRef:
     kind: ClusterIssuer
     name: default-ca
   dnsNames:
   - localhost
-  - fulfillment-grpc-server
-  - fulfillment-grpc-server.innabox
-  - fulfillment-grpc-server.innabox.svc.cluster.local
-  secretName: fulfillment-grpc-server-tls
+  - fulfillment-controller
+  - fulfillment-controller.innabox
+  - fulfillment-controller.innabox.svc.cluster.local
+  secretName: fulfillment-controller-tls
   privateKey:
     rotationPolicy: Always

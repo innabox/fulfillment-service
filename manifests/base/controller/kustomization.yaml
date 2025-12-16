@@ -20,4 +20,5 @@ labels:
 
 resources:
 - sa.yaml
+- certificate.yaml
 - deployment.yaml

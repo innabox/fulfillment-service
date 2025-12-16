@@ -27,7 +27,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 	"k8s.io/klog/v2"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -38,7 +41,6 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
 	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
 	"github.com/innabox/fulfillment-service/internal/controllers/vm"
-	"google.golang.org/grpc"
 )
 
 // NewStartControllerCommand creates and returns the `start controllers` command.
@@ -64,6 +66,7 @@ func NewStartControllerCommand() *cobra.Command {
 		"File containing the token to use for authentication.",
 	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
+	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	return command
 }
 
@@ -125,6 +128,47 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
 	}
+
+	// Create the gRPC server:
+	r.logger.InfoContext(ctx, "Creating gRPC server for health service")
+	grpcListener, err := network.NewListener().
+		SetLogger(r.logger).
+		SetFlags(r.flags, network.GrpcListenerName).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create listener: %w", err)
+	}
+	grpcServer := grpc.NewServer()
+
+	// Register the reflection server:
+	r.logger.InfoContext(ctx, "Registering gRPC reflection server")
+	reflection.RegisterV1(grpcServer)
+
+	// Register the health server:
+	r.logger.InfoContext(ctx, "Registering gRPC health server")
+	healthServer := health.NewServer()
+	healthv1.RegisterHealthServer(grpcServer, healthServer)
+
+	// Start the gRPC server:
+	r.logger.InfoContext(
+		ctx,
+		"Starting gRPC server",
+		slog.String("address", grpcListener.Addr().String()),
+	)
+	go func() {
+		defer grpcServer.GracefulStop()
+		<-ctx.Done()
+	}()
+	go func() {
+		err := grpcServer.Serve(grpcListener)
+		if err != nil {
+			r.logger.ErrorContext(
+				ctx,
+				"gRPC server failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
 	// Wait for the server to be ready:
 	err = r.waitForServer(ctx)

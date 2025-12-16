@@ -68,9 +68,9 @@ spec:
         - --grpc-authn-external-address=authorino-authorino-authorization:50051
         - --tenancy-logic=default
         ports:
-        - name: api
-          protocol: TCP
+        - name: grpc
           containerPort: 8000
+          protocol: TCP
         livenessProbe:
           exec:
             command:
