@@ -113,6 +113,7 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
 		SetTable("hubs").
+		SetAttributionLogic(b.attributionLogic).
 		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
@@ -305,17 +306,26 @@ func (s *ClustersServer) Update(ctx context.Context,
 		return
 	}
 
-	// Get the existing object from the private server:
-	getRequest := &privatev1.ClustersGetRequest{}
-	getRequest.SetId(id)
-	getResponse, err := s.private.Get(ctx, getRequest)
-	if err != nil {
-		return nil, err
+	// Determine how to prepare the private cluster based on whether there's a field mask. When there's a field mask,
+	// we don't want to merge into the existing object because that would prevent proper replacement of map fields
+	// (like node sets). Instead, we copy to a new object and let the generic server handle the merge with the
+	// database object, which correctly applies field mask semantics.
+	var privateCluster *privatev1.Cluster
+	updateMask := request.GetUpdateMask()
+	if len(updateMask.GetPaths()) > 0 {
+		privateCluster = &privatev1.Cluster{}
+		privateCluster.SetId(id)
+	} else {
+		getRequest := &privatev1.ClustersGetRequest{}
+		getRequest.SetId(id)
+		var getResponse *privatev1.ClustersGetResponse
+		getResponse, err = s.private.Get(ctx, getRequest)
+		if err != nil {
+			return nil, err
+		}
+		privateCluster = getResponse.GetObject()
 	}
-	existingPrivateCluster := getResponse.GetObject()
-
-	// Map the public changes to the existing private object (preserving private data):
-	err = s.inMapper.Copy(ctx, publicCluster, existingPrivateCluster)
+	err = s.inMapper.Copy(ctx, publicCluster, privateCluster)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -326,10 +336,10 @@ func (s *ClustersServer) Update(ctx context.Context,
 		return
 	}
 
-	// Delegate to the private server with the merged object:
+	// Delegate to the private server:
 	privateRequest := &privatev1.ClustersUpdateRequest{}
-	privateRequest.SetObject(existingPrivateCluster)
-	privateRequest.SetUpdateMask(request.GetUpdateMask())
+	privateRequest.SetObject(privateCluster)
+	privateRequest.SetUpdateMask(updateMask)
 	privateResponse, err := s.private.Update(ctx, privateRequest)
 	if err != nil {
 		return nil, err

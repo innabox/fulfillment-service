@@ -21,7 +21,13 @@ import (
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 )
 
-var _ = Describe("Compute", func() {
+var _ = Describe("Calculator", func() {
+	var calculator *Calculator
+
+	BeforeEach(func() {
+		calculator = NewCalculator().Build()
+	})
+
 	Context("when no fields have changed", func() {
 		It("should return an empty field mask", func() {
 			finalizers := []string{"controller"}
@@ -53,7 +59,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(BeEmpty())
 		})
 	})
@@ -72,7 +78,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("status.state"))
 		})
 
@@ -89,7 +95,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("spec.template"))
 		})
 
@@ -107,7 +113,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("status.hub"))
 			Expect(mask.Paths).NotTo(ContainElement("status.state"))
 		})
@@ -127,7 +133,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("status.state"))
 			Expect(mask.Paths).To(ContainElement("status.hub"))
 		})
@@ -147,7 +153,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("metadata.finalizers"))
 		})
 
@@ -183,7 +189,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("status.conditions"))
 		})
 
@@ -210,7 +216,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("status.conditions"))
 		})
 	})
@@ -239,7 +245,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("spec.node_sets"))
 		})
 
@@ -270,7 +276,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("spec.node_sets"))
 		})
 
@@ -301,7 +307,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("spec.node_sets"))
 		})
 	})
@@ -338,7 +344,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			Expect(mask.Paths).To(ContainElement("metadata.finalizers"))
 			Expect(mask.Paths).To(ContainElement("status.state"))
 			Expect(mask.Paths).To(ContainElement("status.hub"))
@@ -361,7 +367,7 @@ var _ = Describe("Compute", func() {
 				}.Build(),
 			}.Build()
 
-			mask := Compute(before, after)
+			mask := calculator.Calculate(before, after)
 			// For newly added fields, only the top-level paths are included
 			// since field masks are hierarchical (e.g., "metadata" includes all metadata sub-fields)
 			Expect(mask.Paths).To(ContainElement("id"))

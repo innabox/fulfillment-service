@@ -41,10 +41,10 @@ func (b *CalculatorBuilder) Build() *Calculator {
 	return &Calculator{}
 }
 
-// Compute returns a field mask of fields that changed between before and after.
+// Calculate returns a field mask of fields that changed between before and after.
 // This prevents updates from overwriting concurrent changes to fields not being modified.
 // Uses deep recursive comparison to detect changes at any level of nesting.
-func (c *Calculator) Compute(before, after proto.Message) *fieldmaskpb.FieldMask {
+func (c *Calculator) Calculate(before, after proto.Message) *fieldmaskpb.FieldMask {
 	paths := c.compareMessages(before.ProtoReflect(), after.ProtoReflect(), "")
 	return &fieldmaskpb.FieldMask{Paths: paths}
 }

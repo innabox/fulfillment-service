@@ -12,16 +12,3 @@ language governing permissions and limitations under the License.
 */
 
 package masks
-
-import (
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
-)
-
-// Compute returns a field mask of fields that changed between before and after.
-// This is a convenience function that creates a Calculator and calls its Compute method.
-// For more control, use NewCalculator().Build().Compute() directly.
-func Compute(before, after proto.Message) *fieldmaskpb.FieldMask {
-	calculator := NewCalculator().Build()
-	return calculator.Compute(before, after)
-}

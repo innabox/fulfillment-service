@@ -51,6 +51,7 @@ type function struct {
 	hubCache       *controllers.HubCache
 	clustersClient privatev1.ClustersClient
 	hubsClient     privatev1.HubsClient
+	maskCalculator *masks.Calculator
 }
 
 type task struct {
@@ -106,6 +107,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		clustersClient: privatev1.NewClustersClient(b.connection),
 		hubsClient:     privatev1.NewHubsClient(b.connection),
 		hubCache:       b.hubCache,
+		maskCalculator: masks.NewCalculator().Build(),
 	}
 	result = object.run
 	return
@@ -129,7 +131,7 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	// Compute which fields the reconciler actually modified and use a field mask
 	// to update only those fields. This prevents overwriting concurrent user changes
 	// to fields like spec.node_sets.
-	updateMask := masks.Compute(oldCluster, cluster)
+	updateMask := r.maskCalculator.Calculate(oldCluster, cluster)
 
 	// Only send an update if there are actual changes
 	if len(updateMask.GetPaths()) > 0 {
