@@ -22,12 +22,14 @@ import (
 
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
+	"github.com/innabox/fulfillment-service/internal/health"
 	"github.com/innabox/fulfillment-service/internal/work"
 )
 
@@ -37,31 +39,36 @@ type ReconcilerFunction[O dao.Object] func(ctx context.Context, object O) error
 // ReconcilerBuilder contains the data and logic needed to create a controller. Don't create instances f this directly,
 // use the NewReconciler function instead.
 type ReconcilerBuilder[O dao.Object] struct {
-	logger        *slog.Logger
-	flags         *pflag.FlagSet
-	function      ReconcilerFunction[O]
-	eventFilter   string
-	objectFilter  string
-	syncInterval  time.Duration
-	watchInterval time.Duration
-	grpcClient    *grpc.ClientConn
+	logger         *slog.Logger
+	name           string
+	flags          *pflag.FlagSet
+	function       ReconcilerFunction[O]
+	eventFilter    string
+	objectFilter   string
+	syncInterval   time.Duration
+	watchInterval  time.Duration
+	grpcClient     *grpc.ClientConn
+	healthReporter health.Reporter
 }
 
 // Reconciler simplifies use of the API for clients.
 type Reconciler[O dao.Object] struct {
-	logger        *slog.Logger
-	function      ReconcilerFunction[O]
-	eventFilter   string
-	objectFilter  string
-	syncLoop      *work.Loop
-	watchLoop     *work.Loop
-	grpcClient    *grpc.ClientConn
-	payloadField  protoreflect.FieldDescriptor
-	listMethod    string
-	listRequest   proto.Message
-	listResponse  proto.Message
-	objectChannel chan O
-	eventsClient  privatev1.EventsClient
+	logger         *slog.Logger
+	name           string
+	function       ReconcilerFunction[O]
+	eventFilter    string
+	objectFilter   string
+	syncLoop       *work.Loop
+	watchLoop      *work.Loop
+	grpcClient     *grpc.ClientConn
+	healthName     string
+	healthReporter health.Reporter
+	payloadField   protoreflect.FieldDescriptor
+	listMethod     string
+	listRequest    proto.Message
+	listResponse   proto.Message
+	objectChannel  chan O
+	eventsClient   privatev1.EventsClient
 }
 
 // NewReconciler creates a builder that can then be used to configure and create a controller.
@@ -75,6 +82,12 @@ func NewReconciler[O dao.Object]() *ReconcilerBuilder[O] {
 // SetLogger sets the logger. This is mandatory.
 func (b *ReconcilerBuilder[O]) SetLogger(value *slog.Logger) *ReconcilerBuilder[O] {
 	b.logger = value
+	return b
+}
+
+// SetName sets the name of the reconciler. This is used for health reporting and logging.
+func (b *ReconcilerBuilder[O]) SetName(value string) *ReconcilerBuilder[O] {
+	b.name = value
 	return b
 }
 
@@ -119,6 +132,13 @@ func (b *ReconcilerBuilder[O]) SetWatchInterval(value time.Duration) *Reconciler
 	return b
 }
 
+// SetHealthReporter sets the health reporter that will be used to report the health of the reconciler. This is
+// optional.
+func (b *ReconcilerBuilder[O]) SetHealthReporter(value health.Reporter) *ReconcilerBuilder[O] {
+	b.healthReporter = value
+	return b
+}
+
 // SetFlags sets the command line flags that should be used to configure the reconciler. This is optional.
 func (b *ReconcilerBuilder[O]) SetFlags(flags *pflag.FlagSet, name string) *ReconcilerBuilder[O] {
 	b.flags = flags
@@ -130,6 +150,10 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
+		return
+	}
+	if b.name == "" {
+		err = errors.New("name is mandatory")
 		return
 	}
 	if b.grpcClient == nil {
@@ -144,7 +168,6 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 		err = fmt.Errorf("sync interval should be positive, but it is %s", b.syncInterval)
 		return
 	}
-
 	// Find the field of the event payload that contains the type of objects supported by the reconciler:
 	payloadField, err := b.findPayloadField()
 	if err != nil {
@@ -175,19 +198,25 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 	// Create the events client:
 	eventsClient := privatev1.NewEventsClient(b.grpcClient)
 
+	// Calculate the name of the reconciler for health reporting:
+	healthName := fmt.Sprintf("%s_reconciler", b.name)
+
 	// Create and populate the object:
 	reconciler := &Reconciler[O]{
-		logger:        b.logger,
-		function:      b.function,
-		eventFilter:   eventFilter,
-		objectFilter:  b.objectFilter,
-		grpcClient:    b.grpcClient,
-		payloadField:  payloadField,
-		listMethod:    listMethod,
-		listRequest:   listRequest,
-		listResponse:  listResponse,
-		objectChannel: make(chan O),
-		eventsClient:  eventsClient,
+		logger:         b.logger,
+		function:       b.function,
+		name:           b.name,
+		eventFilter:    eventFilter,
+		objectFilter:   b.objectFilter,
+		grpcClient:     b.grpcClient,
+		healthName:     healthName,
+		healthReporter: b.healthReporter,
+		payloadField:   payloadField,
+		listMethod:     listMethod,
+		listRequest:    listRequest,
+		listResponse:   listResponse,
+		objectChannel:  make(chan O),
+		eventsClient:   eventsClient,
 	}
 
 	// Create the sync loop:
@@ -339,8 +368,10 @@ func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
 		Filter: &c.eventFilter,
 	})
 	if err != nil {
+		c.reportHealth(ctx, healthv1.HealthCheckResponse_NOT_SERVING)
 		return err
 	}
+	c.reportHealth(ctx, healthv1.HealthCheckResponse_SERVING)
 	c.logger.DebugContext(
 		ctx,
 		"Started watching events",
@@ -349,6 +380,7 @@ func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
 	for {
 		response, err := stream.Recv()
 		if err != nil {
+			c.reportHealth(ctx, healthv1.HealthCheckResponse_NOT_SERVING)
 			return err
 		}
 		event := response.Event.ProtoReflect()
@@ -390,4 +422,10 @@ func (c *Reconciler[O]) syncObjects(ctx context.Context) error {
 		c.objectChannel <- item
 	}
 	return nil
+}
+
+func (c *Reconciler[O]) reportHealth(ctx context.Context, status healthv1.HealthCheckResponse_ServingStatus) {
+	if c.healthReporter != nil {
+		c.healthReporter.Report(ctx, c.healthName, status)
+	}
 }

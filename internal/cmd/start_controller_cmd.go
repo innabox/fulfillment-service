@@ -41,6 +41,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
 	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
 	"github.com/innabox/fulfillment-service/internal/controllers/vm"
+	internalhealth "github.com/innabox/fulfillment-service/internal/health"
 )
 
 // NewStartControllerCommand creates and returns the `start controllers` command.
@@ -149,6 +150,16 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	healthServer := health.NewServer()
 	healthv1.RegisterHealthServer(grpcServer, healthServer)
 
+	// Create the health aggregator:
+	r.logger.InfoContext(ctx, "Creating health aggregator")
+	healthAggregator, err := internalhealth.NewAggregator().
+		SetLogger(r.logger).
+		SetServer(healthServer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create health aggregator: %w", err)
+	}
+
 	// Start the gRPC server:
 	r.logger.InfoContext(
 		ctx,
@@ -171,9 +182,10 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}()
 
 	// Wait for the server to be ready:
+	r.logger.InfoContext(ctx, "Waiting for server to be ready")
 	err = r.waitForServer(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to wait for server: %w", err)
+		return fmt.Errorf("failed to wait for server to be ready: %w", err)
 	}
 
 	// Create the hub cache:
@@ -198,9 +210,11 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 	clusterReconciler, err := controllers.NewReconciler[*privatev1.Cluster]().
 		SetLogger(r.logger).
+		SetName("cluster").
 		SetClient(r.client).
 		SetFunction(clusterReconcilerFunction).
 		SetEventFilter("has(event.cluster) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler: %w", err)
@@ -233,9 +247,11 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 	vmReconciler, err := controllers.NewReconciler[*privatev1.VirtualMachine]().
 		SetLogger(r.logger).
+		SetName("virtual_machine").
 		SetClient(r.client).
 		SetFunction(vmReconcilerFunction).
 		SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
@@ -268,9 +284,11 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 	hostReconciler, err := controllers.NewReconciler[*privatev1.Host]().
 		SetLogger(r.logger).
+		SetName("host").
 		SetClient(r.client).
 		SetFunction(hostReconcilerFunction).
 		SetEventFilter("has(event.host) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create host reconciler: %w", err)
@@ -303,9 +321,11 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 	hostPoolReconciler, err := controllers.NewReconciler[*privatev1.HostPool]().
 		SetLogger(r.logger).
+		SetName("host_pool").
 		SetClient(r.client).
 		SetFunction(hostPoolReconcilerFunction).
 		SetEventFilter("has(event.host_pool) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create host pool reconciler: %w", err)
@@ -337,7 +357,6 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 
 // waitForServer waits for the server to be ready using the health service.
 func (r *startControllerRunner) waitForServer(ctx context.Context) error {
-	r.logger.InfoContext(ctx, "Waiting for server")
 	client := healthv1.NewHealthClient(r.client)
 	request := &healthv1.HealthCheckRequest{}
 	const max = time.Minute
