@@ -24,11 +24,13 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privateapi "github.com/innabox/fulfillment-service/internal/api/private/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // NewStartRestGatewayCommand creates and returns the `start rest-gateway` command.
@@ -55,9 +57,11 @@ func NewStartRestGatewayCommand() *cobra.Command {
 
 // startRestGatewayCommandRunner contains the data and logic needed to run the `start rest-gateway` command.
 type startRestGatewayCommandRunner struct {
-	logger *slog.Logger
-	flags  *pflag.FlagSet
-	args   struct {
+	logger       *slog.Logger
+	flags        *pflag.FlagSet
+	grpcClient   *grpc.ClientConn
+	healthClient healthv1.HealthClient
+	args         struct {
 		caFiles   []string
 		tokenFile string
 	}
@@ -95,7 +99,7 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 
 	// Create the gRPC client:
 	c.logger.InfoContext(ctx, "Creating gRPC client")
-	grpcClient, err := network.NewGrpcClient().
+	c.grpcClient, err = network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
 		SetCaPool(caPool).
@@ -116,81 +120,77 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 	)
 
 	// Register the service handlers:
-	err = api.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterClusterTemplatesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterClustersHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterClustersHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterHostClassesHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterHostClassesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterHostsHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterHostsHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterHostPoolsHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterHostPoolsHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterVirtualMachinesHandler(ctx, gatewayMux, grpcClient)
+	err = api.RegisterVirtualMachinesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
 
 	// Register the private API service handlers:
-	err = privateapi.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterClusterTemplatesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterClustersHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterClustersHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterEventsHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterEventsHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterHostClassesHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterHostClassesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterHostPoolsHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterHostPoolsHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterHostsHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterHostsHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterHubsHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterHubsHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterVirtualMachineTemplatesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
-	err = privateapi.RegisterVirtualMachinesHandler(ctx, gatewayMux, grpcClient)
+	err = privateapi.RegisterVirtualMachinesHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}
 
 	// Add the health endpoint:
-	err = gatewayMux.HandlePath(
-		http.MethodGet,
-		"/healthz",
-		func(w http.ResponseWriter, r *http.Request, p map[string]string) {
-			w.WriteHeader(http.StatusOK)
-		},
-	)
+	c.logger.InfoContext(ctx, "Adding health endpoint")
+	c.healthClient = healthv1.NewHealthClient(c.grpcClient)
+	err = gatewayMux.HandlePath(http.MethodGet, "/healthz", c.handleHealth)
 	if err != nil {
 		return fmt.Errorf("failed to register health endpoint: %w", err)
 	}
@@ -217,4 +217,28 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		Handler: h2c.NewHandler(handler, http2Server),
 	}
 	return http1Server.Serve(gwListener)
+}
+
+func (c *startRestGatewayCommandRunner) handleHealth(
+	w http.ResponseWriter, r *http.Request, p map[string]string) {
+	response, err := c.healthClient.Check(r.Context(), &healthv1.HealthCheckRequest{})
+	if err != nil {
+		c.logger.ErrorContext(
+			r.Context(),
+			"Health check failed",
+			slog.Any("error", err),
+		)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	if response.Status != healthv1.HealthCheckResponse_SERVING {
+		c.logger.WarnContext(
+			r.Context(),
+			"Server is not serving",
+			slog.String("status", response.Status.String()),
+		)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
