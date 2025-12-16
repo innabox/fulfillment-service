@@ -23,6 +23,9 @@ spec:
     app: fulfillment-grpc-server
   clusterIP: None
   ports:
-  - name: api
+  - name: grpc
     port: 8000
-    targetPort: api
+    targetPort: grpc
+  - name: metrics
+    port: 8002
+    targetPort: metrics

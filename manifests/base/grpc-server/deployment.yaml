@@ -59,7 +59,6 @@ spec:
           sslcert=/secrets/cert/tls.crt&\
           sslkey=/secrets/cert/tls.key&\
           sslrootcert=/secrets/cert/ca.crt"
-        - --grpc-listener-network=tcp
         - --grpc-listener-address=0.0.0.0:8000
         - --grpc-listener-tls-crt=/etc/fulfillment-grpc-server/tls/tls.crt
         - --grpc-listener-tls-key=/etc/fulfillment-grpc-server/tls/tls.key
@@ -67,9 +66,13 @@ spec:
         - --grpc-authn-type=external
         - --grpc-authn-external-address=authorino-authorino-authorization:50051
         - --tenancy-logic=default
+        - --metrics-listener-address=0.0.0.0:8002
         ports:
         - name: grpc
           containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 8002
           protocol: TCP
         livenessProbe:
           exec:

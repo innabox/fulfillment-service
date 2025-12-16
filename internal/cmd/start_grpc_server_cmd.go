@@ -17,11 +17,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/innabox/fulfillment-common/metrics"
 	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
@@ -55,6 +58,7 @@ func NewStartGrpcServerCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
+	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	database.AddFlags(flags)
 	flags.StringVar(
 		&runner.args.authType,
@@ -235,6 +239,15 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		return fmt.Errorf("failed to create panic interceptor: %w", err)
 	}
 
+	// Prepare the metrics interceptor:
+	c.logger.InfoContext(ctx, "Creating metrics interceptor")
+	metricsInterceptor, err := metrics.NewGrpcInterceptor().
+		SetSubsystem("inbound").
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics interceptor: %w", err)
+	}
+
 	// Prepare the transactions interceptor:
 	c.logger.InfoContext(ctx, "Creating transactions interceptor")
 	txManager, err := database.NewTxManager().
@@ -257,12 +270,14 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			panicInterceptor.UnaryServer,
+			metricsInterceptor.UnaryServer,
 			loggingInterceptor.UnaryServer,
 			authUnaryInterceptor,
 			txInterceptor.UnaryServer,
 		),
 		grpc.ChainStreamInterceptor(
 			panicInterceptor.StreamServer,
+			metricsInterceptor.StreamServer,
 			loggingInterceptor.StreamServer,
 			authStreamInterceptor,
 		),
@@ -604,6 +619,36 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		}
 	}()
 	privatev1.RegisterEventsServer(grpcServer, privateEventsServer)
+
+	// Create the metrics listener:
+	c.logger.InfoContext(ctx, "Creating metrics listener")
+	metricsListener, err := network.NewListener().
+		SetLogger(c.logger).
+		SetFlags(c.flags, network.MetricsListenerName).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics listener: %w", err)
+	}
+
+	// Start the metrics server:
+	c.logger.InfoContext(
+		ctx,
+		"Starting metrics server",
+		slog.String("address", metricsListener.Addr().String()),
+	)
+	metricsServer := &http.Server{
+		Handler: promhttp.Handler(),
+	}
+	go func() {
+		err := metricsServer.Serve(metricsListener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			c.logger.ErrorContext(
+				ctx,
+				"Metrics server failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
 	// Start serving:
 	c.logger.InfoContext(
