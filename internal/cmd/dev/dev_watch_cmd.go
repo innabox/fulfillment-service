@@ -30,6 +30,7 @@ import (
 
 	"github.com/innabox/fulfillment-service/internal"
 	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
+	"github.com/innabox/fulfillment-service/internal/version"
 )
 
 // NewWatchCommand creates and returns the `listen` command.
@@ -105,12 +106,16 @@ func (c *watchCommandRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create token source: %w", err)
 	}
 
+	// Calculate the user agent:
+	userAgent := fmt.Sprintf("%s/%s", watchUserAgent, version.Get())
+
 	// Create the grpcClient:
 	grpcClient, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
 		SetCaPool(caPool).
 		SetTokenSource(tokenSource).
+		SetUserAgent(userAgent).
 		Build()
 	if err != nil {
 		return err
@@ -157,3 +162,6 @@ func (c *watchCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	c.logger.InfoContext(ctx, "Signal received, shutting down")
 	return nil
 }
+
+// watchUserAgent is the user agent string for the watch command.
+const watchUserAgent = "fulfillment-watch"

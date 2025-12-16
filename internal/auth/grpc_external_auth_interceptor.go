@@ -15,7 +15,6 @@ package auth
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -27,10 +26,9 @@ import (
 
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyauthv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"github.com/innabox/fulfillment-common/network"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	grpcstatus "google.golang.org/grpc/status"
 )
@@ -46,6 +44,7 @@ type GrpcExternalAuthInterceptorBuilder struct {
 	caPool        *x509.CertPool
 	insecure      bool
 	publicMethods []string
+	userAgent     string
 }
 
 // GrpcExternalAuthInterceptor is an interceptor that performs authentication and authorization by calling an external
@@ -56,8 +55,8 @@ type GrpcExternalAuthInterceptorBuilder struct {
 // details (like identifiers and tenants) in the authorization request.
 type GrpcExternalAuthInterceptor struct {
 	logger        *slog.Logger
-	conn          *grpc.ClientConn
-	client        envoyauthv3.AuthorizationClient
+	grpcClient    *grpc.ClientConn
+	authClient    envoyauthv3.AuthorizationClient
 	publicMethods []*regexp.Regexp
 }
 
@@ -105,6 +104,12 @@ func (b *GrpcExternalAuthInterceptorBuilder) AddPublicMethodRegex(value string) 
 	return b
 }
 
+// SetUserAgent sets the user agent string to use when making gRPC calls to the external auth service. This is optional.
+func (b *GrpcExternalAuthInterceptorBuilder) SetUserAgent(value string) *GrpcExternalAuthInterceptorBuilder {
+	b.userAgent = value
+	return b
+}
+
 // Build uses the data stored in the builder to create and configure a new interceptor.
 func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthInterceptor, err error) {
 	// Check parameters:
@@ -126,23 +131,14 @@ func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthIn
 		}
 	}
 
-	// Create the transport credentials:
-	var transportCreds credentials.TransportCredentials
-	if b.insecure {
-		transportCreds = insecure.NewCredentials()
-	} else {
-		tlsConfig := &tls.Config{
-			RootCAs:    b.caPool,
-			MinVersion: tls.VersionTLS12,
-		}
-		transportCreds = credentials.NewTLS(tlsConfig)
-	}
-
 	// Create the gRPC connection:
-	conn, err := grpc.NewClient(
-		b.address,
-		grpc.WithTransportCredentials(transportCreds),
-	)
+	grpcClient, err := network.NewGrpcClient().
+		SetLogger(b.logger).
+		SetAddress(b.address).
+		SetCaPool(b.caPool).
+		SetInsecure(b.insecure).
+		SetUserAgent(b.userAgent).
+		Build()
 	if err != nil {
 		err = fmt.Errorf(
 			"failed to create gRPC connection to external service with address '%s': %w",
@@ -151,14 +147,14 @@ func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthIn
 		return
 	}
 
-	// Create the auth client:
-	client := envoyauthv3.NewAuthorizationClient(conn)
+	// Create the auth authClient:
+	authClient := envoyauthv3.NewAuthorizationClient(grpcClient)
 
 	// Create and populate the object:
 	result = &GrpcExternalAuthInterceptor{
 		logger:        b.logger,
-		conn:          conn,
-		client:        client,
+		grpcClient:    grpcClient,
+		authClient:    authClient,
 		publicMethods: publicMethods,
 	}
 	return
@@ -166,8 +162,8 @@ func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthIn
 
 // Close closes the gRPC connection to the external auth service.
 func (i *GrpcExternalAuthInterceptor) Close() error {
-	if i.conn != nil {
-		return i.conn.Close()
+	if i.grpcClient != nil {
+		return i.grpcClient.Close()
 	}
 	return nil
 }
@@ -277,7 +273,7 @@ func (i *GrpcExternalAuthInterceptor) check(ctx context.Context, method string) 
 		ctx,
 		"Sending check request to external service",
 	)
-	response, err := i.client.Check(ctx, request)
+	response, err := i.authClient.Check(ctx, request)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,

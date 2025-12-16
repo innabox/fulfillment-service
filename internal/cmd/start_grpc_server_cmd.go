@@ -41,6 +41,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/recovery"
 	"github.com/innabox/fulfillment-service/internal/servers"
+	"github.com/innabox/fulfillment-service/internal/version"
 )
 
 // NewStartGrpcServerCommand creates and returns the `start grpc-server` command.
@@ -178,6 +179,9 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		return err
 	}
 
+	// Calculate the user agent:
+	userAgent := fmt.Sprintf("%s/%s", grpcServerUserAgent, version.Get())
+
 	// Prepare the auth interceptor:
 	c.logger.InfoContext(
 		ctx,
@@ -208,6 +212,7 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 			SetAddress(c.args.externalAuthAddress).
 			SetCaPool(caPool).
 			AddPublicMethodRegex(publicMethodRegex).
+			SetUserAgent(userAgent).
 			Build()
 		if err != nil {
 			return fmt.Errorf("failed to create external auth interceptor: %w", err)
@@ -616,3 +621,6 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 // publicMethodRegex is regular expression for the methods that are considered public, including the metadata, and
 // reflection and health methods. These will skip authentication and authorization.
 const publicMethodRegex = `^/(metadata|grpc\.(reflection|health))\..*$`
+
+// grpcServerUserAgent is the user agent string for the gRPC server.
+const grpcServerUserAgent = "fulfillment-grpc-server"

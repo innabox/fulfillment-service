@@ -45,6 +45,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/version"
 )
 
 // Deplyment modes:
@@ -317,12 +318,39 @@ func (t *Tool) checkCommands(ctx context.Context) error {
 
 func (t *Tool) buildBinary(ctx context.Context) error {
 	t.logger.DebugContext(ctx, "Building binary")
+
+	// Get the version from git:
+	versionCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetHome(t.projectDir).
+		SetDir(t.projectDir).
+		SetName("git").
+		SetArgs(
+			"describe",
+			"--tags",
+			"--always",
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create command to get version from git: %w", err)
+	}
+	versionBytes, _, err := versionCmd.Evaluate(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get version from git: %w", err)
+	}
+	version := string(versionBytes)
+
+	// Build the binary:
 	buildCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
 		SetHome(t.projectDir).
 		SetDir(t.projectDir).
 		SetName("go").
-		SetArgs("build").
+		SetArgs(
+			"build",
+			"-ldflags",
+			fmt.Sprintf("-X github.com/innabox/fulfillment-service/internal.id=%s", version),
+		).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create command to build binary: %w", err)
@@ -331,6 +359,7 @@ func (t *Tool) buildBinary(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to build binary: %w", err)
 	}
+
 	return nil
 }
 
@@ -739,11 +768,13 @@ func (t *Tool) makeTokenSource(ctx context.Context, sa string) (result auth.Toke
 }
 
 func (t *Tool) makeGrpcConn(tokenSource auth.TokenSource) (result *grpc.ClientConn, err error) {
+	userAgent := fmt.Sprintf("%s/%s", userAgent, version.Get())
 	result, err = network.NewGrpcClient().
 		SetLogger(t.logger).
 		SetCaPool(t.caPool).
 		SetAddress("localhost:8000").
 		SetTokenSource(tokenSource).
+		SetUserAgent(userAgent).
 		Build()
 	return
 }
@@ -964,3 +995,6 @@ const hubNamespace = "cloudkit-operator-system"
 
 // Image details:
 const imageName = "ghcr.io/innabox/fulfillment-service"
+
+// userAgent is the user agent string for the integration test tool.
+const userAgent = "fulfillment-it-tool"

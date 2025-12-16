@@ -31,6 +31,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privateapi "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/version"
 )
 
 // NewStartRestGatewayCommand creates and returns the `start rest-gateway` command.
@@ -97,12 +98,16 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
 	}
 
+	// Calculate the user agent:
+	userAgent := fmt.Sprintf("%s/%s", restGatewayUserAgent, version.Get())
+
 	// Create the gRPC client:
 	c.logger.InfoContext(ctx, "Creating gRPC client")
 	c.grpcClient, err = network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
 		SetCaPool(caPool).
+		SetUserAgent(userAgent).
 		Build()
 	if err != nil {
 		return err
@@ -242,3 +247,6 @@ func (c *startRestGatewayCommandRunner) handleHealth(
 	}
 	w.WriteHeader(http.StatusOK)
 }
+
+// restGatewayUserAgent is the user agent string for the REST gateway.
+const restGatewayUserAgent = "fulfillment-rest-gateway"

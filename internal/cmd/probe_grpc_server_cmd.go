@@ -26,6 +26,7 @@ import (
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/innabox/fulfillment-service/internal"
+	"github.com/innabox/fulfillment-service/internal/version"
 )
 
 func NewProbeGrpcServerCommand() *cobra.Command {
@@ -84,11 +85,15 @@ func (c *probeGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		return fmt.Errorf("failed to load trusted CA certificates: %w", err)
 	}
 
+	// Calculate the user agent:
+	userAgent := fmt.Sprintf("%s/%s", grpcProbeUserAgent, version.Get())
+
 	// Create the gRPC client connection:
 	conn, err := network.NewGrpcClient().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.GrpcClientName).
 		SetCaPool(caPool).
+		SetUserAgent(userAgent).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
@@ -133,3 +138,6 @@ func (c *probeGrpcServerCommandRunner) checkHealth(ctx context.Context, conn *gr
 	)
 	return nil
 }
+
+// grpcProbeUserAgent is the user agent string for the gRPC probe.
+const grpcProbeUserAgent = "fulfillment-grpc-probe"

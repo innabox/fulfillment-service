@@ -15,12 +15,15 @@ package auth
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
-	"net"
+	"os"
 
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyauthv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	"github.com/innabox/fulfillment-common/network"
+	. "github.com/innabox/fulfillment-common/testing"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 	"google.golang.org/genproto/googleapis/rpc/status"
@@ -51,30 +54,54 @@ var _ = Describe("External authentication and authorization interceptor", func()
 		ctx     context.Context
 		mock    *GrpcExternalAuthMock
 		address string
+		caPool  *x509.CertPool
 	)
 
 	BeforeEach(func() {
+		var err error
+
 		// Create a context:
 		ctx = context.Background()
 
 		// Create the moc:
 		mock = &GrpcExternalAuthMock{}
 
-		// Create the gRPC server:
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		// Get the test certificate files:
+		crtFile, keyFile, caFile := LocalhostCertificateFiles()
+		DeferCleanup(func() {
+			_ = os.Remove(crtFile)
+			_ = os.Remove(keyFile)
+			_ = os.Remove(caFile)
+		})
+
+		// Create the CA pool:
+		caPool, err = network.NewCertPool().
+			SetLogger(logger).
+			AddFile(caFile).
+			Build()
 		Expect(err).ToNot(HaveOccurred())
+
+		// Create the listener:
+		listener, err := network.NewListener().
+			SetLogger(logger).
+			SetAddress("127.0.0.1:0").
+			SetTLSCrt(crtFile).
+			SetTLSKey(keyFile).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		address = listener.Addr().String()
+
+		// Create the server:
 		server := grpc.NewServer()
 		DeferCleanup(server.Stop)
 		envoyauthv3.RegisterAuthorizationServer(server, mock)
 		go server.Serve(listener)
-		address = listener.Addr().String()
 	})
 
 	Describe("Build", func() {
 		It("Should fail if logger is not set", func() {
 			_, err := NewGrpcExternalAuthInterceptor().
 				SetAddress(address).
-				SetInsecure(true).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("logger is mandatory"))
@@ -83,7 +110,6 @@ var _ = Describe("External authentication and authorization interceptor", func()
 		It("Should fail if address is not set", func() {
 			_, err := NewGrpcExternalAuthInterceptor().
 				SetLogger(logger).
-				SetInsecure(true).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("address is mandatory"))
@@ -93,7 +119,6 @@ var _ = Describe("External authentication and authorization interceptor", func()
 			interceptor, err := NewGrpcExternalAuthInterceptor().
 				SetLogger(logger).
 				SetAddress(address).
-				SetInsecure(true).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(interceptor).ToNot(BeNil())
@@ -103,7 +128,6 @@ var _ = Describe("External authentication and authorization interceptor", func()
 			_, err := NewGrpcExternalAuthInterceptor().
 				SetLogger(logger).
 				SetAddress(address).
-				SetInsecure(true).
 				AddPublicMethodRegex(`[invalid`).
 				Build()
 			Expect(err).To(HaveOccurred())
@@ -118,7 +142,7 @@ var _ = Describe("External authentication and authorization interceptor", func()
 			interceptor, err = NewGrpcExternalAuthInterceptor().
 				SetLogger(logger).
 				SetAddress(address).
-				SetInsecure(true).
+				SetCaPool(caPool).
 				AddPublicMethodRegex(`^/public\..*$`).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

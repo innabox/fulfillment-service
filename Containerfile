@@ -17,7 +17,9 @@ RUN go mod download
 
 # Copy the rest of the source and build the binary:
 COPY . /source
-RUN go build
+RUN \
+  version=$(git describe --tags --always) && \
+  go build -ldflags="-X github.com/innabox/fulfillment-service/internal/version.id=${version}"
 
 FROM registry.access.redhat.com/ubi10/ubi:10.1-1763341459 AS runtime
 

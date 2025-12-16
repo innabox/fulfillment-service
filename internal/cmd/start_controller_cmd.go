@@ -42,6 +42,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
 	"github.com/innabox/fulfillment-service/internal/controllers/vm"
 	internalhealth "github.com/innabox/fulfillment-service/internal/health"
+	"github.com/innabox/fulfillment-service/internal/version"
 )
 
 // NewStartControllerCommand creates and returns the `start controllers` command.
@@ -119,12 +120,16 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create token source: %w", err)
 	}
 
+	// Calculate the user agent:
+	userAgent := fmt.Sprintf("%s/%s", grpcServerUserAgent, version.Get())
+
 	// Create the gRPC client:
 	r.client, err = network.NewGrpcClient().
 		SetLogger(r.logger).
 		SetFlags(r.flags, network.GrpcClientName).
 		SetCaPool(caPool).
 		SetTokenSource(tokenSource).
+		SetUserAgent(userAgent).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
@@ -384,3 +389,6 @@ func (r *startControllerRunner) waitForServer(ctx context.Context) error {
 		}
 	}
 }
+
+// controllerUserAgent is the user agent string for the controller.
+const controllerUserAgent = "fulfillment-controller"
