@@ -72,8 +72,8 @@ spec:
 
           # Define admin subjects:
           admin_subjects := {
-            "system:serviceaccount:{{ .Release.Namespace }}:admin",
-            "system:serviceaccount:{{ .Release.Namespace }}:controller",
+            "system:serviceaccount:innabox:admin",
+            "system:serviceaccount:innabox:controller",
           }
 
           # Get the gRPC method:
