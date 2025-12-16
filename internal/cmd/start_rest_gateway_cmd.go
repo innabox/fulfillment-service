@@ -183,6 +183,18 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		return err
 	}
 
+	// Add the health endpoint:
+	err = gatewayMux.HandlePath(
+		http.MethodGet,
+		"/healthz",
+		func(w http.ResponseWriter, r *http.Request, p map[string]string) {
+			w.WriteHeader(http.StatusOK)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register health endpoint: %w", err)
+	}
+
 	// Add the CORS support:
 	corsMiddleware, err := network.NewCorsMiddleware().
 		SetLogger(c.logger).
