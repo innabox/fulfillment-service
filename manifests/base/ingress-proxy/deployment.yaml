@@ -49,3 +49,18 @@ spec:
         - name: api
           protocol: TCP
           containerPort: 8000
+        - name: metrics
+          protocol: TCP
+          containerPort: 8002
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8002
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8002
+          initialDelaySeconds: 10
+          periodSeconds: 15

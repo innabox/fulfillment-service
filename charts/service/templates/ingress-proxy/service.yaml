@@ -23,3 +23,6 @@ spec:
   - name: api
     port: 8000
     targetPort: api
+  - name: metrics
+    port: 8002
+    targetPort: metrics

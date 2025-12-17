@@ -23,6 +23,51 @@ static_resources:
 
   listeners:
 
+  # This listener exposes Prometheus metrics and health check endpoints. Metrics requests are proxied to the admin
+  # interface, which is bound to localhost for security reasons. Health check requests are handled directly by the
+  # health check filter.
+  - name: metrics
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 8002
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: metrics
+          route_config:
+            name: metrics
+            virtual_hosts:
+            - name: metrics
+              domains:
+              - "*"
+              routes:
+              - name: metrics
+                match:
+                  prefix: /metrics
+                route:
+                  cluster: admin
+                  prefix_rewrite: /stats/prometheus
+              - name: healthz
+                match:
+                  prefix: /healthz
+                route:
+                  cluster: admin
+          http_filters:
+          - name: envoy.filters.http.health_check
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+              pass_through_mode: false
+              headers:
+              - name: ":path"
+                string_match:
+                  exact: /healthz
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
    # This listener receives traffic from outside, so it needs to be secured with CORS and TLS. Authentication and
    # authorization are handled by the service itself.
   - name: ingress
@@ -111,6 +156,20 @@ static_resources:
                 filename: /etc/envoy/tls/tls.key
 
   clusters:
+
+  - name: admin
+    connect_timeout: 1s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: admin
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 9901
 
   - name: grpc-server
     connect_timeout: 1s
