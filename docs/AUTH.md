@@ -539,8 +539,8 @@ The authorization policy allows:
      - Host Classes: `Get`, `List`
      - Host Pools: `Create`, `Delete`, `Get`, `List`, `Update`
      - Hosts: `Create`, `Delete`, `Get`, `List`, `Update`
-     - Virtual Machine Templates: `Get`, `List`
-     - Virtual Machines: `Create`, `Delete`, `Get`, `List`, `Update`
+     - Compute Instance Templates: `Get`, `List`
+     - Compute Instances: `Create`, `Delete`, `Get`, `List`, `Update`
 
 3. **Admin Users**:
    - All methods (full access)

@@ -216,7 +216,7 @@ var _ = Describe("ValidateTemplateParameters", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("should validate virtual machine template parameters correctly", func() {
+		It("should validate compute instance template parameters correctly", func() {
 			vmTemplate := &privatev1.ComputeInstanceTemplate{
 				Id: "vm-template",
 				Parameters: []*privatev1.ComputeInstanceTemplateParameterDefinition{

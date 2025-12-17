@@ -144,10 +144,10 @@ func (s *ComputeInstancesServer) List(ctx context.Context,
 		if err != nil {
 			s.logger.ErrorContext(
 				ctx,
-				"Failed to map private virtual machine to public",
+				"Failed to map private compute instance to public",
 				slog.Any("error", err),
 			)
-			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machines")
+			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instances")
 		}
 		publicItems[i] = publicItem
 	}
@@ -179,10 +179,10 @@ func (s *ComputeInstancesServer) Get(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map private virtual machine to public",
+			"Failed to map private compute instance to public",
 			slog.Any("error", err),
 		)
-		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine")
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance")
 	}
 
 	// Create the public response:
@@ -193,7 +193,7 @@ func (s *ComputeInstancesServer) Get(ctx context.Context,
 
 func (s *ComputeInstancesServer) Create(ctx context.Context,
 	request *ffv1.ComputeInstancesCreateRequest) (response *ffv1.ComputeInstancesCreateResponse, err error) {
-	// Map the public virtual machine to private format:
+	// Map the public compute instance to private format:
 	publicComputeInstance := request.GetObject()
 	if publicComputeInstance == nil {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
@@ -204,10 +204,10 @@ func (s *ComputeInstancesServer) Create(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map public virtual machine to private",
+			"Failed to map public compute instance to private",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance")
 		return
 	}
 
@@ -226,10 +226,10 @@ func (s *ComputeInstancesServer) Create(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map private virtual machine to public",
+			"Failed to map private compute instance to public",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance")
 		return
 	}
 
@@ -267,10 +267,10 @@ func (s *ComputeInstancesServer) Update(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map public virtual machine to private",
+			"Failed to map public compute instance to private",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance")
 		return
 	}
 
@@ -289,10 +289,10 @@ func (s *ComputeInstancesServer) Update(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map private virtual machine to public",
+			"Failed to map private compute instance to public",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance")
 		return
 	}
 

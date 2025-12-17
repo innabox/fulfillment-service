@@ -30,7 +30,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
-var _ = Describe("Private virtual machines server", func() {
+var _ = Describe("Private compute instances server", func() {
 	var (
 		ctx context.Context
 		tx  database.Tx
@@ -468,7 +468,7 @@ var _ = Describe("Private virtual machines server", func() {
 		})
 
 		It("Validates template exists on update", func() {
-			// Create a template and virtual machine first:
+			// Create a template and compute instance first:
 			createTemplate("existing-template")
 
 			createResponse, err := server.Create(ctx, privatev1.ComputeInstancesCreateRequest_builder{

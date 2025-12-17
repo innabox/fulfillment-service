@@ -192,7 +192,7 @@ func ValidateClusterTemplateParameters(
 	return ValidateTemplateParameters(ClusterTemplateAdapter{template}, providedParameters)
 }
 
-// ValidateComputeInstanceTemplateParameters validates virtual machine template parameters
+// ValidateComputeInstanceTemplateParameters validates compute instance template parameters
 func ValidateComputeInstanceTemplateParameters(
 	template *privatev1.ComputeInstanceTemplate,
 	providedParameters map[string]*anypb.Any,

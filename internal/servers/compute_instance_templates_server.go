@@ -144,10 +144,10 @@ func (s *ComputeInstanceTemplatesServer) List(ctx context.Context,
 		if err != nil {
 			s.logger.ErrorContext(
 				ctx,
-				"Failed to map private virtual machine template to public",
+				"Failed to map private compute instance template to public",
 				slog.Any("error", err),
 			)
-			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine templates")
+			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance templates")
 		}
 		publicItems[i] = publicItem
 	}
@@ -179,10 +179,10 @@ func (s *ComputeInstanceTemplatesServer) Get(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map private virtual machine template to public",
+			"Failed to map private compute instance template to public",
 			slog.Any("error", err),
 		)
-		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine template")
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance template")
 	}
 
 	// Create the public response:
@@ -193,7 +193,7 @@ func (s *ComputeInstanceTemplatesServer) Get(ctx context.Context,
 
 func (s *ComputeInstanceTemplatesServer) Create(ctx context.Context,
 	request *ffv1.ComputeInstanceTemplatesCreateRequest) (response *ffv1.ComputeInstanceTemplatesCreateResponse, err error) {
-	// Map the public virtual machine template to private format:
+	// Map the public compute instance template to private format:
 	publicComputeInstanceTemplate := request.GetObject()
 	if publicComputeInstanceTemplate == nil {
 		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
@@ -204,10 +204,10 @@ func (s *ComputeInstanceTemplatesServer) Create(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map public virtual machine template to private",
+			"Failed to map public compute instance template to private",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine template")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance template")
 		return
 	}
 
@@ -226,10 +226,10 @@ func (s *ComputeInstanceTemplatesServer) Create(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map private virtual machine template to public",
+			"Failed to map private compute instance template to public",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine template")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance template")
 		return
 	}
 
@@ -267,10 +267,10 @@ func (s *ComputeInstanceTemplatesServer) Update(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map public virtual machine template to private",
+			"Failed to map public compute instance template to private",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine template")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance template")
 		return
 	}
 
@@ -289,10 +289,10 @@ func (s *ComputeInstanceTemplatesServer) Update(ctx context.Context,
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map private virtual machine template to public",
+			"Failed to map private compute instance template to public",
 			slog.Any("error", err),
 		)
-		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process virtual machine template")
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to process compute instance template")
 		return
 	}
 

@@ -31,7 +31,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
-var _ = Describe("Virtual machines server", func() {
+var _ = Describe("Compute instances server", func() {
 	var (
 		ctx context.Context
 		tx  database.Tx

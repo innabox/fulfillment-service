@@ -161,15 +161,15 @@ func (s *PrivateComputeInstancesServer) Signal(ctx context.Context,
 	return
 }
 
-// validateTemplate validates the template ID and parameters in the virtual machine spec.
+// validateTemplate validates the template ID and parameters in the compute instance spec.
 func (s *PrivateComputeInstancesServer) validateTemplate(ctx context.Context, vm *privatev1.ComputeInstance) error {
 	if vm == nil {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "virtual machine is mandatory")
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "compute instance is mandatory")
 	}
 
 	spec := vm.GetSpec()
 	if spec == nil {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "virtual machine spec is mandatory")
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "compute instance spec is mandatory")
 	}
 
 	templateID := spec.GetTemplate()

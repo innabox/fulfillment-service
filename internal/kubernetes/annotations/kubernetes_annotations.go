@@ -19,5 +19,5 @@ import (
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 )
 
-// ComputeInstanceTenant is the annotation where the fulfillment API will write the tenant of the virtual machine.
+// ComputeInstanceTenant is the annotation where the fulfillment API will write the tenant of the compute instance.
 var ComputeInstanceTenant = fmt.Sprintf("%s/tenant", gvks.ComputeInstance.Group)
