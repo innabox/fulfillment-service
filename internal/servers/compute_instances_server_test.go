@@ -98,7 +98,7 @@ var _ = Describe("Virtual machines server", func() {
 		})
 
 		It("Fails if attribution logic is not set", func() {
-			server, err := NewVirtualMachinesServer().
+			server, err := NewComputeInstancesServer().
 				SetLogger(logger).
 				SetTenancyLogic(tenancy).
 				Build()

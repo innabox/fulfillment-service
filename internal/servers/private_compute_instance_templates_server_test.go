@@ -89,7 +89,7 @@ var _ = Describe("Private virtual machine templates server", func() {
 		})
 
 		It("Fails if attribution logic is not set", func() {
-			server, err := NewPrivateVirtualMachineTemplatesServer().
+			server, err := NewPrivateComputeInstanceTemplatesServer().
 				SetLogger(logger).
 				SetTenancyLogic(tenancy).
 				Build()
@@ -99,7 +99,7 @@ var _ = Describe("Private virtual machine templates server", func() {
 		})
 
 		It("Fails if tenancy logic is not set", func() {
-			server, err := NewPrivateVirtualMachineTemplatesServer().
+			server, err := NewPrivateComputeInstanceTemplatesServer().
 				SetLogger(logger).
 				SetAttributionLogic(attribution).
 				Build()

@@ -38,9 +38,9 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
+	"github.com/innabox/fulfillment-service/internal/controllers/computeinstance"
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
 	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
-	"github.com/innabox/fulfillment-service/internal/controllers/vm"
 	internalhealth "github.com/innabox/fulfillment-service/internal/health"
 	"github.com/innabox/fulfillment-service/internal/version"
 )
@@ -240,38 +240,38 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
-	// Create the virtual machine reconciler:
-	r.logger.InfoContext(ctx, "Creating virtual machine reconciler")
-	vmReconcilerFunction, err := vm.NewFunction().
+	// Create the compute instance reconciler:
+	r.logger.InfoContext(ctx, "Creating compute instance reconciler")
+	computeInstanceReconcilerFunction, err := computeinstance.NewFunction().
 		SetLogger(r.logger).
 		SetConnection(r.client).
 		SetHubCache(hubCache).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create virtual machine reconciler function: %w", err)
+		return fmt.Errorf("failed to create compute instance reconciler function: %w", err)
 	}
-	vmReconciler, err := controllers.NewReconciler[*privatev1.ComputeInstance]().
+	computeInstanceReconciler, err := controllers.NewReconciler[*privatev1.ComputeInstance]().
 		SetLogger(r.logger).
-		SetName("virtual_machine").
+		SetName("compute_instance").
 		SetClient(r.client).
-		SetFunction(vmReconcilerFunction).
+		SetFunction(computeInstanceReconcilerFunction).
 		SetEventFilter("has(event.compute_instance) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
 		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
+		return fmt.Errorf("failed to create compute instance reconciler: %w", err)
 	}
 
-	// Start the virtual machine reconciler:
-	r.logger.InfoContext(ctx, "Starting virtual machine reconciler")
+	// Start the compute instance reconciler:
+	r.logger.InfoContext(ctx, "Starting compute instance reconciler")
 	go func() {
-		err := vmReconciler.Start(ctx)
+		err := computeInstanceReconciler.Start(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Virtual machine reconciler finished")
+			r.logger.InfoContext(ctx, "Compute instance reconciler finished")
 		} else {
 			r.logger.InfoContext(
 				ctx,
-				"Virtual machine reconciler failed",
+				"Compute instance reconciler failed",
 				slog.Any("error", err),
 			)
 		}
