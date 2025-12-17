@@ -22,7 +22,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
+	"github.com/innabox/fulfillment-service/internal/masks"
 )
 
 // objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
@@ -49,6 +49,7 @@ type function struct {
 	hostsClient     privatev1.HostsClient
 	hostPoolsClient privatev1.HostPoolsClient
 	hubsClient      privatev1.HubsClient
+	maskCalculator  *masks.Calculator
 }
 
 type task struct {
@@ -105,6 +106,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		hostPoolsClient: privatev1.NewHostPoolsClient(b.connection),
 		hubsClient:      privatev1.NewHubsClient(b.connection),
 		hubCache:        b.hubCache,
+		maskCalculator:  masks.NewCalculator().Build(),
 	}
 	result = object.run
 	return
@@ -125,15 +127,15 @@ func (r *function) run(ctx context.Context, host *privatev1.Host) error {
 	if err != nil {
 		return err
 	}
-	if !proto.Equal(host, oldHost) {
+	// Calculate which fields the reconciler actually modified and use a field mask
+	// to update only those fields. This prevents overwriting concurrent user changes.
+	updateMask := r.maskCalculator.Calculate(oldHost, host)
+
+	// Only send an update if there are actual changes
+	if len(updateMask.GetPaths()) > 0 {
 		_, err = r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
-			Object: host,
-			UpdateMask: &fieldmaskpb.FieldMask{
-				Paths: []string{
-					"metadata.finalizers",
-					"status",
-				},
-			},
+			Object:     host,
+			UpdateMask: updateMask,
 		}.Build())
 	}
 	return err

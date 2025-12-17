@@ -23,7 +23,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -34,6 +33,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/kubernetes/annotations"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
+	"github.com/innabox/fulfillment-service/internal/masks"
 	"github.com/innabox/fulfillment-service/internal/utils"
 )
 
@@ -48,10 +48,11 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger     *slog.Logger
-	hubCache   *controllers.HubCache
-	vmsClient  privatev1.VirtualMachinesClient
-	hubsClient privatev1.HubsClient
+	logger         *slog.Logger
+	hubCache       *controllers.HubCache
+	vmsClient      privatev1.VirtualMachinesClient
+	hubsClient     privatev1.HubsClient
+	maskCalculator *masks.Calculator
 }
 
 type task struct {
@@ -103,10 +104,11 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	// Create and populate the object:
 	object := &function{
-		logger:     b.logger,
-		vmsClient:  privatev1.NewVirtualMachinesClient(b.connection),
-		hubsClient: privatev1.NewHubsClient(b.connection),
-		hubCache:   b.hubCache,
+		logger:         b.logger,
+		vmsClient:      privatev1.NewVirtualMachinesClient(b.connection),
+		hubsClient:     privatev1.NewHubsClient(b.connection),
+		hubCache:       b.hubCache,
+		maskCalculator: masks.NewCalculator().Build(),
 	}
 	result = object.run
 	return
@@ -127,16 +129,15 @@ func (r *function) run(ctx context.Context, vm *privatev1.VirtualMachine) error 
 	if err != nil {
 		return err
 	}
+	// Calculate which fields the reconciler actually modified and use a field mask
+	// to update only those fields. This prevents overwriting concurrent user changes.
+	updateMask := r.maskCalculator.Calculate(oldVM, vm)
 
-	if !proto.Equal(vm, oldVM) {
+	// Only send an update if there are actual changes
+	if len(updateMask.GetPaths()) > 0 {
 		_, err = r.vmsClient.Update(ctx, privatev1.VirtualMachinesUpdateRequest_builder{
-			Object: vm,
-			UpdateMask: &fieldmaskpb.FieldMask{
-				Paths: []string{
-					"metadata.finalizers",
-					"status",
-				},
-			},
+			Object:     vm,
+			UpdateMask: updateMask,
 		}.Build())
 	}
 

@@ -32,6 +32,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
+	"github.com/innabox/fulfillment-service/internal/masks"
 )
 
 // objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
@@ -49,6 +50,7 @@ type function struct {
 	hubCache        *controllers.HubCache
 	hostPoolsClient privatev1.HostPoolsClient
 	hubsClient      privatev1.HubsClient
+	maskCalculator  *masks.Calculator
 }
 
 type task struct {
@@ -104,6 +106,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		hostPoolsClient: privatev1.NewHostPoolsClient(b.connection),
 		hubsClient:      privatev1.NewHubsClient(b.connection),
 		hubCache:        b.hubCache,
+		maskCalculator:  masks.NewCalculator().Build(),
 	}
 	result = object.run
 	return
@@ -124,9 +127,15 @@ func (r *function) run(ctx context.Context, hostPool *privatev1.HostPool) error 
 	if err != nil {
 		return err
 	}
-	if !proto.Equal(hostPool, oldHostPool) {
+	// Calculate which fields the reconciler actually modified and use a field mask
+	// to update only those fields. This prevents overwriting concurrent user changes.
+	updateMask := r.maskCalculator.Calculate(oldHostPool, hostPool)
+
+	// Only send an update if there are actual changes
+	if len(updateMask.GetPaths()) > 0 {
 		_, err = r.hostPoolsClient.Update(ctx, privatev1.HostPoolsUpdateRequest_builder{
-			Object: hostPool,
+			Object:     hostPool,
+			UpdateMask: updateMask,
 		}.Build())
 	}
 	return err
