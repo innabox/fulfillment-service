@@ -1,9 +1,9 @@
 # Kubernetes deployment
 
-This directory contains the manifests used to deploy the service to an Kubernetes cluster.
+This directory contains the Helm charts used to deploy the service to a Kubernetes cluster.
 
-There are currently two variants of the manifests: one for OpenShift, intended for production environments, and another
-for Kind, intended for development and testing environments.
+The main chart is `service`, which can be configured for either OpenShift (intended for production environments) or
+Kind (intended for development and testing environments) using the `variant` value.
 
 ## OpenShift
 
@@ -79,10 +79,16 @@ spec:
 .
 ```
 
-To deploy the application run this:
+Deploy the application:
 
 ```shell
-$ oc apply -k manifests/overlays/openshift
+$ helm install fulfillment-service charts/service \
+--namespace innabox \
+--create-namespace \
+--set variant=openshift \
+--set certs.issuerRef.name=default-ca \
+--set certs.caBundle.configMap=ca-bundle \
+--set auth.issuerUrl=https://your-oauth-issuer-url
 ```
 
 ## Kind
@@ -225,5 +231,11 @@ $ kubectl apply -f authorino.yaml
 Deploy the application:
 
 ```shell
-$ kubectl apply -k manifests/overlays/kind
+$ helm install fulfillment-service charts/service \
+--namespace innabox \
+--create-namespace \
+--set variant=kind \
+--set certs.issuerRef.name=default-ca \
+--set certs.caBundle.configMap=ca-bundle \
+--set auth.issuerUrl=https://your-oauth-issuer-url
 ```
