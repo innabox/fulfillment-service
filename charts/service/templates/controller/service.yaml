@@ -18,6 +18,9 @@ metadata:
   name: fulfillment-controller
   labels:
     app: fulfillment-controller
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8002"
 spec:
   selector:
     app: fulfillment-controller

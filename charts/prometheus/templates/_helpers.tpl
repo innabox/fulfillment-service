@@ -11,21 +11,14 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
-apiVersion: v1
-kind: Service
-metadata:
-  namespace: {{ .Release.Namespace }}
-  name: fulfillment-api
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8002"
-spec:
-  selector:
-    app: fulfillment-ingress-proxy
-  ports:
-  - name: api
-    port: 8000
-    targetPort: api
-  - name: metrics
-    port: 8002
-    targetPort: metrics
+{{/*
+Generate the hostname for Prometheus. If .Values.hostname is set, use it; otherwise, use the default Kubernetes service
+hostname based on the release namespace.
+*/}}
+{{- define "prometheus.hostname" -}}
+{{- if .Values.hostname -}}
+{{- .Values.hostname -}}
+{{- else -}}
+{{- printf "prometheus.%s.svc.cluster.local" .Release.Namespace -}}
+{{- end -}}
+{{- end -}}

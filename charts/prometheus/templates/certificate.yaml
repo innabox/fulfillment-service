@@ -11,21 +11,17 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
-apiVersion: v1
-kind: Service
+apiVersion: cert-manager.io/v1
+kind: Certificate
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: fulfillment-api
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8002"
+  name: prometheus-tls
 spec:
-  selector:
-    app: fulfillment-ingress-proxy
-  ports:
-  - name: api
-    port: 8000
-    targetPort: api
-  - name: metrics
-    port: 8002
-    targetPort: metrics
+  issuerRef:
+    kind: {{ .Values.certs.issuerRef.kind }}
+    name: {{ .Values.certs.issuerRef.name }}
+  dnsNames:
+  - {{ include "prometheus.hostname" . }}
+  secretName: prometheus-tls
+  privateKey:
+    rotationPolicy: Always

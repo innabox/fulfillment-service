@@ -12,20 +12,10 @@ specific language governing permissions and limitations under the License.
 */}}
 
 apiVersion: v1
-kind: Service
+kind: ConfigMap
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: fulfillment-api
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8002"
-spec:
-  selector:
-    app: fulfillment-ingress-proxy
-  ports:
-  - name: api
-    port: 8000
-    targetPort: api
-  - name: metrics
-    port: 8002
-    targetPort: metrics
+  name: prometheus-config
+data:
+  prometheus.yml: {{ .Files.Get "files/prometheus.yml" | quote }}
+  web.yml: {{ .Files.Get "files/web.yml" | quote }}
