@@ -18,8 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -44,6 +43,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
 	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
 	internalhealth "github.com/innabox/fulfillment-service/internal/health"
+	shtdwn "github.com/innabox/fulfillment-service/internal/shutdown"
 	"github.com/innabox/fulfillment-service/internal/version"
 )
 
@@ -92,7 +92,6 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 
 	// Get the context:
 	ctx, cancel := context.WithCancel(cmd.Context())
-	defer cancel()
 
 	// Get the dependencies from the context:
 	r.logger = internal.LoggerFromContext(ctx)
@@ -104,6 +103,17 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 
 	// Save the flags:
 	r.flags = cmd.Flags()
+
+	// Create the shutdown sequence:
+	r.logger.InfoContext(ctx, "Creating shutdown sequence")
+	shutdown, err := shtdwn.NewSequence().
+		SetLogger(r.logger).
+		AddSignals(syscall.SIGTERM, syscall.SIGINT).
+		AddContext("context", 0, cancel).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create shutdown sequence: %w", err)
+	}
 
 	// Load the trusted CA certificates:
 	r.logger.InfoContext(ctx, "Loading trusted CA certificates")
@@ -127,7 +137,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 
 	// Calculate the user agent:
 	r.logger.InfoContext(ctx, "Calculating user agent")
-	userAgent := fmt.Sprintf("%s/%s", grpcServerUserAgent, version.Get())
+	userAgent := fmt.Sprintf("%s/%s", controllerUserAgent, version.Get())
 
 	// Create the gRPC client:
 	r.logger.InfoContext(ctx, "Creating gRPC client")
@@ -153,6 +163,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create listener: %w", err)
 	}
 	grpcServer := grpc.NewServer()
+	shutdown.AddGrpcServer(network.GrpcListenerName, 0, grpcServer)
 
 	// Register the reflection server:
 	r.logger.InfoContext(ctx, "Registering gRPC reflection server")
@@ -179,10 +190,6 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		"Starting gRPC server",
 		slog.String("address", grpcListener.Addr().String()),
 	)
-	go func() {
-		defer grpcServer.GracefulStop()
-		<-ctx.Done()
-	}()
 	go func() {
 		err := grpcServer.Serve(grpcListener)
 		if err != nil {
@@ -389,13 +396,9 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
-	// Wait for a signal:
-	r.logger.InfoContext(ctx, "Waiting for signal")
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
-	<-stop
-	r.logger.InfoContext(ctx, "Signal received, shutting down")
-	return nil
+	// Wait for the shutdown sequence to complete:
+	r.logger.InfoContext(ctx, "Waiting for shutdown sequence to complete")
+	return shutdown.Wait()
 }
 
 // waitForServer waits for the server to be ready using the health service.

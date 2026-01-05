@@ -26,49 +26,49 @@
                         "processId": "${command:pickGoProcess}"
                 },
                 {
-                        "name": "start server (empty tenancy)",
+                        "name": "start grpc-server (guest tenancy)",
                         "type": "go",
                         "request": "launch",
                         "mode": "auto",
                         "program": "${workspaceFolder}",
                         "args": [
                                 "start",
-                                "server",
+                                "grpc-server",
                                 "--log-level=debug",
                                 "--log-headers=true",
                                 "--log-bodies=true",
                                 "--grpc-listener-address=localhost:8000",
                                 "--db-url=postgres://service:service123@localhost:5432/service",
-                                "--tenancy-logic=empty"
+                                "--tenancy-logic=guest"
                         ]
                 },
                 {
-                        "name": "start server (default tenancy)",
+                        "name": "start grpc-server (serviceaccount tenancy)",
                         "type": "go",
                         "request": "launch",
                         "mode": "auto",
                         "program": "${workspaceFolder}",
                         "args": [
                                 "start",
-                                "server",
+                                "grpc-server",
                                 "--log-level=debug",
                                 "--log-headers=true",
                                 "--log-bodies=true",
                                 "--grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox",
                                 "--grpc-listener-address=localhost:8000",
                                 "--db-url=postgres://service:service123@localhost:5432/service",
-                                "--tenancy-logic=default"
+                                "--tenancy-logic=serviceaccount"
                         ]
                 },
                 {
-                        "name": "start gateway",
+                        "name": "start rest-gateway",
                         "type": "go",
                         "request": "launch",
                         "mode": "auto",
                         "program": "${workspaceFolder}",
                         "args": [
                                 "start",
-                                "gateway",
+                                "rest-gateway",
                                 "--log-level=debug",
                                 "--log-headers=true",
                                 "--log-bodies=true",

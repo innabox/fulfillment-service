@@ -14,9 +14,11 @@ language governing permissions and limitations under the License.
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"syscall"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/innabox/fulfillment-common/network"
@@ -33,6 +35,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privateapi "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	shtdwn "github.com/innabox/fulfillment-service/internal/shutdown"
 	"github.com/innabox/fulfillment-service/internal/version"
 )
 
@@ -74,13 +77,23 @@ type startRestGatewayCommandRunner struct {
 // run runs the `start rest-gateway` command.
 func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	// Get the context:
-	ctx := cmd.Context()
+	ctx, cancel := context.WithCancel(cmd.Context())
 
 	// Get the dependencies from the context:
 	c.logger = internal.LoggerFromContext(ctx)
 
 	// Save the flags:
 	c.flags = cmd.Flags()
+
+	// Create the shutdown sequence:
+	shutdown, err := shtdwn.NewSequence().
+		SetLogger(c.logger).
+		AddSignals(syscall.SIGTERM, syscall.SIGINT).
+		AddContext("context", 0, cancel).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create shutdown sequence: %w", err)
+	}
 
 	// Create the network listener:
 	c.logger.InfoContext(ctx, "Creating REST gateway listener")
@@ -233,6 +246,7 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		slog.String("address", metricsListener.Addr().String()),
 	)
 	metricsServer := &http.Server{
+		Addr:    metricsListener.Addr().String(),
 		Handler: promhttp.Handler(),
 	}
 	go func() {
@@ -245,6 +259,7 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 			)
 		}
 	}()
+	shutdown.AddHttpServer(network.MetricsListenerName, 0, metricsServer)
 
 	// Start serving:
 	c.logger.InfoContext(
@@ -257,7 +272,21 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		Addr:    gwListener.Addr().String(),
 		Handler: h2c.NewHandler(handler, http2Server),
 	}
-	return http1Server.Serve(gwListener)
+	go func() {
+		err := http1Server.Serve(gwListener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			c.logger.ErrorContext(
+				ctx,
+				"REST gateway server failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+	shutdown.AddHttpServer(network.HttpListenerName, 0, http1Server)
+
+	// Keep running till the shutdown sequence cancels the context:
+	c.logger.InfoContext(ctx, "Waiting for shutdown to sequence to complete")
+	return shutdown.Wait()
 }
 
 func (c *startRestGatewayCommandRunner) handleHealth(

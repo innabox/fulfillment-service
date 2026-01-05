@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"syscall"
 
 	"github.com/go-logr/logr"
 	"github.com/innabox/fulfillment-common/metrics"
@@ -44,6 +45,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/recovery"
 	"github.com/innabox/fulfillment-service/internal/servers"
+	shtdwn "github.com/innabox/fulfillment-service/internal/shutdown"
 	"github.com/innabox/fulfillment-service/internal/version"
 )
 
@@ -113,8 +115,8 @@ type startGrpcServerCommandRunner struct {
 
 // run runs the `start grpc-server` command.
 func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) error {
-	// Get the context:
-	ctx := cmd.Context()
+	// Get the context and create a cancellable version:
+	ctx, cancel := context.WithCancel(cmd.Context())
 
 	// Get the dependencies from the context:
 	c.logger = internal.LoggerFromContext(ctx)
@@ -126,6 +128,17 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 
 	// Save the flags:
 	c.flags = cmd.Flags()
+
+	// Create the shutdown sequence triggered by typical stop signals:
+	c.logger.InfoContext(ctx, "Creating shutdown sequence")
+	shutdown, err := shtdwn.NewSequence().
+		SetLogger(c.logger).
+		AddSignals(syscall.SIGTERM, syscall.SIGINT).
+		AddContext("context", 0, cancel).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create shutdown sequence: %w", err)
+	}
 
 	// Load the trusted CA certificates:
 	caPool, err := network.NewCertPool().
@@ -163,6 +176,7 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 	if err != nil {
 		return err
 	}
+	shutdown.AddDatabasePool("database", 0, dbPool)
 
 	// Create the network listener:
 	listener, err := network.NewListener().
@@ -282,6 +296,7 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 			authStreamInterceptor,
 		),
 	)
+	shutdown.AddGrpcServer(network.GrpcListenerName, 0, grpcServer)
 
 	// Register the reflection server:
 	c.logger.InfoContext(ctx, "Registering gRPC reflection server")
@@ -637,8 +652,10 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		slog.String("address", metricsListener.Addr().String()),
 	)
 	metricsServer := &http.Server{
+		Addr:    metricsListener.Addr().String(),
 		Handler: promhttp.Handler(),
 	}
+	shutdown.AddHttpServer(network.MetricsListenerName, 0, metricsServer)
 	go func() {
 		err := metricsServer.Serve(metricsListener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -657,10 +674,19 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		slog.String("address", listener.Addr().String()),
 	)
 	go func() {
-		defer grpcServer.GracefulStop()
-		<-ctx.Done()
+		err := grpcServer.Serve(listener)
+		if err != nil {
+			c.logger.ErrorContext(
+				ctx,
+				"gRPC server failed",
+				slog.Any("error", err),
+			)
+		}
 	}()
-	return grpcServer.Serve(listener)
+
+	// Keep running till the shutdown sequence finishes:
+	c.logger.InfoContext(ctx, "Waiting for shutdown to sequence to complete")
+	return shutdown.Wait()
 }
 
 // publicMethodRegex is regular expression for the methods that are considered public, including the metadata, and
