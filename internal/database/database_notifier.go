@@ -16,8 +16,11 @@ package database
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -26,20 +29,26 @@ import (
 
 // NotifierBuilder contains the data and logic needed to build a notifier.
 type NotifierBuilder struct {
-	logger  *slog.Logger
-	channel string
+	logger          *slog.Logger
+	channel         string
+	pool            *pgxpool.Pool
+	cleanupInterval time.Duration
 }
 
 // Notifier knows how to send notifications using PostgreSQL's NOTIFY command, using protocol buffers messages as
 // payload.
 type Notifier struct {
-	logger  *slog.Logger
-	channel string
+	logger          *slog.Logger
+	channel         string
+	pool            *pgxpool.Pool
+	cleanupInterval time.Duration
 }
 
 // NewNotifier uses the information stored in the builder to create a new notifier.
 func NewNotifier() *NotifierBuilder {
-	return &NotifierBuilder{}
+	return &NotifierBuilder{
+		cleanupInterval: 1 * time.Minute,
+	}
 }
 
 // SetLogger sets the logger for the notifier. This is mandatory.
@@ -48,9 +57,23 @@ func (b *NotifierBuilder) SetLogger(logger *slog.Logger) *NotifierBuilder {
 	return b
 }
 
-// SetLogger sets the channel name. This is mandatory.
+// SetChannel sets the channel name. This is mandatory.
 func (b *NotifierBuilder) SetChannel(value string) *NotifierBuilder {
 	b.channel = value
+	return b
+}
+
+// SetPool sets the database connection pool that will be used for the asynchronous cleanup of old notifications.
+// This is mandatory.
+func (b *NotifierBuilder) SetPool(value *pgxpool.Pool) *NotifierBuilder {
+	b.pool = value
+	return b
+}
+
+// SetCleanupInterval sets the interval at which old notifications will be deleted. This is optional and the default
+// is one minute.
+func (b *NotifierBuilder) SetCleanupInterval(value time.Duration) *NotifierBuilder {
+	b.cleanupInterval = value
 	return b
 }
 
@@ -65,14 +88,24 @@ func (b *NotifierBuilder) Build() (result *Notifier, err error) {
 		err = errors.New("channel is mandatory")
 		return
 	}
+	if b.pool == nil {
+		err = errors.New("database connection pool is mandatory")
+		return
+	}
+	if b.cleanupInterval <= 0 {
+		err = fmt.Errorf("cleanup interval should be positive, but it is %s", b.cleanupInterval)
+		return
+	}
 
 	// Create and populate the object:
 	logger := b.logger.With(
 		slog.String("channel", b.channel),
 	)
 	result = &Notifier{
-		logger:  logger,
-		channel: b.channel,
+		logger:          logger,
+		channel:         b.channel,
+		pool:            b.pool,
+		cleanupInterval: b.cleanupInterval,
 	}
 	return
 }
@@ -128,10 +161,46 @@ func (n *Notifier) Notify(ctx context.Context, payload proto.Message) (err error
 		)
 	}
 
-	// Delete old notifications:
-	tag, err := tx.Exec(ctx, "delete from notifications where creation_timestamp < now() - interval '1 minute'")
+	return nil
+}
+
+// Start begins the asynchronous cleanup of old notifications. It starts a goroutine that periodically deletes old
+// notifications from the database. The goroutine will stop when the given context is cancelled.
+func (n *Notifier) Start(ctx context.Context) error {
+	go n.cleanupLoop(ctx)
+	return nil
+}
+
+// cleanupLoop runs the cleanup operation periodically until the context is cancelled.
+func (n *Notifier) cleanupLoop(ctx context.Context) {
+	n.logger.InfoContext(
+		ctx,
+		"Starting notification cleanup loop",
+		slog.Duration("interval", n.cleanupInterval),
+	)
+	ticker := time.NewTicker(n.cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			n.logger.InfoContext(ctx, "Stopping notification cleanup loop")
+			return
+		case <-ticker.C:
+			n.cleanup(ctx)
+		}
+	}
+}
+
+// cleanup deletes old notifications from the database.
+func (n *Notifier) cleanup(ctx context.Context) {
+	tag, err := n.pool.Exec(ctx, "delete from notifications where creation_timestamp < now() - interval '1 minute'")
 	if err != nil {
-		return err
+		n.logger.ErrorContext(
+			ctx,
+			"Failed to delete old notifications",
+			slog.Any("error", err),
+		)
+		return
 	}
 	count := tag.RowsAffected()
 	if count > 0 {
@@ -141,6 +210,4 @@ func (n *Notifier) Notify(ctx context.Context, payload proto.Message) (err error
 			slog.Int64("count", count),
 		)
 	}
-
-	return nil
 }

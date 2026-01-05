@@ -297,9 +297,14 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 	notifier, err := database.NewNotifier().
 		SetLogger(c.logger).
 		SetChannel("events").
+		SetPool(dbPool).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create notifier: %w", err)
+	}
+	err = notifier.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start notifier: %w", err)
 	}
 
 	// Create the public attribution logic:

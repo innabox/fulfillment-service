@@ -181,6 +181,7 @@ var _ = Describe("Listener", func() {
 			notifier, err = NewNotifier().
 				SetLogger(logger).
 				SetChannel(channel).
+				SetPool(pool).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
