@@ -32,3 +32,42 @@ certs:
 images:
   keycloak: quay.io/keycloak/keycloak:26.3
   postgres: quay.io/sclorg/postgresql-15-c9s:latest
+
+# Groups to create in the Keycloak realm. These are copied directoy to the 'groups' field of the realm JSON file, so you
+# need to provide at least the 'name' and 'path' fields, for example:
+#
+# - name: admins
+#   path: /admins
+#
+# Refer to the Keycloak documentation for more details about the fields for groups.
+#
+# The default value is an empty list, meaning no groups will be created.
+groups: []
+
+# Users to create in the Keycloak realm. These are copied directly to the 'users' field of the realm JSON file, so you
+# need to provide at least the 'username' field. For more complete users you will probably want to add more fields,
+# something like this:
+#
+# - username: alice
+#   enabled: true
+#   emailVerified: true
+#   credentials:
+#   - type: password
+#     value: alice123
+#     temporary: false
+#   firstName: Alice
+#   lastName: Smith
+#   email: alice@example.com
+#   groups:
+#   - /admins
+#
+# Make sure to include 'enabled: true' for the user and 'temporary: false' for the passwords, as otherwise the password
+# grant won't work.
+#
+# Note also that the password grant only works if it is enabled in the client. The realm configuration that we use
+# contains a client named 'fulfillment-cli' that has the password grant enabled.
+#
+# Refer to the Keycloak documentation for more details about the fields for users.
+#
+# The default value is an empty list, meaning no users will be created.
+users: []

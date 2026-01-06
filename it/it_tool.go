@@ -31,6 +31,7 @@ import (
 	"github.com/innabox/fulfillment-common/network"
 	"github.com/innabox/fulfillment-common/testing"
 	"github.com/onsi/gomega/ghttp"
+	"go.yaml.in/yaml/v2"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -490,6 +491,78 @@ func (t *Tool) loadCaBundle(ctx context.Context) error {
 
 // deployKeycloak installs the Keycloak chart.
 func (t *Tool) deployKeycloak(ctx context.Context) error {
+	// Prepare a map containing the values for the chart:
+	valuesData := map[string]any{
+		"variant":  "kind",
+		"hostname": "keycloak.keycloak.svc.cluster.local",
+		"certs": map[string]any{
+			"issuerRef": map[string]any{
+				"kind": "ClusterIssuer",
+				"name": "default-ca",
+			},
+		},
+		"groups": []any{
+			map[string]any{
+				"name": "my_group",
+				"path": "/my_group",
+			},
+			map[string]any{
+				"name": "your_group",
+				"path": "/your_group",
+			},
+		},
+		"users": []any{
+			map[string]any{
+				"username":      "my_user",
+				"enabled":       true,
+				"firstName":     "My",
+				"lastName":      "User",
+				"email":         "my_user@example.com",
+				"emailVerified": true,
+				"groups": []string{
+					"/my_group",
+				},
+				"credentials": []any{
+					map[string]any{
+						"type":      "password",
+						"value":     "my_user",
+						"temporary": false,
+					},
+				},
+			},
+			map[string]any{
+				"username":      "your_user",
+				"enabled":       true,
+				"firstName":     "Your",
+				"lastName":      "User",
+				"email":         "your_user@example.com",
+				"emailVerified": true,
+				"groups": []string{
+					"/your_group",
+				},
+				"credentials": []any{
+					map[string]any{
+						"type":      "password",
+						"value":     "your_user",
+						"temporary": false,
+					},
+				},
+			},
+		},
+	}
+	valuesBytes, err := yaml.Marshal(valuesData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal values to YAML: %w", err)
+	}
+
+	// Write the values to a temporary file:
+	valuesFile := filepath.Join(t.tmpDir, "keycloak-values.yaml")
+	err = os.WriteFile(valuesFile, valuesBytes, 0400)
+	if err != nil {
+		return fmt.Errorf("failed to write values to file: %w", err)
+	}
+
+	// Install the chart:
 	t.logger.DebugContext(ctx, "Installing Keycloak chart")
 	installCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
@@ -504,9 +577,7 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 			"--kubeconfig", t.kcFile,
 			"--namespace", "keycloak",
 			"--create-namespace",
-			"--set", "variant=kind",
-			"--set", "hostname=keycloak.keycloak.svc.cluster.local",
-			"--set", "certs.issuerRef.name=default-ca",
+			"--values", valuesFile,
 			"--wait",
 		).
 		Build()

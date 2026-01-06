@@ -12,9 +12,12 @@ specific language governing permissions and limitations under the License.
 */}}
 
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
   namespace: {{ .Release.Namespace }}
   name: keycloak-realm
 data:
-  realm.json: {{ .Files.Get "files/realm.json" | quote }}
+  {{- $realm := .Files.Get "files/realm.json" | fromJson }}
+  {{- $_ := set $realm "groups" .Values.groups }}
+  {{- $_ := set $realm "users" .Values.users }}
+  innabox-realm.json: {{ $realm | toJson | b64enc }}

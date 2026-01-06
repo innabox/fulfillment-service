@@ -28,8 +28,8 @@ spec:
     spec:
       volumes:
       - name: realm
-        configMap:
-          name: keycloak-realm
+        secret:
+          secretName: keycloak-realm
       - name: database-client-cert
         secret:
           secretName: keycloak-database-client-cert
