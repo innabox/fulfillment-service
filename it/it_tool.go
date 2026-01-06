@@ -553,7 +553,7 @@ func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error
 			"--set", "certs.issuerRef.kind=ClusterIssuer",
 			"--set", "certs.issuerRef.name=default-ca",
 			"--set", "certs.caBundle.configMap=ca-bundle",
-			"--set", "auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox",
+			"--set", "auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox",
 			"--wait",
 		).
 		Build()

@@ -76,7 +76,7 @@ spec:
         - name: KC_HTTPS_ENABLED
           value: "true"
         - name: KC_HTTPS_PORT
-          value: "8001"
+          value: "8000"
         - name: KC_HTTPS_CERTIFICATE_FILE
           value: "/secrets/tls/tls.crt"
         - name: KC_HTTPS_CERTIFICATE_KEY_FILE
@@ -84,7 +84,7 @@ spec:
         - name: KC_HOSTNAME
           value: "{{ include "keycloak.hostname" . }}"
         - name: KC_HOSTNAME_PORT
-          value: "8001"
+          value: "8000"
         - name: KC_DB
           value: "postgres"
         - name: KC_DB_URL
@@ -102,18 +102,18 @@ spec:
         - --import-realm
         ports:
         - name: https
-          containerPort: 8001
+          containerPort: 8000
         readinessProbe:
           httpGet:
             path: /realms/master
-            port: 8001
+            port: 8000
             scheme: HTTPS
           initialDelaySeconds: 30
           periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /realms/master
-            port: 8001
+            port: 8000
             scheme: HTTPS
           initialDelaySeconds: 60
           periodSeconds: 30

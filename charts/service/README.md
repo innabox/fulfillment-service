@@ -28,7 +28,7 @@ The following table lists the configurable parameters of the chart and their def
 | `certs.issuerRef.name` | Name of _cert-manager_ issuer | None |
 | `certs.caBundle.configMap` | Name of configmap containing trusted CA certificates in PEM format | None |
 | `hostname` | Hostname used to access the service from outside the cluster | None |
-| `auth.issuerUrl` | OAuth issuer URL for authentication | `https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox` |
+| `auth.issuerUrl` | OAuth issuer URL for authentication | `https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox` |
 | `log.level` | Log level for all components (debug, info, warn, error) | `info` |
 | `log.headers` | Enable logging of HTTP/gRPC headers | `false` |
 | `log.bodies` | Enable logging of HTTP/gRPC request and response bodies | `false` |

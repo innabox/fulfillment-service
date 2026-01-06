@@ -141,32 +141,24 @@ The realm includes the **fulfillment-cli** (Public) client:
 
 To access the Keycloak Admin Console:
 
-1. **Port-forward to the Keycloak service**:
+1. **Access the console**:
 
-   ```bash
-   kubectl port-forward -n keycloak svc/keycloak 8443:8001
-   ```
-
-Alternatively, for development purposes, you can add the host name used internally in the cluster (keycloak.keycloak.svc.cluster.local) pointing to 127.0.0.1 to /etc/hosts:
+   Add the host name used internally in the cluster pointing to `127.0.0.1` to `/etc/hosts`:
 
    ```
    127.0.0.1 keycloak.keycloak.svc.cluster.local
    ```
 
-2. **Access the console**:
+   Open your browser and navigate to https://keycloak.keycloak.svc.cluster.local:8000, then
+   accept the self-signed certificate warning.
 
-   Open your browser and navigate to:
-   ```
-   https://localhost:8443 (or https://keycloak.keycloak.svc.cluster.local:8443 if configured)
-   ```
+2. **Login**:
 
-   Accept the self-signed certificate warning.
-
-3. **Login**:
    - Username: `admin`
    - Password: `admin`
 
-4. **Select the realm**:
+3. **Select the realm**:
+
    - Click on the realm dropdown (top left)
    - Select `innabox`
 
@@ -212,7 +204,7 @@ https://<keycloak-hostname>:<port>/realms/<realm-name>
 
 For example:
 ```
-https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
+https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox
 ```
 
 ### 2. Update the Fulfillment Service Deployment
@@ -228,7 +220,7 @@ helm install fulfillment-service oci://ghcr.io/innabox/charts/fulfillment-servic
   --set hostname=fulfillment-api.innabox.cluster.local \
   --set certs.issuerRef.name=default-ca \
   --set certs.caBundle.configMap=ca-bundle \
-  --set auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox \
+  --set auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox \
   --wait
 ```
 
@@ -236,7 +228,7 @@ Or in a values file:
 
 ```yaml
 auth:
-  issuerUrl: https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
+  issuerUrl: https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox
 ```
 
 ### 3. Update the AuthConfig Resource
@@ -261,7 +253,7 @@ Example AuthConfig snippet:
 authentication:
   "keycloak-jwt":
     jwt:
-      issuerUrl: https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
+      issuerUrl: https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox
     overrides:
       authnMethod:
         value: jwt
@@ -274,7 +266,7 @@ The fulfillment service server component also needs to be configured with the tr
 The Helm chart automatically sets this from the `auth.issuerUrl` value. In the deployment, you'll see:
 
 ```yaml
-- --grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
+- --grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox
 ```
 
 ### 5. Trusted vs Advertised Token Issuers
@@ -818,9 +810,6 @@ kubectl get authconfig fulfillment-service -n innabox -o yaml | grep issuerUrl
 1. **Get a token from Keycloak** (using the fulfillment-cli client):
 
    ```bash
-   # Port-forward to Keycloak
-   kubectl port-forward -n keycloak svc/keycloak 8443:8001
-
    # Get token (replace USERNAME and PASSWORD with actual credentials)
    TOKEN=$(curl -k -X POST \
      https://localhost:8443/realms/innabox/protocol/openid-connect/token \

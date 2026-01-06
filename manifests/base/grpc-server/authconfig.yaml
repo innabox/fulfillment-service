@@ -60,7 +60,7 @@ spec:
           value: serviceaccount
     "keycloak-jwt":
       jwt:
-        issuerUrl: https://keycloak.keycloak.svc.cluster.local:8001/realms/innabox
+        issuerUrl: https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox
       overrides:
         authnMethod:
           value: jwt

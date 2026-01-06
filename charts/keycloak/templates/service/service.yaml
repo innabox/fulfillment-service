@@ -23,5 +23,5 @@ spec:
     app: keycloak-service
   ports:
   - name: https
-    port: 8001
-    targetPort: 8001
+    port: 8000
+    targetPort: 8000
