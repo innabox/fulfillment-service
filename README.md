@@ -219,6 +219,22 @@ The project includes integration tests that run against a real Kubernetes cluste
 [kind](https://kind.sigs.k8s.io). These tests verify the end-to-end functionality of the fulfillment
 service by deploying it to a temporary cluster and exercising the APIs.
 
+The integration tests use TLS with SNI (_Server Name Indication_) routing through the Envoy Gateway.
+This means that the services are accessed using their Kubernetes internal host names, but routed
+through `127.0.0.1:8000` which is exposed by the Kind cluster.
+
+For the tests to work correctly, the following host names must resolve to `127.0.0.1`:
+
+- `keycloak.keycloak.svc.cluster.local` - The Keycloak identity provider used for authentication.
+- `fulfillment-api.innabox.svc.cluster.local` - The fulfillment service API.
+
+Add the following entries to your `/etc/hosts` file:
+
+```
+127.0.0.1 keycloak.keycloak.svc.cluster.local
+127.0.0.1 fulfillment-api.innabox.svc.cluster.local
+```
+
 To run the integration tests:
 
 ```bash
@@ -272,15 +288,4 @@ To clean up a preserved cluster manually:
 
 ```bash
 $ kind delete cluster --name fulfillment-service-it
-```
-
-The automated tests do not require any special host name configuration. However, if you want to
-manually access the services running in the kind cluster, the host names
-`fulfillment-api.innabox.svc.cluster.local` and `keycloak.keycloak.svc.cluster.local` must be
-resolvable and point to `127.0.0.1`. One way to achieve this is by adding the following entries to
-your `/etc/hosts` file:
-
-```
-127.0.0.1 fulfillment-api.innabox.svc.cluster.local
-127.0.0.1 keycloak.keycloak.svc.cluster.local
 ```

@@ -767,6 +767,6 @@ var _ = Describe("Public clusters", func() {
 		Expect(object).ToNot(BeNil())
 		metadata := object.GetMetadata()
 		Expect(metadata).ToNot(BeNil())
-		Expect(metadata.GetCreators()).To(ConsistOf("system:serviceaccount:innabox:client"))
+		Expect(metadata.GetCreators()).To(ConsistOf("my-user"))
 	})
 })

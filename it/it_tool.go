@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/innabox/fulfillment-common/auth"
 	"github.com/innabox/fulfillment-common/network"
+	"github.com/innabox/fulfillment-common/oauth"
 	"github.com/innabox/fulfillment-common/testing"
 	"github.com/onsi/gomega/ghttp"
 	"go.yaml.in/yaml/v2"
@@ -203,6 +205,16 @@ func (b *ToolBuilder) findProjectDir() (result string, err error) {
 func (t *Tool) Setup(ctx context.Context) error {
 	var err error
 
+	// Check that the required host names are resolvable:
+	err = t.checkAddress(ctx, keycloakAddr)
+	if err != nil {
+		return err
+	}
+	err = t.checkAddress(ctx, serviceAddr)
+	if err != nil {
+		return err
+	}
+
 	// Create a temporary directory:
 	t.tmpDir, err = os.MkdirTemp("", "*.it")
 	if err != nil {
@@ -296,6 +308,24 @@ func (t *Tool) Setup(ctx context.Context) error {
 		return err
 	}
 
+	return nil
+}
+
+// checkAddress checks that the given address is resolvable.
+func (t *Tool) checkAddress(ctx context.Context, addr string) error {
+	t.logger.DebugContext(ctx, "Checking address", "address", addr)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("failed to split host and port from '%s': %w", addr, err)
+	}
+	_, err = net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to lookup host '%s', you may need to add a '127.0.0.1 %[1]s' entry to the "+
+				"'/etc/hosts' file: %w",
+			addr, err,
+		)
+	}
 	return nil
 }
 
@@ -491,10 +521,17 @@ func (t *Tool) loadCaBundle(ctx context.Context) error {
 
 // deployKeycloak installs the Keycloak chart.
 func (t *Tool) deployKeycloak(ctx context.Context) error {
+	// Get the host name:
+	t.logger.DebugContext(ctx, "Installing Keycloak chart")
+	host, _, err := net.SplitHostPort(keycloakAddr)
+	if err != nil {
+		return fmt.Errorf("failed to split host and port from '%s': %w", keycloakAddr, err)
+	}
+
 	// Prepare a map containing the values for the chart:
 	valuesData := map[string]any{
 		"variant":  "kind",
-		"hostname": "keycloak.keycloak.svc.cluster.local",
+		"hostname": host,
 		"certs": map[string]any{
 			"issuerRef": map[string]any{
 				"kind": "ClusterIssuer",
@@ -503,47 +540,25 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 		},
 		"groups": []any{
 			map[string]any{
-				"name": "my_group",
-				"path": "/my_group",
-			},
-			map[string]any{
-				"name": "your_group",
-				"path": "/your_group",
+				"name": clientGroup,
+				"path": fmt.Sprintf("/%s", clientGroup),
 			},
 		},
 		"users": []any{
 			map[string]any{
-				"username":      "my_user",
+				"username":      clientUsername,
 				"enabled":       true,
 				"firstName":     "My",
 				"lastName":      "User",
-				"email":         "my_user@example.com",
+				"email":         fmt.Sprintf("%s@example.com", clientUsername),
 				"emailVerified": true,
 				"groups": []string{
-					"/my_group",
+					fmt.Sprintf("/%s", clientGroup),
 				},
 				"credentials": []any{
 					map[string]any{
 						"type":      "password",
-						"value":     "my_user",
-						"temporary": false,
-					},
-				},
-			},
-			map[string]any{
-				"username":      "your_user",
-				"enabled":       true,
-				"firstName":     "Your",
-				"lastName":      "User",
-				"email":         "your_user@example.com",
-				"emailVerified": true,
-				"groups": []string{
-					"/your_group",
-				},
-				"credentials": []any{
-					map[string]any{
-						"type":      "password",
-						"value":     "your_user",
+						"value":     clientPassword,
 						"temporary": false,
 					},
 				},
@@ -563,7 +578,6 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 	}
 
 	// Install the chart:
-	t.logger.DebugContext(ctx, "Installing Keycloak chart")
 	installCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
 		SetHome(t.projectDir).
@@ -624,7 +638,7 @@ func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error
 			"--set", "certs.issuerRef.kind=ClusterIssuer",
 			"--set", "certs.issuerRef.name=default-ca",
 			"--set", "certs.caBundle.configMap=ca-bundle",
-			"--set", "auth.issuerUrl=https://keycloak.keycloak.svc.cluster.local:8000/realms/innabox",
+			"--set", fmt.Sprintf("auth.issuerUrl=https://%s/realms/innabox", keycloakAddr),
 			"--wait",
 		).
 		Build()
@@ -787,11 +801,11 @@ func (t *Tool) undeployServiceWithKustomize(ctx context.Context) error {
 
 func (t *Tool) createClients(ctx context.Context) error {
 	// Create token sources:
-	clientTokenSource, err := t.makeTokenSource(ctx, "client")
+	clientTokenSource, err := t.makeKeycloakTokenSource(ctx, clientUsername, clientPassword)
 	if err != nil {
 		return err
 	}
-	adminTokenSource, err := t.makeTokenSource(ctx, "admin")
+	adminTokenSource, err := t.makeKubernetesTokenSource(ctx, "admin")
 	if err != nil {
 		return err
 	}
@@ -813,7 +827,7 @@ func (t *Tool) createClients(ctx context.Context) error {
 	return nil
 }
 
-func (t *Tool) makeTokenSource(ctx context.Context, sa string) (result auth.TokenSource, err error) {
+func (t *Tool) makeKubernetesTokenSource(ctx context.Context, sa string) (result auth.TokenSource, err error) {
 	response, err := t.kubeClientSet.CoreV1().ServiceAccounts("innabox").CreateToken(
 		ctx,
 		sa,
@@ -838,13 +852,33 @@ func (t *Tool) makeTokenSource(ctx context.Context, sa string) (result auth.Toke
 	return
 }
 
+func (t *Tool) makeKeycloakTokenSource(ctx context.Context, username, password string) (result auth.TokenSource, err error) {
+	store, err := auth.NewMemoryTokenStore().
+		SetLogger(t.logger).
+		Build()
+	if err != nil {
+		return
+	}
+	result, err = oauth.NewTokenSource().
+		SetLogger(t.logger).
+		SetStore(store).
+		SetCaPool(t.caPool).
+		SetIssuer(fmt.Sprintf("https://%s/realms/innabox", keycloakAddr)).
+		SetFlow(oauth.PasswordFlow).
+		SetClientId("fulfillment-cli").
+		SetUsername(username).
+		SetPassword(password).
+		SetScopes("openid").
+		Build()
+	return
+}
+
 func (t *Tool) makeGrpcConn(tokenSource auth.TokenSource) (result *grpc.ClientConn, err error) {
 	userAgent := fmt.Sprintf("%s/%s", userAgent, version.Get())
 	result, err = network.NewGrpcClient().
 		SetLogger(t.logger).
 		SetCaPool(t.caPool).
-		SetAddress(serviceAddress).
-		SetHost(serviceHost).
+		SetAddress(serviceAddr).
 		SetTokenSource(tokenSource).
 		SetUserAgent(userAgent).
 		Build()
@@ -854,8 +888,7 @@ func (t *Tool) makeGrpcConn(tokenSource auth.TokenSource) (result *grpc.ClientCo
 func (t *Tool) makeHttpClient(tokenSource auth.TokenSource) *http.Client {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			RootCAs:    t.caPool,
-			ServerName: serviceHost,
+			RootCAs: t.caPool,
 		},
 	}
 	return &http.Client{
@@ -869,10 +902,6 @@ func (t *Tool) makeHttpClient(tokenSource auth.TokenSource) *http.Client {
 					"Authorization",
 					fmt.Sprintf("Bearer %s", token.Access),
 				)
-				if request.URL.Host == serviceHost {
-					request.Host = request.URL.Host
-					request.URL.Host = serviceAddress
-				}
 				response, err = transport.RoundTrip(request)
 				return
 			},
@@ -1078,6 +1107,13 @@ const userAgent = "fulfillment-it-tool"
 
 // Service host name and address:
 const (
-	serviceHost    = "fulfillment-api.innabox.svc.cluster.local"
-	serviceAddress = "127.0.0.1:8000"
+	keycloakAddr = "keycloak.keycloak.svc.cluster.local:8000"
+	serviceAddr  = "fulfillment-api.innabox.svc.cluster.local:8000"
+)
+
+// Details of the users:
+const (
+	clientUsername = "my-user"
+	clientPassword = "my-password"
+	clientGroup    = "my-group"
 )

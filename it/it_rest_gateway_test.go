@@ -102,7 +102,7 @@ var _ = Describe("REST gateway", func() {
 		})
 
 		// Retrieve the template via REST API:
-		url := fmt.Sprintf("https://localhost:8000/api/fulfillment/v1/cluster_templates/%s", templateID)
+		url := fmt.Sprintf("https://%s/api/fulfillment/v1/cluster_templates/%s", serviceAddr, templateID)
 		request, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		Expect(err).ToNot(HaveOccurred())
 		response, err := tool.UserClient().Do(request)
@@ -181,7 +181,7 @@ var _ = Describe("REST gateway", func() {
 		})
 
 		// Retrieve the template via private REST API:
-		url := fmt.Sprintf("https://localhost:8000/api/private/v1/cluster_templates/%s", templateID)
+		url := fmt.Sprintf("https://%s/api/private/v1/cluster_templates/%s", serviceAddr, templateID)
 		request, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		Expect(err).ToNot(HaveOccurred())
 		response, err := tool.AdminClient().Do(request)
