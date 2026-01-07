@@ -55,7 +55,7 @@ commands:
 
 To run the the gRPC server use a command like this:
 
-    $ ./fulfillment-service  start server \
+    $ ./fulfillment-service  start grpc-server \
     --log-level=debug \
     --log-headers=true \
     --log-bodies=true \
@@ -64,7 +64,7 @@ To run the the gRPC server use a command like this:
 
 To run the the REST gateway use a command like this:
 
-    $ ./fulfillment-service start gateway \
+    $ ./fulfillment-service start rest-gateway \
     --log-level=debug \
     --log-headers=true \
     --log-bodies=true \
