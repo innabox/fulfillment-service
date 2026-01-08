@@ -55,7 +55,7 @@ var _ = Describe("Cluster reconciler", func() {
 		ctx = context.Background()
 
 		// Create the clients:
-		clustersClient = ffv1.NewClustersClient(tool.ClientConn())
+		clustersClient = ffv1.NewClustersClient(tool.UserConn())
 		hostClassesClient = privatev1.NewHostClassesClient(tool.AdminConn())
 		templatesClient = privatev1.NewClusterTemplatesClient(tool.AdminConn())
 

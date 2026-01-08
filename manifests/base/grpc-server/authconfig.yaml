@@ -70,10 +70,15 @@ spec:
         rego: |
           import future.keywords.in
 
-          # Define admin subjects:
-          admin_subjects := {
+          # Define admin service accounts:
+          admin_service_accounts := {
             "system:serviceaccount:innabox:admin",
             "system:serviceaccount:innabox:controller",
+          }
+
+          # Define admin groups:
+          admin_groups := {
+            "admins",
           }
 
           # Get the gRPC method:
@@ -87,9 +92,21 @@ spec:
             input.auth.identity.authnMethod == "jwt"
           }
 
+          # Get the subject groups:
+          subject_groups = input.auth.identity.user.groups {
+            input.auth.identity.authnMethod == "serviceaccount"
+          }
+          subject_groups = input.auth.identity.groups {
+            input.auth.identity.authnMethod == "jwt"
+          }
+
           # Function to check if an account is an admin account:
           is_admin {
-            subject_name in admin_subjects
+            subject_name in admin_service_accounts
+          }
+          is_admin {
+            some group in subject_groups
+            group in admin_groups
           }
 
           # Function to check if an account is a client account:
@@ -124,6 +141,13 @@ spec:
               "/fulfillment.v1.Clusters/GetPasswordViaHttp",
               "/fulfillment.v1.Clusters/List",
               "/fulfillment.v1.Clusters/Update",
+              "/fulfillment.v1.ComputeInstanceTemplates/Get",
+              "/fulfillment.v1.ComputeInstanceTemplates/List",
+              "/fulfillment.v1.ComputeInstances/Create",
+              "/fulfillment.v1.ComputeInstances/Delete",
+              "/fulfillment.v1.ComputeInstances/Get",
+              "/fulfillment.v1.ComputeInstances/List",
+              "/fulfillment.v1.ComputeInstances/Update",
               "/fulfillment.v1.HostClasses/Get",
               "/fulfillment.v1.HostClasses/List",
               "/fulfillment.v1.HostPools/Create",
@@ -136,13 +160,6 @@ spec:
               "/fulfillment.v1.Hosts/Get",
               "/fulfillment.v1.Hosts/List",
               "/fulfillment.v1.Hosts/Update",
-              "/fulfillment.v1.ComputeInstanceTemplates/Get",
-              "/fulfillment.v1.ComputeInstanceTemplates/List",
-              "/fulfillment.v1.ComputeInstances/Create",
-              "/fulfillment.v1.ComputeInstances/Delete",
-              "/fulfillment.v1.ComputeInstances/Get",
-              "/fulfillment.v1.ComputeInstances/List",
-              "/fulfillment.v1.ComputeInstances/Update",
             }
           }
 

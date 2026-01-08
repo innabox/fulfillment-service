@@ -397,4 +397,51 @@ var _ = Describe("External authentication and authorization interceptor", func()
 			Expect(status.Message()).To(Equal("failed to check permissions"))
 		})
 	})
+
+	Describe("Stream server interceptor", func() {
+		var interceptor *GrpcExternalAuthInterceptor
+
+		BeforeEach(func() {
+			var err error
+			interceptor, err = NewGrpcExternalAuthInterceptor().
+				SetLogger(logger).
+				SetAddress(address).
+				SetCaPool(caPool).
+				AddPublicMethodRegex(`^/public\..*$`).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		// makeDeniedResponse creates a denied response.
+		var makeDeniedResponse = func() *envoyauthv3.CheckResponse {
+			return &envoyauthv3.CheckResponse{
+				Status: &status.Status{
+					Code: int32(grpccodes.PermissionDenied),
+				},
+			}
+		}
+
+		It("Should deny when auth fails", func() {
+			mock.Func = func(ctx context.Context,
+				request *envoyauthv3.CheckRequest) (response *envoyauthv3.CheckResponse, err error) {
+				response = makeDeniedResponse()
+				return
+			}
+			handler := func(server any, stream grpc.ServerStream) error {
+				return nil
+			}
+			info := &grpc.StreamServerInfo{
+				FullMethod: "/private.v1.Service/StreamMethod",
+			}
+			stream := &mockServerStream{
+				ctx: ctx,
+			}
+			err := interceptor.StreamServer(nil, stream, info, handler)
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
+			Expect(status.Message()).To(Equal("permission denied"))
+		})
+	})
 })

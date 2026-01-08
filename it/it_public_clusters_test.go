@@ -50,7 +50,7 @@ var _ = Describe("Public clusters", func() {
 		ctx = context.Background()
 
 		// Create the clients:
-		clustersClient = ffv1.NewClustersClient(tool.ClientConn())
+		clustersClient = ffv1.NewClustersClient(tool.UserConn())
 		hostClassesClient = privatev1.NewHostClassesClient(tool.AdminConn())
 		templatesClient = privatev1.NewClusterTemplatesClient(tool.AdminConn())
 
@@ -767,6 +767,6 @@ var _ = Describe("Public clusters", func() {
 		Expect(object).ToNot(BeNil())
 		metadata := object.GetMetadata()
 		Expect(metadata).ToNot(BeNil())
-		Expect(metadata.GetCreators()).To(ConsistOf("my-user"))
+		Expect(metadata.GetCreators()).To(ConsistOf(userUsername))
 	})
 })

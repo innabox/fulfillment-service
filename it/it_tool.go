@@ -71,22 +71,24 @@ type ToolBuilder struct {
 // Tool is an instance of the integration test tool that sets up the test environment. Don't create instances of this
 // directly, use the NewTool function instead.
 type Tool struct {
-	logger         *slog.Logger
-	projectDir     string
-	crdFiles       []string
-	keepKind       bool
-	keepService    bool
-	deploymentMode string
-	tmpDir         string
-	cluster        *testing.Kind
-	kubeClient     crclient.Client
-	kubeClientSet  *kubernetes.Clientset
-	caPool         *x509.CertPool
-	kcFile         string
-	clientConn     *grpc.ClientConn
-	adminConn      *grpc.ClientConn
-	userClient     *http.Client
-	adminClient    *http.Client
+	logger          *slog.Logger
+	projectDir      string
+	crdFiles        []string
+	keepKind        bool
+	keepService     bool
+	deploymentMode  string
+	tmpDir          string
+	cluster         *testing.Kind
+	kubeClient      crclient.Client
+	kubeClientSet   *kubernetes.Clientset
+	caPool          *x509.CertPool
+	kcFile          string
+	emergencyConn   *grpc.ClientConn
+	adminConn       *grpc.ClientConn
+	userConn        *grpc.ClientConn
+	emergencyClient *http.Client
+	adminClient     *http.Client
+	userClient      *http.Client
 }
 
 // NewTool creates a builder that can then be used to configure and create an instance of the integration test tool.
@@ -540,25 +542,47 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 		},
 		"groups": []any{
 			map[string]any{
-				"name": clientGroup,
-				"path": fmt.Sprintf("/%s", clientGroup),
+				"name": adminGroup,
+				"path": fmt.Sprintf("/%s", adminGroup),
+			},
+			map[string]any{
+				"name": regularGroup,
+				"path": fmt.Sprintf("/%s", regularGroup),
 			},
 		},
 		"users": []any{
 			map[string]any{
-				"username":      clientUsername,
+				"username":      adminUsername,
 				"enabled":       true,
-				"firstName":     "My",
-				"lastName":      "User",
-				"email":         fmt.Sprintf("%s@example.com", clientUsername),
+				"firstName":     "Ms.",
+				"lastName":      "Admin",
+				"email":         fmt.Sprintf("%s@example.com", adminUsername),
 				"emailVerified": true,
 				"groups": []string{
-					fmt.Sprintf("/%s", clientGroup),
+					fmt.Sprintf("/%s", adminGroup),
 				},
 				"credentials": []any{
 					map[string]any{
 						"type":      "password",
-						"value":     clientPassword,
+						"value":     adminPassword,
+						"temporary": false,
+					},
+				},
+			},
+			map[string]any{
+				"username":      userUsername,
+				"enabled":       true,
+				"firstName":     "Mr.",
+				"lastName":      "User",
+				"email":         fmt.Sprintf("%s@example.com", userUsername),
+				"emailVerified": true,
+				"groups": []string{
+					fmt.Sprintf("/%s", regularGroup),
+				},
+				"credentials": []any{
+					map[string]any{
+						"type":      "password",
+						"value":     regularPassword,
 						"temporary": false,
 					},
 				},
@@ -616,6 +640,46 @@ func (t *Tool) deployService(ctx context.Context, imageRef string) error {
 }
 
 func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error {
+	// Prepare the values:
+	valuesData := map[string]any{
+		"variant": "kind",
+		"log": map[string]any{
+			"level":   "debug",
+			"headers": true,
+			"bodies":  true,
+		},
+		"images": map[string]any{
+			"service": imageRef,
+		},
+		"certs": map[string]any{
+			"issuerRef": map[string]any{
+				"kind": "ClusterIssuer",
+				"name": "default-ca",
+			},
+			"caBundle": map[string]any{
+				"configMap": "ca-bundle",
+			},
+		},
+		"auth": map[string]any{
+			"issuerUrl": fmt.Sprintf("https://%s/realms/innabox", keycloakAddr),
+		},
+	}
+	valuesBytes, err := yaml.Marshal(valuesData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal values to YAML: %w", err)
+	}
+	valuesFile := filepath.Join(t.tmpDir, "service-values.yaml")
+	err = os.WriteFile(valuesFile, valuesBytes, 0400)
+	if err != nil {
+		return fmt.Errorf("failed to write values to file: %w", err)
+	}
+	t.logger.DebugContext(
+		ctx,
+		"Service chart values",
+		slog.Any("values", valuesData),
+	)
+
+	// Deploy the service:
 	t.logger.DebugContext(ctx, "Deploying service with Helm")
 	installCmd, err := testing.NewCommand().
 		SetLogger(t.logger).
@@ -630,15 +694,7 @@ func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error
 			"--kubeconfig", t.kcFile,
 			"--namespace", "innabox",
 			"--create-namespace",
-			"--set", "log.level=debug",
-			"--set", "log.headers=true",
-			"--set", "log.bodies=true",
-			"--set", "variant=kind",
-			"--set", fmt.Sprintf("images.service=%s", imageRef),
-			"--set", "certs.issuerRef.kind=ClusterIssuer",
-			"--set", "certs.issuerRef.name=default-ca",
-			"--set", "certs.caBundle.configMap=ca-bundle",
-			"--set", fmt.Sprintf("auth.issuerUrl=https://%s/realms/innabox", keycloakAddr),
+			"--values", valuesFile,
 			"--wait",
 		).
 		Build()
@@ -801,17 +857,21 @@ func (t *Tool) undeployServiceWithKustomize(ctx context.Context) error {
 
 func (t *Tool) createClients(ctx context.Context) error {
 	// Create token sources:
-	clientTokenSource, err := t.makeKeycloakTokenSource(ctx, clientUsername, clientPassword)
+	emergencyTokenSource, err := t.makeKubernetesTokenSource(ctx, emergencyServiceAccount)
 	if err != nil {
 		return err
 	}
-	adminTokenSource, err := t.makeKubernetesTokenSource(ctx, "admin")
+	adminTokenSource, err := t.makeKeycloakTokenSource(ctx, adminUsername, adminPassword)
+	if err != nil {
+		return err
+	}
+	userTokenSource, err := t.makeKeycloakTokenSource(ctx, userUsername, regularPassword)
 	if err != nil {
 		return err
 	}
 
 	// Create gRPC clients:
-	t.clientConn, err = t.makeGrpcConn(clientTokenSource)
+	t.emergencyConn, err = t.makeGrpcConn(emergencyTokenSource)
 	if err != nil {
 		return err
 	}
@@ -819,10 +879,15 @@ func (t *Tool) createClients(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	t.userConn, err = t.makeGrpcConn(userTokenSource)
+	if err != nil {
+		return err
+	}
 
 	// Create HTTP clients:
-	t.userClient = t.makeHttpClient(clientTokenSource)
+	t.emergencyClient = t.makeHttpClient(emergencyTokenSource)
 	t.adminClient = t.makeHttpClient(adminTokenSource)
+	t.userClient = t.makeHttpClient(userTokenSource)
 
 	return nil
 }
@@ -996,16 +1061,22 @@ func (t *Tool) Cleanup(ctx context.Context) error {
 	var errs []error
 
 	// Close gRPC connections:
-	if t.clientConn != nil {
-		err := t.clientConn.Close()
+	if t.emergencyConn != nil {
+		err := t.emergencyConn.Close()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to close client connection: %w", err))
+			errs = append(errs, fmt.Errorf("failed to close emergency adminstrator connection: %w", err))
 		}
 	}
 	if t.adminConn != nil {
 		err := t.adminConn.Close()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to close admin connection: %w", err))
+			errs = append(errs, fmt.Errorf("failed to close administrator connection: %w", err))
+		}
+	}
+	if t.userConn != nil {
+		err := t.userConn.Close()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to close regular connection: %w", err))
 		}
 	}
 
@@ -1062,24 +1133,34 @@ func (t *Tool) KubeClientSet() *kubernetes.Clientset {
 	return t.kubeClientSet
 }
 
-// ClientConn returns the gRPC client connection for regular clients.
-func (t *Tool) ClientConn() *grpc.ClientConn {
-	return t.clientConn
+// EmergencyConn returns the gRPC client connection for the emergency administration service account.
+func (t *Tool) EmergencyConn() *grpc.ClientConn {
+	return t.emergencyConn
 }
 
-// AdminConn returns the gRPC client connection for admin clients.
+// AdminConn returns the gRPC client connection for admnistration user.
 func (t *Tool) AdminConn() *grpc.ClientConn {
 	return t.adminConn
 }
 
-// UserClient returns the HTTP client for regular users.
-func (t *Tool) UserClient() *http.Client {
-	return t.userClient
+// UserConn returns the gRPC client connection for the regular user.
+func (t *Tool) UserConn() *grpc.ClientConn {
+	return t.userConn
 }
 
-// AdminClient returns the HTTP client for admin users.
+// EmergencyClient returns the HTTP client for the emergency administration service account.
+func (t *Tool) EmergencyClient() *http.Client {
+	return t.emergencyClient
+}
+
+// AdminClient returns the HTTP client for the administrator user.
 func (t *Tool) AdminClient() *http.Client {
 	return t.adminClient
+}
+
+// UserClient returns the HTTP client for the regular user.
+func (t *Tool) UserClient() *http.Client {
+	return t.userClient
 }
 
 // ProjectDir returns the project directory.
@@ -1111,9 +1192,19 @@ const (
 	serviceAddr  = "fulfillment-api.innabox.svc.cluster.local:8000"
 )
 
-// Details of the users:
+// Name of the Kubernetes service account that is used for emergency administration access.
+const emergencyServiceAccount = "admin"
+
+// Details of the Keycloak administrator user:
 const (
-	clientUsername = "my-user"
-	clientPassword = "my-password"
-	clientGroup    = "my-group"
+	adminUsername = "admin"
+	adminPassword = "password"
+	adminGroup    = "admins"
+)
+
+// Details of the Keycloak regular user:
+const (
+	userUsername    = "user"
+	regularPassword = "password"
+	regularGroup    = "users"
 )
