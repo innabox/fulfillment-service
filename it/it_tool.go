@@ -542,12 +542,12 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 		},
 		"groups": []any{
 			map[string]any{
-				"name": adminGroup,
-				"path": fmt.Sprintf("/%s", adminGroup),
+				"name": adminsGroup,
+				"path": fmt.Sprintf("/%s", adminsGroup),
 			},
 			map[string]any{
-				"name": regularGroup,
-				"path": fmt.Sprintf("/%s", regularGroup),
+				"name": usersGroup,
+				"path": fmt.Sprintf("/%s", usersGroup),
 			},
 		},
 		"users": []any{
@@ -559,12 +559,12 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 				"email":         fmt.Sprintf("%s@example.com", adminUsername),
 				"emailVerified": true,
 				"groups": []string{
-					fmt.Sprintf("/%s", adminGroup),
+					fmt.Sprintf("/%s", adminsGroup),
 				},
 				"credentials": []any{
 					map[string]any{
 						"type":      "password",
-						"value":     adminPassword,
+						"value":     adminsPassword,
 						"temporary": false,
 					},
 				},
@@ -577,12 +577,12 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 				"email":         fmt.Sprintf("%s@example.com", userUsername),
 				"emailVerified": true,
 				"groups": []string{
-					fmt.Sprintf("/%s", regularGroup),
+					fmt.Sprintf("/%s", usersGroup),
 				},
 				"credentials": []any{
 					map[string]any{
 						"type":      "password",
-						"value":     regularPassword,
+						"value":     usersPassword,
 						"temporary": false,
 					},
 				},
@@ -861,11 +861,11 @@ func (t *Tool) createClients(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	adminTokenSource, err := t.makeKeycloakTokenSource(ctx, adminUsername, adminPassword)
+	adminTokenSource, err := t.makeKeycloakTokenSource(ctx, adminUsername, adminsPassword)
 	if err != nil {
 		return err
 	}
-	userTokenSource, err := t.makeKeycloakTokenSource(ctx, userUsername, regularPassword)
+	userTokenSource, err := t.makeKeycloakTokenSource(ctx, userUsername, usersPassword)
 	if err != nil {
 		return err
 	}
@@ -1197,14 +1197,14 @@ const emergencyServiceAccount = "admin"
 
 // Details of the Keycloak administrator user:
 const (
-	adminUsername = "admin"
-	adminPassword = "password"
-	adminGroup    = "admins"
+	adminUsername  = "admin"
+	adminsPassword = "password"
+	adminsGroup    = "admins"
 )
 
 // Details of the Keycloak regular user:
 const (
-	userUsername    = "user"
-	regularPassword = "password"
-	regularGroup    = "users"
+	userUsername  = "user"
+	usersPassword = "password"
+	usersGroup    = "users"
 )
