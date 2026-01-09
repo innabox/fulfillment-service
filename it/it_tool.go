@@ -57,6 +57,13 @@ const (
 	deployModeKustomize = "kustomize"
 )
 
+var ServiceAccountTenants = map[string]string{
+	"alice": "a",
+	"bob":   "a",
+	"carol": "b",
+	"dave":  "b",
+}
+
 // ToolBuilder contains the data and logic needed to create an instance of the integration test tool. Don't create
 // instances of this directly, use the NewTool function instead.
 type ToolBuilder struct {
@@ -301,6 +308,12 @@ func (t *Tool) Setup(ctx context.Context) error {
 
 	// Create the hub namespace:
 	err = t.createHubNamespace(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Create the test user service accounts:
+	err = t.createUserServiceAccounts(ctx)
 	if err != nil {
 		return err
 	}
@@ -857,7 +870,7 @@ func (t *Tool) undeployServiceWithKustomize(ctx context.Context) error {
 
 func (t *Tool) createClients(ctx context.Context) error {
 	// Create token sources:
-	emergencyTokenSource, err := t.makeKubernetesTokenSource(ctx, emergencyServiceAccount)
+	emergencyTokenSource, err := t.makeKubernetesTokenSource(ctx, emergencyServiceAccount, "innabox")
 	if err != nil {
 		return err
 	}
@@ -892,8 +905,37 @@ func (t *Tool) createClients(ctx context.Context) error {
 	return nil
 }
 
-func (t *Tool) makeKubernetesTokenSource(ctx context.Context, sa string) (result auth.TokenSource, err error) {
-	response, err := t.kubeClientSet.CoreV1().ServiceAccounts("innabox").CreateToken(
+func (t *Tool) createUserServiceAccounts(ctx context.Context) error {
+	var tenantNamespaces []string
+	for user, group := range ServiceAccountTenants {
+		if !slices.Contains(tenantNamespaces, group) {
+			err := t.kubeClient.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: group,
+				},
+			})
+
+			if err != nil && !apierrors.IsAlreadyExists(err) {
+				return fmt.Errorf("failed to create namespace '%s': %w", group, err)
+			}
+
+			tenantNamespaces = append(tenantNamespaces, group)
+		}
+		err := t.kubeClient.Create(ctx, &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      user,
+				Namespace: group,
+			},
+		})
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create service account '%s': %w", user, err)
+		}
+	}
+	return nil
+}
+
+func (t *Tool) makeKubernetesTokenSource(ctx context.Context, sa, namespace string) (result auth.TokenSource, err error) {
+	response, err := t.kubeClientSet.CoreV1().ServiceAccounts(namespace).CreateToken(
 		ctx,
 		sa,
 		&authenticationv1.TokenRequest{
