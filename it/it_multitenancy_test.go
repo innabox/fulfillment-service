@@ -11,6 +11,8 @@ import (
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"google.golang.org/grpc"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -246,6 +248,70 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 					}
 				}
 			})
+
+			It("assigned the correct tenant after creation", func() {
+				for tenant, clusters := range tenantClusterMapping {
+					for _, cluster := range clusters {
+						clustersClient := privatev1.NewClustersClient(tool.AdminConn())
+
+						clusterResponse, err := clustersClient.Get(ctx, privatev1.ClustersGetRequest_builder{
+							Id: cluster,
+						}.Build())
+						Expect(err).ToNot(HaveOccurred())
+						Expect(len(clusterResponse.GetObject().Metadata.Tenants)).To(Equal(1))
+						Expect(clusterResponse.GetObject().Metadata.Tenants[0]).To(Equal(tenant))
+					}
+				}
+			})
+
+			DescribeTable(
+				"cross-tenant",
+				func(operation func(client ffv1.ClustersClient, clusterID string) error) {
+					for clusterTenant, clusters := range tenantClusterMapping {
+						for user, userTenant := range ServiceAccountTenants {
+							// Skip if cluster is owned by the same tenant
+							if clusterTenant == userTenant {
+								continue
+							}
+
+							tokenSource, err := tool.makeKubernetesTokenSource(ctx, user, userTenant)
+							Expect(err).ToNot(HaveOccurred())
+							conn, err := tool.makeGrpcConn(tokenSource)
+							Expect(err).ToNot(HaveOccurred())
+
+							clustersClient := ffv1.NewClustersClient(conn)
+
+							for _, cluster := range clusters {
+								err := operation(clustersClient, cluster)
+								Expect(err).To(HaveOccurred())
+								status, ok := grpcstatus.FromError(err)
+								Expect(ok).To(BeTrue())
+								Expect(status.Code()).To(Equal(grpccodes.NotFound))
+							}
+						}
+					}
+
+				},
+				Entry("deletion is not allowed", func(client ffv1.ClustersClient, clusterID string) error {
+					_, err := client.Delete(ctx, ffv1.ClustersDeleteRequest_builder{
+						Id: clusterID,
+					}.Build())
+
+					return err
+				}),
+				Entry("update is not allowed", func(client ffv1.ClustersClient, clusterID string) error {
+					_, err := client.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+						Object: ffv1.Cluster_builder{
+							Id: clusterID,
+							Spec: ffv1.ClusterSpec_builder{
+								Template: "cross-tenant-update-template",
+							}.Build(),
+						}.Build(),
+					}.Build())
+
+					return err
+				}),
+			)
 		})
 
 		Describe("host pool resources", func() {
@@ -327,13 +393,78 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 					}
 				}
 			})
+
+			It("assigned the correct tenant after creation", func() {
+				for tenant, hostPools := range tenantHostPoolMapping {
+					for _, hostPool := range hostPools {
+						hostPoolsClient := privatev1.NewHostPoolsClient(tool.AdminConn())
+
+						hostPoolResponse, err := hostPoolsClient.Get(ctx, privatev1.HostPoolsGetRequest_builder{
+							Id: hostPool,
+						}.Build())
+						Expect(err).ToNot(HaveOccurred())
+						Expect(len(hostPoolResponse.GetObject().Metadata.Tenants)).To(Equal(1))
+						Expect(hostPoolResponse.GetObject().Metadata.Tenants[0]).To(Equal(tenant))
+					}
+				}
+			})
+
+			DescribeTable(
+				"cross-tenant",
+				func(operation func(client ffv1.HostPoolsClient, hostPoolID string) error) {
+					for hostPoolTenant, hostPools := range tenantHostPoolMapping {
+						for user, userTenant := range ServiceAccountTenants {
+							// Skip if host pool is owned by the same tenant
+							if hostPoolTenant == userTenant {
+								continue
+							}
+
+							tokenSource, err := tool.makeKubernetesTokenSource(ctx, user, userTenant)
+							Expect(err).ToNot(HaveOccurred())
+							conn, err := tool.makeGrpcConn(tokenSource)
+							Expect(err).ToNot(HaveOccurred())
+
+							hostPoolsClient := ffv1.NewHostPoolsClient(conn)
+
+							for _, hostPool := range hostPools {
+								err := operation(hostPoolsClient, hostPool)
+								Expect(err).To(HaveOccurred())
+								status, ok := grpcstatus.FromError(err)
+								Expect(ok).To(BeTrue())
+								Expect(status.Code()).To(Equal(grpccodes.NotFound))
+							}
+						}
+					}
+
+				},
+				Entry("deletion is not allowed", func(client ffv1.HostPoolsClient, hostPoolID string) error {
+					_, err := client.Delete(ctx, ffv1.HostPoolsDeleteRequest_builder{
+						Id: hostPoolID,
+					}.Build())
+
+					return err
+				}),
+				Entry("update is not allowed", func(client ffv1.HostPoolsClient, hostPoolID string) error {
+					_, err := client.Update(ctx, ffv1.HostPoolsUpdateRequest_builder{
+						Object: ffv1.HostPool_builder{
+							Id: hostPoolID,
+							Spec: ffv1.HostPoolSpec_builder{
+								HostSets: map[string]*ffv1.HostPoolHostSet{
+									"my-host-set": ffv1.HostPoolHostSet_builder{
+										HostClass: "cross-tenant-update-host-class",
+										Size:      3,
+									}.Build(),
+								},
+							}.Build(),
+						}.Build(),
+					}.Build())
+
+					return err
+				}),
+			)
 		})
 	})
 })
-
-func getServiceAccountTenants() map[string]string {
-	return ServiceAccountTenants
-}
 
 func listClusters(ctx context.Context, conn *grpc.ClientConn) *ffv1.ClustersListResponse {
 	clustersClient := ffv1.NewClustersClient(conn)
