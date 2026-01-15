@@ -64,6 +64,12 @@ var ServiceAccountTenants = map[string]string{
 	"dave":  "b",
 }
 
+var OIDCTenants = map[string][]string{
+	"adam":    {"engineering"},
+	"ben":     {"engineering", "sales"},
+	"charles": {"sales"},
+}
+
 // ToolBuilder contains the data and logic needed to create an instance of the integration test tool. Don't create
 // instances of this directly, use the NewTool function instead.
 type ToolBuilder struct {
@@ -602,6 +608,42 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 			},
 		},
 	}
+
+	// Add the OIDC tenants
+	groupsAdded := []string{}
+	for oidcUser, oidcGroups := range OIDCTenants {
+		newUser := map[string]any{
+			"username":      oidcUser,
+			"enabled":       true,
+			"firstName":     oidcUser,
+			"lastName":      oidcUser,
+			"email":         fmt.Sprintf("%s@example.com", oidcUser),
+			"emailVerified": true,
+			"credentials": []any{
+				map[string]any{
+					"type":      "password",
+					"value":     usersPassword,
+					"temporary": false,
+				},
+			},
+			"groups": []string{},
+		}
+
+		for _, oidcGroup := range oidcGroups {
+			newUser["groups"] = append(newUser["groups"].([]string), fmt.Sprintf("/%s", oidcGroup))
+
+			if !slices.Contains(groupsAdded, oidcGroup) {
+				valuesData["groups"] = append(valuesData["groups"].([]any), map[string]any{
+					"name": oidcGroup,
+					"path": fmt.Sprintf("/%s", oidcGroup),
+				})
+				groupsAdded = append(groupsAdded, oidcGroup)
+			}
+		}
+
+		valuesData["users"] = append(valuesData["users"].([]any), newUser)
+	}
+
 	valuesBytes, err := yaml.Marshal(valuesData)
 	if err != nil {
 		return fmt.Errorf("failed to marshal values to YAML: %w", err)

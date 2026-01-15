@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/innabox/fulfillment-common/testing"
@@ -146,7 +147,7 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 
 				// Create host class for testing
 				hostClassesClient := privatev1.NewHostClassesClient(tool.AdminConn())
-				hostClassId := "basic-isolation-hostclass"
+				hostClassId := "basic-sa-isolation-hostclass"
 				_, err := hostClassesClient.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 					Object: privatev1.HostClass_builder{
 						Id: hostClassId,
@@ -161,7 +162,7 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 				})
 
 				// Create cluster template for testing
-				templateId := "basic-isolation-template"
+				templateId := "basic-sa-isolation-template"
 				templatesClient := privatev1.NewClusterTemplatesClient(tool.adminConn)
 				_, err = templatesClient.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
 					Object: privatev1.ClusterTemplate_builder{
@@ -464,6 +465,255 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 			)
 		})
 	})
+
+	Describe("OIDC tenants", func() {
+		var (
+			tenantUserMapping map[string][]string
+			ctx               context.Context
+		)
+
+		BeforeAll(func() {
+			ctx = context.Background()
+
+			// Create map to track which users belong to which tenants
+			tenantUserMapping = make(map[string][]string)
+
+			Expect(len(OIDCTenants)).To(BeNumerically(">", 1))
+
+			// Populate map to track which users belong to which tenants
+			for user, tenants := range OIDCTenants {
+				for _, tenant := range tenants {
+					tenantUserMapping[tenant] = append(tenantUserMapping[tenant], user)
+				}
+			}
+		})
+
+		Describe("cluster resources", func() {
+			var (
+				tenantClusterMapping map[string][]string
+				clusterTenantMapping map[string][]string
+			)
+
+			BeforeAll(func() {
+				// Create map to track which clusters belong to which tenants
+				tenantClusterMapping = make(map[string][]string)
+
+				// Create map to track which clusters can be seen by which tenants
+				clusterTenantMapping = make(map[string][]string)
+
+				// Create host class for testing
+				hostClassId := "basic-oidc-isolation-hostclass"
+				hostClassesClient := privatev1.NewHostClassesClient(tool.adminConn)
+				_, err := hostClassesClient.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Id: hostClassId,
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				DeferCleanup(func() {
+					_, err := hostClassesClient.Delete(ctx, privatev1.HostClassesDeleteRequest_builder{
+						Id: hostClassId,
+					}.Build())
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				// Create cluster template for testing
+				templateId := "basic-oidc-isolation-template"
+				templatesClient := privatev1.NewClusterTemplatesClient(tool.adminConn)
+				_, err = templatesClient.Create(ctx, privatev1.ClusterTemplatesCreateRequest_builder{
+					Object: privatev1.ClusterTemplate_builder{
+						Id: templateId,
+						NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
+							"my-node-set": privatev1.ClusterTemplateNodeSet_builder{
+								HostClass: hostClassId,
+								Size:      3,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				DeferCleanup(func() {
+					_, err := templatesClient.Delete(ctx, privatev1.ClusterTemplatesDeleteRequest_builder{
+						Id: templateId,
+					}.Build())
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				// Create a cluster object for each user
+				for user, tenants := range OIDCTenants {
+					tokenSource, err := tool.makeKeycloakTokenSource(ctx, user, usersPassword)
+					Expect(err).ToNot(HaveOccurred())
+					conn, err := tool.makeGrpcConn(tokenSource)
+					Expect(err).ToNot(HaveOccurred())
+
+					clustersClient := ffv1.NewClustersClient(conn)
+					createResponse, err := clustersClient.Create(ctx, ffv1.ClustersCreateRequest_builder{
+						Object: ffv1.Cluster_builder{
+							Spec: ffv1.ClusterSpec_builder{
+								Template: templateId,
+							}.Build(),
+						}.Build(),
+					}.Build())
+					Expect(err).ToNot(HaveOccurred())
+					clusterObject := createResponse.GetObject()
+
+					DeferCleanup(func() { deleteCluster(ctx, clusterObject.GetId()) })
+
+					// Populate map to track which clusters belong to which tenants
+					for _, tenant := range tenants {
+						tenantClusterMapping[tenant] = append(tenantClusterMapping[tenant], clusterObject.GetId())
+						clusterTenantMapping[clusterObject.GetId()] = append(clusterTenantMapping[clusterObject.GetId()], tenant)
+					}
+				}
+			})
+			It("shared within the same tenant", func() {
+				// List clusters for each user
+				for user, tenants := range OIDCTenants {
+					tokenSource, err := tool.makeKeycloakTokenSource(ctx, user, usersPassword)
+					Expect(err).ToNot(HaveOccurred())
+					conn, err := tool.makeGrpcConn(tokenSource)
+					Expect(err).ToNot(HaveOccurred())
+
+					response := listClusters(ctx, conn)
+					Expect(response).ToNot(BeNil())
+
+					Expect(len(response.Items)).To(Equal(calculateResponseSize(tenantUserMapping, tenants)))
+
+					// Check that each cluster appears under expected tenant
+					for _, cluster := range response.GetItems() {
+						Expect(checkTenantMembership(tenantClusterMapping, tenants, cluster.GetId())).To(BeTrue())
+					}
+				}
+			})
+
+			It("isolated between tenants", func() {
+				// List clusters for each user
+				for user, tenants := range OIDCTenants {
+					tokenSource, err := tool.makeKeycloakTokenSource(ctx, user, usersPassword)
+					Expect(err).ToNot(HaveOccurred())
+					conn, err := tool.makeGrpcConn(tokenSource)
+					Expect(err).ToNot(HaveOccurred())
+
+					response := listClusters(ctx, conn)
+					Expect(response).ToNot(BeNil())
+					Expect(len(response.Items)).To(Equal(calculateResponseSize(tenantUserMapping, tenants)))
+
+					// Check that each cluster is isolated between tenants
+					for _, cluster := range response.GetItems() {
+						clusterId := cluster.GetId()
+						expectedTenants := clusterTenantMapping[clusterId]
+
+						// For each tenant, verify correct isolation
+						for tenant, tenantClusters := range tenantClusterMapping {
+							if slices.Contains(expectedTenants, tenant) {
+								// Tenant should have access - verify cluster is in their list
+								Expect(tenantClusters).To(ContainElement(clusterId))
+							} else {
+								// Tenant should NOT have access - verify cluster is isolated
+								Expect(tenantClusters).ToNot(ContainElement(clusterId))
+							}
+						}
+					}
+				}
+			})
+		})
+
+		Describe("host pool resources", func() {
+			var (
+				tenantHostPoolMapping map[string][]string
+				hostPoolTenantMapping map[string][]string
+			)
+
+			BeforeAll(func() {
+				// Create map to track which host pools belong to which tenants
+				tenantHostPoolMapping = make(map[string][]string)
+
+				// Create map to track which host pools can be seen by which tenants
+				hostPoolTenantMapping = make(map[string][]string)
+
+				// Create a host pool for each user
+				for user, tenants := range OIDCTenants {
+					tokenSource, err := tool.makeKeycloakTokenSource(ctx, user, usersPassword)
+					Expect(err).ToNot(HaveOccurred())
+					conn, err := tool.makeGrpcConn(tokenSource)
+					Expect(err).ToNot(HaveOccurred())
+
+					hostPoolsClient := ffv1.NewHostPoolsClient(conn)
+					createResponse, err := hostPoolsClient.Create(ctx, ffv1.HostPoolsCreateRequest_builder{
+						Object: ffv1.HostPool_builder{
+							Spec: ffv1.HostPoolSpec_builder{
+								HostSets: map[string]*ffv1.HostPoolHostSet{
+									"my-host-set": ffv1.HostPoolHostSet_builder{
+										HostClass: "blah",
+										Size:      3,
+									}.Build(),
+								},
+							}.Build(),
+						}.Build(),
+					}.Build())
+					Expect(err).ToNot(HaveOccurred())
+					hostPoolObject := createResponse.GetObject()
+					DeferCleanup(func() { deleteHostPool(ctx, hostPoolObject.GetId()) })
+
+					// Populate map to track which host pools belong to which tenants
+					for _, tenant := range tenants {
+						tenantHostPoolMapping[tenant] = append(tenantHostPoolMapping[tenant], hostPoolObject.GetId())
+						hostPoolTenantMapping[hostPoolObject.GetId()] = append(hostPoolTenantMapping[hostPoolObject.GetId()], tenant)
+					}
+				}
+			})
+			It("shared within the same tenant", func() {
+				// List host pools for each user
+				for user, tenants := range OIDCTenants {
+					tokenSource, err := tool.makeKeycloakTokenSource(ctx, user, usersPassword)
+					Expect(err).ToNot(HaveOccurred())
+					conn, err := tool.makeGrpcConn(tokenSource)
+					Expect(err).ToNot(HaveOccurred())
+
+					response := listHostPools(ctx, conn)
+					Expect(response).ToNot(BeNil())
+
+					Expect(len(response.Items)).To(Equal(calculateResponseSize(tenantUserMapping, tenants)))
+
+					// Check that each host pool appears under expected tenant
+					for _, hostPool := range response.GetItems() {
+						Expect(checkTenantMembership(tenantHostPoolMapping, tenants, hostPool.GetId())).To(BeTrue())
+					}
+				}
+			})
+
+			It("isolated between tenants", func() {
+				// List host pools for each user
+				for user, tenants := range OIDCTenants {
+					tokenSource, err := tool.makeKeycloakTokenSource(ctx, user, usersPassword)
+					Expect(err).ToNot(HaveOccurred())
+					conn, err := tool.makeGrpcConn(tokenSource)
+					Expect(err).ToNot(HaveOccurred())
+
+					response := listHostPools(ctx, conn)
+					Expect(response).ToNot(BeNil())
+					Expect(len(response.Items)).To(Equal(calculateResponseSize(tenantUserMapping, tenants)))
+
+					// Check that each host pool is isolated between tenants
+					for _, hostPool := range response.GetItems() {
+						hostPoolId := hostPool.GetId()
+						expectedTenants := hostPoolTenantMapping[hostPoolId]
+
+						// For each tenant, verify correct isolation
+						for tenant, tenantHostPools := range tenantHostPoolMapping {
+							if slices.Contains(expectedTenants, tenant) {
+								// Tenant should have access - verify host pool is in their list
+								Expect(tenantHostPools).To(ContainElement(hostPoolId))
+							} else {
+								// Tenant should NOT have access - verify host pool is isolated
+								Expect(tenantHostPools).ToNot(ContainElement(hostPoolId))
+							}
+						}
+					}
+				}
+			})
+		})
+	})
 })
 
 func listClusters(ctx context.Context, conn *grpc.ClientConn) *ffv1.ClustersListResponse {
@@ -496,4 +746,28 @@ func deleteHostPool(ctx context.Context, hostPoolId string) error {
 		Id: hostPoolId,
 	}.Build())
 	return err
+}
+
+// calculateResponseSize calculates the response size based on a tenant-resource mapping and a user's tenant membership
+// The response size is the number of the distinct objects visible by all of the user's tenants
+func calculateResponseSize(mapping map[string][]string, tenants []string) int {
+	seenResources := make(map[string]bool)
+	for _, tenant := range tenants {
+		for _, resource := range mapping[tenant] {
+			seenResources[resource] = true
+		}
+	}
+	return len(seenResources)
+}
+
+// checkTenantMembership checks if a resource is visible to a user based on their tenant membership
+// The resource is visible if it is seen by any of the user's tenants
+func checkTenantMembership(tenantResourceMapping map[string][]string, tenants []string, resourceId string) bool {
+	for _, tenant := range tenants {
+		objects := tenantResourceMapping[tenant]
+		if slices.Contains(objects, resourceId) {
+			return true
+		}
+	}
+	return false
 }
