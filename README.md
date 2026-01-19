@@ -289,3 +289,6 @@ To clean up a preserved cluster manually:
 ```bash
 $ kind delete cluster --name fulfillment-service-it
 ```
+
+
+NO-OP
