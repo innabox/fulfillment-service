@@ -70,7 +70,7 @@ spec:
             - /usr/local/bin/fulfillment-service
             - probe
             - grpc-server
-            - --ca-file=/etc/fulfillment-controller/tls/ca.crt
+            - --ca-file=/etc/fulfillment-controller/tls/cas
             - --grpc-server-address=localhost:8000
             - --grpc-server-timeout=1s
           initialDelaySeconds: 5
