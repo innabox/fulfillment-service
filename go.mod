@@ -107,7 +107,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.22.0
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.1
-	github.com/google/cel-go v0.26.0
+	github.com/google/cel-go v0.26.1
 	github.com/gorilla/handlers v1.5.2 // indirect
 	github.com/itchyny/gojq v0.12.17
 	github.com/jackc/pgx/v5 v5.7.6
