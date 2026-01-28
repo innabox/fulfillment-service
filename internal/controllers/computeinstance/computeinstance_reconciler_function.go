@@ -24,6 +24,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -204,6 +205,11 @@ func (t *task) update(ctx context.Context) error {
 			slog.String("namespace", object.GetNamespace()),
 			slog.String("name", object.GetName()),
 		)
+
+		// Sync status fields from Kubernetes CR back to database:
+		if err := t.syncStatusFromKubernetes(ctx, object); err != nil {
+			return err
+		}
 	} else {
 		update := object.DeepCopy()
 		err = unstructured.SetNestedField(update.Object, spec, "spec")
@@ -220,6 +226,11 @@ func (t *task) update(ctx context.Context) error {
 			slog.String("namespace", object.GetNamespace()),
 			slog.String("name", object.GetName()),
 		)
+
+		// Sync status fields from Kubernetes CR back to database:
+		if err := t.syncStatusFromKubernetes(ctx, update); err != nil {
+			return err
+		}
 	}
 
 	return err
@@ -453,4 +464,42 @@ func (t *task) buildSpec() (map[string]any, error) {
 	}
 
 	return spec, nil
+}
+
+// syncStatusFromKubernetes reads status fields from the Kubernetes CR and syncs them back to the
+// database object so they can be queried via the gRPC API.
+func (t *task) syncStatusFromKubernetes(ctx context.Context, object *unstructured.Unstructured) error {
+	// Read lastRestartedAt from Kubernetes CR status
+	lastRestartedAtStr, found, err := unstructured.NestedString(object.Object, "status", "lastRestartedAt")
+	if err != nil {
+		return err
+	}
+
+	// If found, parse and set on database object
+	if found && lastRestartedAtStr != "" {
+		lastRestartedAt, err := time.Parse(time.RFC3339, lastRestartedAtStr)
+		if err != nil {
+			t.r.logger.WarnContext(
+				ctx,
+				"Failed to parse lastRestartedAt from Kubernetes CR",
+				slog.String("value", lastRestartedAtStr),
+				slog.String("error", err.Error()),
+			)
+			return nil // Don't fail the entire reconciliation for a parse error
+		}
+
+		// Set on database object
+		if !t.computeInstance.HasStatus() {
+			t.computeInstance.SetStatus(&privatev1.ComputeInstanceStatus{})
+		}
+		t.computeInstance.GetStatus().SetLastRestartedAt(timestamppb.New(lastRestartedAt))
+
+		t.r.logger.DebugContext(
+			ctx,
+			"Synced lastRestartedAt from Kubernetes to database",
+			slog.String("lastRestartedAt", lastRestartedAtStr),
+		)
+	}
+
+	return nil
 }

@@ -14,8 +14,10 @@ language governing permissions and limitations under the License.
 package computeinstance
 
 import (
+	"log/slog"
 	"testing"
 
+	"github.com/innabox/fulfillment-common/logging"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 )
@@ -24,3 +26,18 @@ func TestComputeInstance(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "ComputeInstance")
 }
+
+// Logger used for tests:
+var logger *slog.Logger
+
+var _ = BeforeSuite(func() {
+	var err error
+
+	// Create a logger that writes to the Ginkgo writer, so that the log messages will be attached to the output of
+	// the right test:
+	logger, err = logging.NewLogger().
+		SetLevel(slog.LevelDebug.String()).
+		SetWriter(GinkgoWriter).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+})
