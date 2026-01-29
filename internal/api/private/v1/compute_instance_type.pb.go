@@ -88,13 +88,13 @@ func (x ComputeInstanceState) Number() protoreflect.EnumNumber {
 type ComputeInstanceConditionType int32
 
 const (
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_UNSPECIFIED        ComputeInstanceConditionType = 0
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_PROGRESSING        ComputeInstanceConditionType = 1
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_READY              ComputeInstanceConditionType = 2
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_FAILED             ComputeInstanceConditionType = 3
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_DEGRADED           ComputeInstanceConditionType = 4
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_REBOOT_IN_PROGRESS ComputeInstanceConditionType = 5
-	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_REBOOT_FAILED      ComputeInstanceConditionType = 6
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_UNSPECIFIED         ComputeInstanceConditionType = 0
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_PROGRESSING         ComputeInstanceConditionType = 1
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_READY               ComputeInstanceConditionType = 2
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_FAILED              ComputeInstanceConditionType = 3
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_DEGRADED            ComputeInstanceConditionType = 4
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS ComputeInstanceConditionType = 5
+	ComputeInstanceConditionType_COMPUTE_INSTANCE_CONDITION_TYPE_RESTART_FAILED      ComputeInstanceConditionType = 6
 )
 
 // Enum value maps for ComputeInstanceConditionType.
@@ -105,17 +105,17 @@ var (
 		2: "COMPUTE_INSTANCE_CONDITION_TYPE_READY",
 		3: "COMPUTE_INSTANCE_CONDITION_TYPE_FAILED",
 		4: "COMPUTE_INSTANCE_CONDITION_TYPE_DEGRADED",
-		5: "COMPUTE_INSTANCE_CONDITION_TYPE_REBOOT_IN_PROGRESS",
-		6: "COMPUTE_INSTANCE_CONDITION_TYPE_REBOOT_FAILED",
+		5: "COMPUTE_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS",
+		6: "COMPUTE_INSTANCE_CONDITION_TYPE_RESTART_FAILED",
 	}
 	ComputeInstanceConditionType_value = map[string]int32{
-		"COMPUTE_INSTANCE_CONDITION_TYPE_UNSPECIFIED":        0,
-		"COMPUTE_INSTANCE_CONDITION_TYPE_PROGRESSING":        1,
-		"COMPUTE_INSTANCE_CONDITION_TYPE_READY":              2,
-		"COMPUTE_INSTANCE_CONDITION_TYPE_FAILED":             3,
-		"COMPUTE_INSTANCE_CONDITION_TYPE_DEGRADED":           4,
-		"COMPUTE_INSTANCE_CONDITION_TYPE_REBOOT_IN_PROGRESS": 5,
-		"COMPUTE_INSTANCE_CONDITION_TYPE_REBOOT_FAILED":      6,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_UNSPECIFIED":         0,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_PROGRESSING":         1,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_READY":               2,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_FAILED":              3,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_DEGRADED":            4,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS": 5,
+		"COMPUTE_INSTANCE_CONDITION_TYPE_RESTART_FAILED":      6,
 	}
 )
 
