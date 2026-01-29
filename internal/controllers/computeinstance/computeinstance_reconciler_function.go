@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"slices"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -172,13 +173,9 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Prepare the changes to the spec:
-	templateParameters, err := utils.ConvertTemplateParametersToJSON(t.computeInstance.GetSpec().GetTemplateParameters())
+	spec, err := t.buildSpec()
 	if err != nil {
 		return err
-	}
-	spec := map[string]any{
-		"templateID":         t.computeInstance.GetSpec().GetTemplate(),
-		"templateParameters": templateParameters,
 	}
 
 	// Create or update the Kubernetes object:
@@ -436,4 +433,24 @@ func (t *task) updateCondition(conditionType privatev1.ComputeInstanceConditionT
 		}.Build())
 	}
 	t.computeInstance.GetStatus().SetConditions(conditions)
+}
+
+// buildSpec constructs the spec map for the Kubernetes ComputeInstance object based on the
+// compute instance from the database.
+func (t *task) buildSpec() (map[string]any, error) {
+	templateParameters, err := utils.ConvertTemplateParametersToJSON(t.computeInstance.GetSpec().GetTemplateParameters())
+	if err != nil {
+		return nil, err
+	}
+	spec := map[string]any{
+		"templateID":         t.computeInstance.GetSpec().GetTemplate(),
+		"templateParameters": templateParameters,
+	}
+
+	// Add restartRequestedAt if present:
+	if t.computeInstance.GetSpec().HasRestartRequestedAt() {
+		spec["restartRequestedAt"] = t.computeInstance.GetSpec().GetRestartRequestedAt().AsTime().Format(time.RFC3339)
+	}
+
+	return spec, nil
 }
