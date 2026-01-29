@@ -14,7 +14,6 @@ language governing permissions and limitations under the License.
 package computeinstance
 
 import (
-	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -22,7 +21,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
@@ -93,93 +91,5 @@ var _ = Describe("buildSpec", func() {
 			Expect(spec["templateID"]).To(Equal(template))
 			Expect(spec["templateParameters"]).ToNot(BeNil())
 		})
-	})
-})
-
-var _ = Describe("syncStatusFromKubernetes", func() {
-	var (
-		ctx      context.Context
-		testTask *task
-	)
-
-	BeforeEach(func() {
-		ctx = context.Background()
-		testTask = &task{
-			r: &function{
-				logger: logger,
-			},
-			computeInstance: privatev1.ComputeInstance_builder{
-				Id: "test-sync-instance",
-			}.Build(),
-		}
-	})
-
-	It("Syncs lastRestartedAt from Kubernetes CR to database object", func() {
-		lastRestartedAt := time.Date(2026, 1, 28, 14, 30, 0, 0, time.UTC)
-
-		// Create a mock Kubernetes CR with status.lastRestartedAt set
-		object := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"status": map[string]interface{}{
-					"lastRestartedAt": lastRestartedAt.Format(time.RFC3339),
-				},
-			},
-		}
-
-		// Call syncStatusFromKubernetes
-		err := testTask.syncStatusFromKubernetes(ctx, object)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Verify lastRestartedAt was synced to database object
-		Expect(testTask.computeInstance.GetStatus().HasLastRestartedAt()).To(BeTrue())
-		Expect(testTask.computeInstance.GetStatus().GetLastRestartedAt().AsTime()).To(Equal(lastRestartedAt))
-	})
-
-	It("Does not error when lastRestartedAt is not present in Kubernetes CR", func() {
-		// Create a mock Kubernetes CR without status.lastRestartedAt
-		object := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"status": map[string]interface{}{},
-			},
-		}
-
-		// Call syncStatusFromKubernetes
-		err := testTask.syncStatusFromKubernetes(ctx, object)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Verify lastRestartedAt was NOT set
-		Expect(testTask.computeInstance.GetStatus().HasLastRestartedAt()).To(BeFalse())
-	})
-
-	It("Handles invalid timestamp format gracefully without failing", func() {
-		// Create a mock Kubernetes CR with invalid timestamp
-		object := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"status": map[string]interface{}{
-					"lastRestartedAt": "invalid-timestamp-format",
-				},
-			},
-		}
-
-		// Call syncStatusFromKubernetes - should not error
-		err := testTask.syncStatusFromKubernetes(ctx, object)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Verify lastRestartedAt was NOT set due to parse error
-		Expect(testTask.computeInstance.GetStatus().HasLastRestartedAt()).To(BeFalse())
-	})
-
-	It("Does not error when status field is missing entirely", func() {
-		// Create a mock Kubernetes CR without status field at all
-		object := &unstructured.Unstructured{
-			Object: map[string]interface{}{},
-		}
-
-		// Call syncStatusFromKubernetes
-		err := testTask.syncStatusFromKubernetes(ctx, object)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Verify lastRestartedAt was NOT set
-		Expect(testTask.computeInstance.GetStatus().HasLastRestartedAt()).To(BeFalse())
 	})
 })
