@@ -242,5 +242,20 @@ var _ = Describe("Filter translator", func() {
 			"this.id in []",
 			"false",
 		),
+		Entry(
+			"Label equals value",
+			`this.metadata.labels['mylabel'] == 'myvalue'`,
+			`labels @> '{"mylabel":"myvalue"}'`,
+		),
+		Entry(
+			"Label not equals value",
+			`this.metadata.labels['mylabel'] != 'myvalue'`,
+			`not (labels @> '{"mylabel":"myvalue"}')`,
+		),
+		Entry(
+			"Filter by label key",
+			`'mylabel' in this.metadata.labels`,
+			`labels ? 'mylabel'`,
+		),
 	)
 })

@@ -16,6 +16,7 @@ package dao
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -25,8 +26,10 @@ import (
 
 	"github.com/dustin/go-humanize/english"
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/innabox/fulfillment-service/internal/collections"
@@ -118,6 +121,8 @@ func (r *request[O]) get(ctx context.Context, id string, lock bool) (result O, e
 			finalizers,
 			creators,
 			tenants,
+			labels,
+			annotations,
 			data
 		from
 			%s
@@ -147,6 +152,8 @@ func (r *request[O]) get(ctx context.Context, id string, lock bool) (result O, e
 		finalizers []string
 		creators   []string
 		tenants    []string
+		labelsData []byte
+		annData    []byte
 		data       []byte
 	)
 	err = row.Scan(
@@ -156,6 +163,8 @@ func (r *request[O]) get(ctx context.Context, id string, lock bool) (result O, e
 		&finalizers,
 		&creators,
 		&tenants,
+		&labelsData,
+		&annData,
 		&data,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -174,7 +183,24 @@ func (r *request[O]) get(ctx context.Context, id string, lock bool) (result O, e
 	if err != nil {
 		return
 	}
-	metadata := r.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	labels, err := r.unmarshalLabels(labelsData)
+	if err != nil {
+		return
+	}
+	annotations, err := r.unmarshalAnnotations(annData)
+	if err != nil {
+		return
+	}
+	metadata := r.makeMetadata(makeMetadataArgs{
+		creationTs:  creationTs,
+		deletionTs:  deletionTs,
+		finalizers:  finalizers,
+		creators:    creators,
+		tenants:     tenants,
+		name:        name,
+		labels:      labels,
+		annotations: annotations,
+	})
 	object.SetId(id)
 	r.setMetadata(object, metadata)
 
@@ -183,9 +209,20 @@ func (r *request[O]) get(ctx context.Context, id string, lock bool) (result O, e
 	return
 }
 
+type archiveArgs struct {
+	id              string
+	creationTs      time.Time
+	deletionTs      time.Time
+	creators        []string
+	tenants         []string
+	name            string
+	labelsData      []byte
+	annotationsData []byte
+	data            []byte
+}
+
 // archive moves a deleted object to the archived table and removes it from the main table.
-func (r *request[O]) archive(ctx context.Context, id string, creationTs, deletionTs time.Time, creators []string,
-	tenants []string, name string, data []byte) error {
+func (r *request[O]) archive(ctx context.Context, args archiveArgs) error {
 	sql := fmt.Sprintf(
 		`
 		insert into archived_%s (
@@ -195,6 +232,8 @@ func (r *request[O]) archive(ctx context.Context, id string, creationTs, deletio
 			deletion_timestamp,
 			creators,
 			tenants,
+			labels,
+			annotations,
 			data
 		) values (
 		 	$1,
@@ -203,17 +242,31 @@ func (r *request[O]) archive(ctx context.Context, id string, creationTs, deletio
 			$4,
 			$5,
 			$6,
-			$7
+			$7,
+			$8,
+			$9
 		)
 		`,
 		r.dao.table,
 	)
-	_, err := r.tx.Exec(ctx, sql, id, name, creationTs, deletionTs, creators, tenants, data)
+	_, err := r.tx.Exec(
+		ctx,
+		sql,
+		args.id,
+		args.name,
+		args.creationTs,
+		args.deletionTs,
+		args.creators,
+		args.tenants,
+		args.labelsData,
+		args.annotationsData,
+		args.data,
+	)
 	if err != nil {
 		return err
 	}
 	sql = fmt.Sprintf(`delete from %s where id = $1`, r.dao.table)
-	_, err = r.tx.Exec(ctx, sql, id)
+	_, err = r.tx.Exec(ctx, sql, args.id)
 	return err
 }
 
@@ -388,19 +441,31 @@ func (r *request[O]) checkTenants(ctx context.Context, requested collections.Set
 	return nil
 }
 
-func (r *request[O]) makeMetadata(creationTs, deletionTs time.Time, finalizers []string, creators []string,
-	tenants []string, name string) metadataIface {
+type makeMetadataArgs struct {
+	creationTs  time.Time
+	deletionTs  time.Time
+	finalizers  []string
+	creators    []string
+	tenants     []string
+	name        string
+	labels      map[string]string
+	annotations map[string]*anypb.Any
+}
+
+func (r *request[O]) makeMetadata(args makeMetadataArgs) metadataIface {
 	result := r.dao.metadataTemplate.New().Interface().(metadataIface)
-	result.SetName(name)
-	if creationTs.Unix() != 0 {
-		result.SetCreationTimestamp(timestamppb.New(creationTs))
+	result.SetName(args.name)
+	if args.creationTs.Unix() != 0 {
+		result.SetCreationTimestamp(timestamppb.New(args.creationTs))
 	}
-	if deletionTs.Unix() != 0 {
-		result.SetDeletionTimestamp(timestamppb.New(deletionTs))
+	if args.deletionTs.Unix() != 0 {
+		result.SetDeletionTimestamp(timestamppb.New(args.deletionTs))
 	}
-	result.SetFinalizers(finalizers)
-	result.SetCreators(creators)
-	result.SetTenants(r.filterTenants(tenants))
+	result.SetFinalizers(args.finalizers)
+	result.SetCreators(args.creators)
+	result.SetTenants(r.filterTenants(args.tenants))
+	result.SetLabels(args.labels)
+	result.SetAnnotations(args.annotations)
 	return result
 }
 
@@ -486,6 +551,104 @@ func (r *request[O]) getFinalizers(metadata metadataIface) []string {
 	}
 	sort.Strings(list)
 	return list
+}
+
+func (r *request[O]) getLabels(metadata metadataIface) map[string]string {
+	if metadata == nil {
+		return map[string]string{}
+	}
+	labels := metadata.GetLabels()
+	if labels == nil {
+		return map[string]string{}
+	}
+	return labels
+}
+
+func (r *request[O]) getAnnotations(metadata metadataIface) map[string]*anypb.Any {
+	if metadata == nil {
+		return map[string]*anypb.Any{}
+	}
+	annotations := metadata.GetAnnotations()
+	if annotations == nil {
+		return map[string]*anypb.Any{}
+	}
+	return annotations
+}
+
+func (r *request[O]) marshalLabels(labels map[string]string) ([]byte, error) {
+	if len(labels) == 0 {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(labels)
+}
+
+func (r *request[O]) unmarshalLabels(data []byte) (map[string]string, error) {
+	if len(data) == 0 {
+		return map[string]string{}, nil
+	}
+	var labels map[string]string
+	err := json.Unmarshal(data, &labels)
+	if err != nil {
+		return nil, err
+	}
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return labels, nil
+}
+
+func (r *request[O]) marshalAnnotations(annotations map[string]*anypb.Any) ([]byte, error) {
+	if len(annotations) == 0 {
+		return []byte("{}"), nil
+	}
+	raw := make(map[string]json.RawMessage, len(annotations))
+	marshalOptions := protojson.MarshalOptions{
+		UseProtoNames: true,
+	}
+	for key, value := range annotations {
+		if value == nil {
+			raw[key] = json.RawMessage("null")
+			continue
+		}
+		encoded, err := marshalOptions.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		raw[key] = encoded
+	}
+	return json.Marshal(raw)
+}
+
+func (r *request[O]) unmarshalAnnotations(data []byte) (map[string]*anypb.Any, error) {
+	if len(data) == 0 {
+		return map[string]*anypb.Any{}, nil
+	}
+	var raw map[string]json.RawMessage
+	err := json.Unmarshal(data, &raw)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return map[string]*anypb.Any{}, nil
+	}
+	annotations := make(map[string]*anypb.Any, len(raw))
+	unmarshalOptions := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+	for key, value := range raw {
+		trimmed := bytes.TrimSpace(value)
+		if len(trimmed) == 0 || string(trimmed) == "null" {
+			annotations[key] = nil
+			continue
+		}
+		decoded := &anypb.Any{}
+		err = unmarshalOptions.Unmarshal(value, decoded)
+		if err != nil {
+			return nil, err
+		}
+		annotations[key] = decoded
+	}
+	return annotations, nil
 }
 
 // equivalent checks if two objects are equivalent. That means that they are equal except maybe in the creation and

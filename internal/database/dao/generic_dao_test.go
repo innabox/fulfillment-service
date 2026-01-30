@@ -26,7 +26,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	testsv1 "github.com/innabox/fulfillment-service/internal/api/tests/v1"
 	"github.com/innabox/fulfillment-service/internal/auth"
@@ -348,6 +352,59 @@ var _ = Describe("Generic DAO", func() {
 			Expect(object.GetMetadata().GetName()).To(Equal("my-name"))
 		})
 
+		It("Sets labels when creating", func() {
+			object := &testsv1.Object{
+				Metadata: &testsv1.Metadata{
+					Labels: map[string]string{
+						"my-label": "my-value",
+					},
+				},
+			}
+			response, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
+			Expect(object.GetMetadata().GetLabels()).To(Equal(map[string]string{
+				"my-label": "my-value",
+			}))
+
+			getResponse, err := generic.Get().SetId(object.GetId()).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			Expect(object.GetMetadata().GetLabels()).To(Equal(map[string]string{
+				"my-label": "my-value",
+			}))
+		})
+
+		It("Sets annotations when creating", func() {
+			annotationValue, err := anypb.New(wrapperspb.String("annotation-value"))
+			Expect(err).ToNot(HaveOccurred())
+
+			object := &testsv1.Object{
+				Metadata: &testsv1.Metadata{
+					Annotations: map[string]*anypb.Any{
+						"my-annotation": annotationValue,
+					},
+				},
+			}
+			response, err := generic.Create().
+				SetObject(object).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
+			annotations := object.GetMetadata().GetAnnotations()
+			Expect(annotations).To(HaveKey("my-annotation"))
+			Expect(proto.Equal(annotations["my-annotation"], annotationValue)).To(BeTrue())
+
+			getResponse, err := generic.Get().SetId(object.GetId()).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			annotations = object.GetMetadata().GetAnnotations()
+			Expect(annotations).To(HaveKey("my-annotation"))
+			Expect(proto.Equal(annotations["my-annotation"], annotationValue)).To(BeTrue())
+		})
+
 		It("Generates non empty identifiers", func() {
 			response, err := generic.Create().Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -649,6 +706,154 @@ var _ = Describe("Generic DAO", func() {
 				"my_string": "your value",
 				"my_int32": 456
 			}`))
+		})
+
+		It("Copies labels and annotations when archived on delete", func() {
+			annotationValue, err := anypb.New(wrapperspb.String("annotation-value"))
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create an object without finalizers:
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Labels: map[string]string{
+								"my-label": "my-value",
+							},
+							Annotations: map[string]*anypb.Any{
+								"my-annotation": annotationValue,
+							},
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+
+			// Delete the object:
+			_, err = generic.Delete().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that labels and annotations were archived:
+			row := tx.QueryRow(
+				ctx,
+				`
+				select
+					labels,
+					annotations
+				from
+					archived_objects
+				where
+					id = $1
+				`,
+				object.GetId(),
+			)
+			var (
+				labelsData []byte
+				annData    []byte
+			)
+			err = row.Scan(&labelsData, &annData)
+			Expect(err).ToNot(HaveOccurred())
+			var storedLabels map[string]string
+			err = json.Unmarshal(labelsData, &storedLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(storedLabels).To(Equal(map[string]string{
+				"my-label": "my-value",
+			}))
+			var storedAnnotations map[string]json.RawMessage
+			err = json.Unmarshal(annData, &storedAnnotations)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(storedAnnotations).To(HaveKey("my-annotation"))
+			marshalOptions := protojson.MarshalOptions{
+				UseProtoNames: true,
+			}
+			expectedAnnotation, err := marshalOptions.Marshal(annotationValue)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(storedAnnotations["my-annotation"]).To(MatchJSON(expectedAnnotation))
+		})
+
+		It("Copies labels and annotations when archived on update", func() {
+			annotationValue, err := anypb.New(wrapperspb.String("annotation-value"))
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create an object with finalizers:
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{"a"},
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+
+			// Delete the object:
+			_, err = generic.Delete().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Update the object removing finalizers and adding metadata:
+			annotationValue, err = anypb.New(wrapperspb.String("annotation-update"))
+			Expect(err).ToNot(HaveOccurred())
+			_, err = generic.Update().
+				SetObject(
+					testsv1.Object_builder{
+						Id: object.GetId(),
+						Metadata: testsv1.Metadata_builder{
+							Finalizers: []string{},
+							Labels: map[string]string{
+								"my-label": "my-value",
+							},
+							Annotations: map[string]*anypb.Any{
+								"my-annotation": annotationValue,
+							},
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify that labels and annotations were archived:
+			row := tx.QueryRow(
+				ctx,
+				`
+				select
+					labels,
+					annotations
+				from
+					archived_objects
+				where
+					id = $1
+				`,
+				object.GetId(),
+			)
+			var (
+				labelsData []byte
+				annData    []byte
+			)
+			err = row.Scan(&labelsData, &annData)
+			Expect(err).ToNot(HaveOccurred())
+			var storedLabels map[string]string
+			err = json.Unmarshal(labelsData, &storedLabels)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(storedLabels).To(Equal(map[string]string{
+				"my-label": "my-value",
+			}))
+			var storedAnnotations map[string]json.RawMessage
+			err = json.Unmarshal(annData, &storedAnnotations)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(storedAnnotations).To(HaveKey("my-annotation"))
+			marshalOptions := protojson.MarshalOptions{
+				UseProtoNames: true,
+			}
+			expectedAnnotation, err := marshalOptions.Marshal(annotationValue)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(storedAnnotations["my-annotation"]).To(MatchJSON(expectedAnnotation))
 		})
 
 		It("Returns not found error when deleting object that doesn't exist", func() {
@@ -1052,6 +1257,86 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 			object = getResponse.GetObject()
 			Expect(object.GetMetadata().GetName()).To(Equal("your-name"))
+		})
+
+		It("Updates labels", func() {
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Labels: map[string]string{
+								"my-label": "my-value",
+							},
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+
+			object.GetMetadata().SetLabels(map[string]string{
+				"your-label": "your-value",
+			})
+			updateResponse, err := generic.Update().
+				SetObject(object).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = updateResponse.GetObject()
+			Expect(object.GetMetadata().GetLabels()).To(Equal(map[string]string{
+				"your-label": "your-value",
+			}))
+
+			getResponse, err := generic.Get().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			Expect(object.GetMetadata().GetLabels()).To(Equal(map[string]string{
+				"your-label": "your-value",
+			}))
+		})
+
+		It("Updates annotations", func() {
+			initialAnnotation, err := anypb.New(wrapperspb.String("initial-value"))
+			Expect(err).ToNot(HaveOccurred())
+
+			response, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						Metadata: testsv1.Metadata_builder{
+							Annotations: map[string]*anypb.Any{
+								"my-annotation": initialAnnotation,
+							},
+						}.Build(),
+					}.Build(),
+				).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object := response.GetObject()
+
+			updatedAnnotation, err := anypb.New(wrapperspb.String("updated-value"))
+			Expect(err).ToNot(HaveOccurred())
+
+			object.GetMetadata().SetAnnotations(map[string]*anypb.Any{
+				"your-annotation": updatedAnnotation,
+			})
+			updateResponse, err := generic.Update().
+				SetObject(object).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = updateResponse.GetObject()
+			annotations := object.GetMetadata().GetAnnotations()
+			Expect(annotations).To(HaveKey("your-annotation"))
+			Expect(proto.Equal(annotations["your-annotation"], updatedAnnotation)).To(BeTrue())
+
+			getResponse, err := generic.Get().
+				SetId(object.GetId()).
+				Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			annotations = object.GetMetadata().GetAnnotations()
+			Expect(annotations).To(HaveKey("your-annotation"))
+			Expect(proto.Equal(annotations["your-annotation"], updatedAnnotation)).To(BeTrue())
 		})
 
 		It("Returns not found error when updating object that doesn't exist", func() {
@@ -1648,6 +1933,70 @@ var _ = Describe("Generic DAO", func() {
 				Expect(err).ToNot(HaveOccurred())
 				items = response.GetItems()
 				Expect(items).To(HaveLen(0)) // No objects should match
+			})
+
+			It("Filters by label key", func() {
+				_, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "object_with_label",
+							Metadata: testsv1.Metadata_builder{
+								Labels: map[string]string{
+									"mylabel": "myvalue",
+								},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "object_without_label",
+						}.Build(),
+					).
+					Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := generic.List().
+					SetFilter("'mylabel' in this.metadata.labels").
+					Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				items := response.GetItems()
+				Expect(items).To(HaveLen(1))
+				Expect(items[0].GetId()).To(Equal("object_with_label"))
+			})
+
+			It("Filters by absence of label key", func() {
+				_, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "object_with_label",
+							Metadata: testsv1.Metadata_builder{
+								Labels: map[string]string{
+									"mylabel": "myvalue",
+								},
+							}.Build(),
+						}.Build(),
+					).
+					Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "object_without_label",
+						}.Build(),
+					).
+					Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := generic.List().
+					SetFilter("!('mylabel' in this.metadata.labels)").
+					Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				items := response.GetItems()
+				Expect(items).To(HaveLen(1))
+				Expect(items[0].GetId()).To(Equal("object_without_label"))
 			})
 
 			It("Filters results based on tenant visibility", func() {

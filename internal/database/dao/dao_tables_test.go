@@ -131,6 +131,7 @@ var _ = Describe("Create tables", func() {
 			Expect(indexExists("test_object_by_name")).To(BeTrue())
 			Expect(indexExists("test_object_by_owner")).To(BeTrue())
 			Expect(indexExists("test_object_by_tenant")).To(BeTrue())
+			Expect(indexExists("test_object_by_label")).To(BeTrue())
 		})
 
 		It("Creates tables for multiple objects", func() {
@@ -152,12 +153,15 @@ var _ = Describe("Create tables", func() {
 			Expect(indexExists("object1_by_name")).To(BeTrue())
 			Expect(indexExists("object1_by_owner")).To(BeTrue())
 			Expect(indexExists("object1_by_tenant")).To(BeTrue())
+			Expect(indexExists("object1_by_label")).To(BeTrue())
 			Expect(indexExists("object2_by_name")).To(BeTrue())
 			Expect(indexExists("object2_by_owner")).To(BeTrue())
 			Expect(indexExists("object2_by_tenant")).To(BeTrue())
+			Expect(indexExists("object2_by_label")).To(BeTrue())
 			Expect(indexExists("object3_by_name")).To(BeTrue())
 			Expect(indexExists("object3_by_owner")).To(BeTrue())
 			Expect(indexExists("object3_by_tenant")).To(BeTrue())
+			Expect(indexExists("object3_by_label")).To(BeTrue())
 		})
 
 		It("Can be called multiple times without error", func() {
@@ -187,6 +191,8 @@ var _ = Describe("Create tables", func() {
 			Expect(columnExists("test_object", "finalizers")).To(BeTrue())
 			Expect(columnExists("test_object", "creators")).To(BeTrue())
 			Expect(columnExists("test_object", "tenants")).To(BeTrue())
+			Expect(columnExists("test_object", "labels")).To(BeTrue())
+			Expect(columnExists("test_object", "annotations")).To(BeTrue())
 			Expect(columnExists("test_object", "data")).To(BeTrue())
 		})
 
@@ -203,6 +209,8 @@ var _ = Describe("Create tables", func() {
 			Expect(columnExists("archived_test_object", "archival_timestamp")).To(BeTrue())
 			Expect(columnExists("archived_test_object", "creators")).To(BeTrue())
 			Expect(columnExists("archived_test_object", "tenants")).To(BeTrue())
+			Expect(columnExists("archived_test_object", "labels")).To(BeTrue())
+			Expect(columnExists("archived_test_object", "annotations")).To(BeTrue())
 			Expect(columnExists("archived_test_object", "data")).To(BeTrue())
 		})
 
@@ -295,6 +303,20 @@ var _ = Describe("Create tables", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(indexDef).To(ContainSubstring("gin"))
 			Expect(indexDef).To(ContainSubstring("tenants"))
+
+			// Check by_label index (should be gin):
+			err = tx.QueryRow(
+				ctx,
+				`
+				select indexdef
+				from pg_indexes
+				where schemaname = 'public'
+				and indexname = 'test_object_by_label'
+				`,
+			).Scan(&indexDef)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(indexDef).To(ContainSubstring("gin"))
+			Expect(indexDef).To(ContainSubstring("labels"))
 		})
 	})
 })

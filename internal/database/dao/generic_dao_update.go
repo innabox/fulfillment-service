@@ -80,6 +80,8 @@ func (r *UpdateRequest[O]) do(ctx context.Context) (response *UpdateResponse[O],
 	if metadata != nil {
 		name = metadata.GetName()
 	}
+	labels := r.getLabels(metadata)
+	annotations := r.getAnnotations(metadata)
 
 	// Get the tenants:
 	tenants, err := r.calculateTenants(ctx, current, r.args.object)
@@ -92,15 +94,25 @@ func (r *UpdateRequest[O]) do(ctx context.Context) (response *UpdateResponse[O],
 	if err != nil {
 		return
 	}
+	labelsData, err := r.marshalLabels(labels)
+	if err != nil {
+		return
+	}
+	annotationsData, err := r.marshalAnnotations(annotations)
+	if err != nil {
+		return
+	}
 	sql := fmt.Sprintf(
 		`
 		update %s set
 			name = $1,
 			finalizers = $2,
-			data = $3,
-			tenants = $4
+			labels = $3,
+			annotations = $4,
+			data = $5,
+			tenants = $6
 		where
-			id = $5
+			id = $7
 		returning
 			creation_timestamp,
 			deletion_timestamp,
@@ -108,7 +120,7 @@ func (r *UpdateRequest[O]) do(ctx context.Context) (response *UpdateResponse[O],
 		`,
 		r.dao.table,
 	)
-	row := r.tx.QueryRow(ctx, sql, name, finalizers, data, tenants, id)
+	row := r.tx.QueryRow(ctx, sql, name, finalizers, labelsData, annotationsData, data, tenants, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -123,7 +135,16 @@ func (r *UpdateRequest[O]) do(ctx context.Context) (response *UpdateResponse[O],
 		return
 	}
 	object := r.cloneObject(r.args.object)
-	metadata = r.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	metadata = r.makeMetadata(makeMetadataArgs{
+		creationTs:  creationTs,
+		deletionTs:  deletionTs,
+		finalizers:  finalizers,
+		creators:    creators,
+		tenants:     tenants,
+		name:        name,
+		labels:      labels,
+		annotations: annotations,
+	})
 	object.SetId(id)
 	r.setMetadata(object, metadata)
 
@@ -139,7 +160,17 @@ func (r *UpdateRequest[O]) do(ctx context.Context) (response *UpdateResponse[O],
 	// If the object has been deleted and there are no finalizers we can now archive the object and fire the
 	// delete event:
 	if deletionTs.Unix() != 0 && len(finalizers) == 0 {
-		err = r.archive(ctx, id, creationTs, deletionTs, creators, tenants, name, data)
+		err = r.archive(ctx, archiveArgs{
+			id:              id,
+			creationTs:      creationTs,
+			deletionTs:      deletionTs,
+			creators:        creators,
+			tenants:         tenants,
+			name:            name,
+			labelsData:      labelsData,
+			annotationsData: annotationsData,
+			data:            data,
+		})
 		if err != nil {
 			return
 		}

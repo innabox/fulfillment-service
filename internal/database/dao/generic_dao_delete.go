@@ -89,6 +89,8 @@ func (r *DeleteRequest[O]) do(ctx context.Context) (response *DeleteResponse, er
 			finalizers,
 			creators,
 			tenants,
+			labels,
+			annotations,
 			data
 		`,
 		r.dao.table,
@@ -111,6 +113,8 @@ func (r *DeleteRequest[O]) do(ctx context.Context) (response *DeleteResponse, er
 		finalizers []string
 		creators   []string
 		tenants    []string
+		labelsData []byte
+		annData    []byte
 		data       []byte
 	)
 	err = row.Scan(
@@ -120,6 +124,8 @@ func (r *DeleteRequest[O]) do(ctx context.Context) (response *DeleteResponse, er
 		&finalizers,
 		&creators,
 		&tenants,
+		&labelsData,
+		&annData,
 		&data,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -136,7 +142,24 @@ func (r *DeleteRequest[O]) do(ctx context.Context) (response *DeleteResponse, er
 	if err != nil {
 		return
 	}
-	metadata := r.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	labels, err := r.unmarshalLabels(labelsData)
+	if err != nil {
+		return
+	}
+	annotations, err := r.unmarshalAnnotations(annData)
+	if err != nil {
+		return
+	}
+	metadata := r.makeMetadata(makeMetadataArgs{
+		creationTs:  creationTs,
+		deletionTs:  deletionTs,
+		finalizers:  finalizers,
+		creators:    creators,
+		tenants:     tenants,
+		name:        name,
+		labels:      labels,
+		annotations: annotations,
+	})
 	object.SetId(r.args.id)
 	r.setMetadata(object, metadata)
 
@@ -150,7 +173,17 @@ func (r *DeleteRequest[O]) do(ctx context.Context) (response *DeleteResponse, er
 	}
 
 	// If there are no finalizers we can now archive the object and fire the delete event:
-	err = r.archive(ctx, r.args.id, creationTs, deletionTs, creators, tenants, name, data)
+	err = r.archive(ctx, archiveArgs{
+		id:              r.args.id,
+		creationTs:      creationTs,
+		deletionTs:      deletionTs,
+		creators:        creators,
+		tenants:         tenants,
+		name:            name,
+		labelsData:      labelsData,
+		annotationsData: annData,
+		data:            data,
+	})
 	if err != nil {
 		return
 	}

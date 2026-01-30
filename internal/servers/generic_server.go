@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -78,6 +79,8 @@ type GenericServer[O dao.Object] struct {
 type metadataIface interface {
 	proto.Message
 	GetName() string
+	GetLabels() map[string]string
+	GetAnnotations() map[string]*anypb.Any
 }
 
 // NewGenericServer creates a builder that can then be used to configure and create a new generic server.
@@ -738,7 +741,24 @@ func (s *GenericServer[O]) setPointer(pointer any, value any) {
 func (s *GenericServer[O]) validateMetadata(metadata metadataIface) error {
 	name := metadata.GetName()
 	if name != "" {
-		return s.validateName(name)
+		err := s.validateName(name)
+		if err != nil {
+			return err
+		}
+	}
+	labels := metadata.GetLabels()
+	if len(labels) > 0 {
+		err := s.validateLabels(labels)
+		if err != nil {
+			return err
+		}
+	}
+	annotations := metadata.GetAnnotations()
+	if len(annotations) > 0 {
+		err := s.validateAnnotations(annotations)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -787,6 +807,162 @@ func (s *GenericServer[O]) validateName(name string) error {
 		)
 	}
 
+	return nil
+}
+
+func (s *GenericServer[O]) validateLabels(labels map[string]string) error {
+	for key, value := range labels {
+		err := s.validateLabelKey("metadata.labels", key)
+		if err != nil {
+			return err
+		}
+		if value == "" {
+			continue
+		}
+		err = s.validateLabelNameOrValue("metadata.labels", key, "value", value)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *GenericServer[O]) validateAnnotations(annotations map[string]*anypb.Any) error {
+	for key := range annotations {
+		err := s.validateLabelKey("metadata.annotations", key)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *GenericServer[O]) validateLabelKey(field string, key string) error {
+	if key == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field '%s' has empty key", field)
+	}
+	parts := strings.Split(key, "/")
+	if len(parts) > 2 {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field '%s' key '%s' must contain at most one '/'",
+			field, key,
+		)
+	}
+	var prefix string
+	var name string
+	if len(parts) == 2 {
+		prefix = parts[0]
+		name = parts[1]
+		if prefix == "" || name == "" {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"field '%s' key '%s' must have non-empty prefix and name",
+				field, key,
+			)
+		}
+	} else {
+		name = parts[0]
+	}
+	if prefix != "" {
+		err := s.validateLabelPrefix(field, key, prefix)
+		if err != nil {
+			return err
+		}
+	}
+	return s.validateLabelNameOrValue(field, key, "name", name)
+}
+
+func (s *GenericServer[O]) validateLabelPrefix(field string, key string, prefix string) error {
+	if len(prefix) < 1 || len(prefix) > 253 {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field '%s' key '%s' prefix must be between 1 and 253 characters long",
+			field, key,
+		)
+	}
+	segments := strings.Split(prefix, ".")
+	for _, segment := range segments {
+		if segment == "" {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"field '%s' key '%s' prefix must not contain empty segments",
+				field, key,
+			)
+		}
+		err := s.validateDNSLabel(field, key, "prefix segment", segment)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *GenericServer[O]) validateDNSLabel(field string, key string, labelKind string, label string) error {
+	if len(label) > 63 {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field '%s' key '%s' %s must be at most 63 characters long",
+			field, key, labelKind,
+		)
+	}
+	for i, c := range label {
+		isLower := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		isHyphen := c == '-'
+		if !isLower && !isDigit && !isHyphen {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"field '%s' key '%s' %s must only contain lowercase letters (a-z), digits (0-9) and "+
+					"hyphens (-), but contains '%c' at position %d",
+				field, key, labelKind, c, i,
+			)
+		}
+	}
+	if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field '%s' key '%s' %s cannot start or end with a hyphen",
+			field, key, labelKind,
+		)
+	}
+	return nil
+}
+
+func (s *GenericServer[O]) validateLabelNameOrValue(field string, key string, labelKind string, value string) error {
+	if len(value) < 1 || len(value) > 63 {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field '%s' key '%s' %s must be between 1 and 63 characters long",
+			field, key, labelKind,
+		)
+	}
+	for i, c := range value {
+		isLower := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		isHyphen := c == '-'
+		isUnderscore := c == '_'
+		isDot := c == '.'
+		if !isLower && !isDigit && !isHyphen && !isUnderscore && !isDot {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"field '%s' key '%s' %s must only contain lowercase letters (a-z), digits (0-9), "+
+					"hyphens (-), underscores (_) or dots (.), but contains '%c' at position %d",
+				field, key, labelKind, c, i,
+			)
+		}
+	}
+	first := value[0]
+	last := value[len(value)-1]
+	firstIsAlnum := (first >= 'a' && first <= 'z') || (first >= '0' && first <= '9')
+	lastIsAlnum := (last >= 'a' && last <= 'z') || (last >= '0' && last <= '9')
+	if !firstIsAlnum || !lastIsAlnum {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"field '%s' key '%s' %s must start and end with an alphanumeric character",
+			field, key, labelKind,
+		)
+	}
 	return nil
 }
 

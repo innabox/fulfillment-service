@@ -75,6 +75,8 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 	if metadata != nil {
 		name = metadata.GetName()
 	}
+	labels := r.getLabels(metadata)
+	annotations := r.getAnnotations(metadata)
 
 	// Calculate the creators:
 	creators, err := r.calculateCreators(ctx)
@@ -99,6 +101,14 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 	if err != nil {
 		return
 	}
+	labelsData, err := r.marshalLabels(labels)
+	if err != nil {
+		return
+	}
+	annotationsData, err := r.marshalAnnotations(annotations)
+	if err != nil {
+		return
+	}
 	sql := fmt.Sprintf(
 		`
 		insert into %s (
@@ -107,6 +117,8 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 			finalizers,
 			creators,
 			tenants,
+			labels,
+			annotations,
 			data
 		) values (
 		 	$1,
@@ -114,7 +126,9 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 			$3,
 			$4,
 			$5,
-			$6
+			$6,
+			$7,
+			$8
 		)
 		returning
 			creation_timestamp,
@@ -122,7 +136,7 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 		`,
 		r.dao.table,
 	)
-	row := r.tx.QueryRow(ctx, sql, id, name, finalizers, creators, tenants, data)
+	row := r.tx.QueryRow(ctx, sql, id, name, finalizers, creators, tenants, labelsData, annotationsData, data)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -141,7 +155,16 @@ func (r *CreateRequest[O]) do(ctx context.Context) (response *CreateResponse[O],
 		return
 	}
 	created := r.cloneObject(r.object)
-	metadata = r.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+	metadata = r.makeMetadata(makeMetadataArgs{
+		creationTs:  creationTs,
+		deletionTs:  deletionTs,
+		finalizers:  finalizers,
+		creators:    creators,
+		tenants:     tenants,
+		name:        name,
+		labels:      labels,
+		annotations: annotations,
+	})
 	created.SetId(id)
 	r.setMetadata(created, metadata)
 

@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 
 // Metadata common to all kinds of objects.
@@ -45,4 +46,25 @@ message Metadata {
   //
   // It is optional and not unique, so multiple objecs, even created by the same user or tenant, can have the same name.
   string name = 6;
+
+  // Labels contains key-value pairs for organizing and selecting objects.
+  //
+  // Keys consist of an optional prefix and a name separated by '/':
+  //
+  // - Prefix is a DNS subdomain (RFC 1035) and must be between 1 and 253 characters long.
+  // - Name must be between 1 and 63 characters long, start and end with an alphanumeric character, and contain only
+  //   letters (a-z), digits (0-9), '-' '_' or '.'.
+  //
+  // Values are optional; when present they must be between 0 and 63 characters long and follow the same character
+  // rules as names.
+  //
+  // Labels are indexed and searchable.
+  map<string, string> labels = 7;
+
+  // Annotations contains arbitrary metadata for objects.
+  //
+  // Keys follow the same rules as label keys, including the optional DNS subdomain prefix and the 1-63 character name
+  // restrictions. Values are arbitrary protocol buffer messages stored as Any objects. Annotations aren't indexed or
+  // searchable.
+  map<string, google.protobuf.Any> annotations = 8;
 }

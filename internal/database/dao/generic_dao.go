@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/innabox/fulfillment-service/internal/auth"
@@ -56,6 +57,8 @@ type GenericDAOBuilder[O Object] struct {
 //   - `finalizers` - The list of finalizers for the object.
 //   - `creators` - The list of creators for the object.
 //   - `tenants` - The list of tenants for the object.
+//   - `labels` - The labels assigned to the object.
+//   - `annotations` - The annotations assigned to the object.
 //   - `data` - The serialized object, using the protocol buffers JSON serialization.
 //
 // Objects must have field named `id` of string type.
@@ -91,6 +94,10 @@ type metadataIface interface {
 	SetCreators([]string)
 	GetTenants() []string
 	SetTenants([]string)
+	GetLabels() map[string]string
+	SetLabels(map[string]string)
+	GetAnnotations() map[string]*anypb.Any
+	SetAnnotations(map[string]*anypb.Any)
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.

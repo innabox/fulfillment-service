@@ -68,6 +68,8 @@ func createMainTable(ctx context.Context, tx database.Tx, object string) error {
 			finalizers text[] not null default '{}',
 			creators text[] not null default '{}',
 			tenants text[] not null default '{}',
+			labels jsonb not null default '{}'::jsonb,
+			annotations jsonb not null default '{}'::jsonb,
 			data jsonb not null
 		)
 		`,
@@ -88,6 +90,8 @@ func createArchivedTable(ctx context.Context, tx database.Tx, object string) err
 			archival_timestamp timestamp with time zone not null default now(),
 			creators text[] not null default '{}',
 			tenants text[] not null default '{}',
+			labels jsonb not null default '{}'::jsonb,
+			annotations jsonb not null default '{}'::jsonb,
 			data jsonb not null
 		)
 		`,
@@ -102,6 +106,7 @@ func createIndexes(ctx context.Context, tx database.Tx, object string) error {
 		"create index if not exists %[1]s_by_name on %[1]s (name)",
 		"create index if not exists %[1]s_by_owner on %[1]s using gin (creators)",
 		"create index if not exists %[1]s_by_tenant on %[1]s using gin (tenants)",
+		"create index if not exists %[1]s_by_label on %[1]s using gin (labels)",
 	}
 	for _, format := range indexes {
 		definition := fmt.Sprintf(format, object)

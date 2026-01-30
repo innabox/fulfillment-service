@@ -16,6 +16,7 @@ package dao
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -59,6 +60,7 @@ const (
 	filterTranslatorThisKind
 	filterTranslatorMdKind
 	filterTranslatorJsonKind
+	filterTranslatorMapKind
 )
 
 // String returns a string representation of the translator result type.
@@ -80,6 +82,8 @@ func (t filterTranslatorResultKind) String() string {
 		return "metadata"
 	case filterTranslatorJsonKind:
 		return "json"
+	case filterTranslatorMapKind:
+		return "map"
 	default:
 		return fmt.Sprintf("unknown:%d", t)
 	}
@@ -102,6 +106,18 @@ type filterTranslatorResult struct {
 	// desc is the descriptor of the type of the result. Will only be set when the kind of the result is a protobuf
 	// message.
 	desc protoreflect.MessageDescriptor
+
+	// mapIndexOperand is the SQL for the map operand, if this is a map index result.
+	mapIndexOperand string
+
+	// mapIndexKey is the map key, if this is a map index result.
+	mapIndexKey string
+
+	// stringValue is the original literal value for strings, if available.
+	stringValue string
+
+	// hasStringValue indicates if stringValue is present.
+	hasStringValue bool
 }
 
 // Precendes of operators in the SQL language.
@@ -245,6 +261,8 @@ func (t *FilterTranslator[O]) translateCall(expr ast.CallExpr) (result filterTra
 		result, err = t.translateNot(funcArgs[0])
 	case operators.In:
 		result, err = t.translateIn(funcArgs)
+	case operators.Index:
+		result, err = t.translateIndex(funcArgs)
 	case "contains":
 		if len(funcArgs) != 1 {
 			err = fmt.Errorf(
@@ -324,6 +342,24 @@ func (t *FilterTranslator[O]) translateBinary(name string, left, right ast.Expr)
 			operatorSql = "is"
 			resultPrecedence = filterTranslatorIsPrecedence
 		} else {
+			if leftTr.mapIndexOperand != "" && rightTr.hasStringValue {
+				result.sql, err = t.translateMapEquals(leftTr.mapIndexOperand, leftTr.mapIndexKey, rightTr.stringValue)
+				if err != nil {
+					return
+				}
+				result.precedence = filterTranslatorComparisonPrecedence
+				result.kind = filterTranslatorBooleanKind
+				return
+			}
+			if rightTr.mapIndexOperand != "" && leftTr.hasStringValue {
+				result.sql, err = t.translateMapEquals(rightTr.mapIndexOperand, rightTr.mapIndexKey, leftTr.stringValue)
+				if err != nil {
+					return
+				}
+				result.precedence = filterTranslatorComparisonPrecedence
+				result.kind = filterTranslatorBooleanKind
+				return
+			}
 			operatorSql = "="
 			resultPrecedence = filterTranslatorComparisonPrecedence
 		}
@@ -338,6 +374,24 @@ func (t *FilterTranslator[O]) translateBinary(name string, left, right ast.Expr)
 			operatorSql = "is not"
 			resultPrecedence = filterTranslatorIsPrecedence
 		} else {
+			if leftTr.mapIndexOperand != "" && rightTr.hasStringValue {
+				result.sql, err = t.translateMapNotEquals(leftTr.mapIndexOperand, leftTr.mapIndexKey, rightTr.stringValue)
+				if err != nil {
+					return
+				}
+				result.precedence = filterTranslatorComparisonPrecedence
+				result.kind = filterTranslatorBooleanKind
+				return
+			}
+			if rightTr.mapIndexOperand != "" && leftTr.hasStringValue {
+				result.sql, err = t.translateMapNotEquals(rightTr.mapIndexOperand, rightTr.mapIndexKey, leftTr.stringValue)
+				if err != nil {
+					return
+				}
+				result.precedence = filterTranslatorComparisonPrecedence
+				result.kind = filterTranslatorBooleanKind
+				return
+			}
 			operatorSql = "!="
 			resultPrecedence = filterTranslatorComparisonPrecedence
 		}
@@ -449,6 +503,8 @@ func (t *FilterTranslator[O]) translateLiteral(value ref.Val) (result filterTran
 			result.sql = "'" + text + "'"
 		}
 		result.kind = filterTranslatorStringKind
+		result.stringValue = value
+		result.hasStringValue = true
 	default:
 		err = fmt.Errorf("unknown literal type '%T'", value)
 	}
@@ -505,6 +561,67 @@ func (t *FilterTranslator[O]) translateIn(args []ast.Expr) (result filterTransla
 	return
 }
 
+func (t *FilterTranslator[O]) translateIndex(args []ast.Expr) (result filterTranslatorResult, err error) {
+	if len(args) != 2 {
+		err = fmt.Errorf("expected exactly two arguments for index but got %d", len(args))
+		return
+	}
+	targetTr, err := t.translate(args[0])
+	if err != nil {
+		return
+	}
+	if args[1].Kind() != ast.LiteralKind {
+		err = fmt.Errorf("index must be a literal string")
+		return
+	}
+	keyLiteral := args[1].AsLiteral()
+	keyValue, ok := keyLiteral.Value().(string)
+	if !ok {
+		err = fmt.Errorf("index must be a literal string")
+		return
+	}
+	keyText, keyEscaped := t.translateString(keyValue, "")
+	var keySql string
+	if keyEscaped {
+		keySql = "e'" + keyText + "'"
+	} else {
+		keySql = "'" + keyText + "'"
+	}
+	switch targetTr.kind {
+	case filterTranslatorMapKind:
+		result.sql = fmt.Sprintf("%s->>%s", targetTr.sql, keySql)
+		result.kind = filterTranslatorStringKind
+		result.precedence = filterTranslatorMaxPrecedence
+		result.mapIndexOperand = targetTr.sql
+		result.mapIndexKey = keyValue
+	default:
+		err = fmt.Errorf("index of kind '%s' isn't supported", targetTr.kind)
+	}
+	return
+}
+
+func (t *FilterTranslator[O]) translateMapEquals(operand, key, value string) (string, error) {
+	data, err := json.Marshal(map[string]string{
+		key: value,
+	})
+	if err != nil {
+		return "", err
+	}
+	text, escaped := t.translateString(string(data), "")
+	if escaped {
+		return fmt.Sprintf("%s @> e'%s'", operand, text), nil
+	}
+	return fmt.Sprintf("%s @> '%s'", operand, text), nil
+}
+
+func (t *FilterTranslator[O]) translateMapNotEquals(operand, key, value string) (string, error) {
+	existsSql, err := t.translateMapEquals(operand, key, value)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("not (%s)", existsSql), nil
+}
+
 func (t *FilterTranslator[O]) translateInList(key ast.Expr, list ast.ListExpr) (result filterTranslatorResult, err error) {
 	values := list.Elements()
 	if len(values) == 0 {
@@ -557,12 +674,20 @@ func (t *FilterTranslator[O]) translateInField(key ast.Expr, value ast.SelectExp
 		return
 	}
 	var buffer bytes.Buffer
-	buffer.WriteString(valueTr.sql)
-	buffer.WriteString(" @> array[")
-	buffer.WriteString(keyTr.sql)
-	buffer.WriteString("]")
+	switch valueTr.kind {
+	case filterTranslatorMapKind:
+		buffer.WriteString(valueTr.sql)
+		buffer.WriteString(" ? ")
+		buffer.WriteString(keyTr.sql)
+		result.precedence = filterTranslatorOtherPrecedence
+	default:
+		buffer.WriteString(valueTr.sql)
+		buffer.WriteString(" @> array[")
+		buffer.WriteString(keyTr.sql)
+		buffer.WriteString("]")
+		result.precedence = filterTranslatorInPrecedence
+	}
 	result.sql = buffer.String()
-	result.precedence = filterTranslatorInPrecedence
 	return
 }
 
@@ -712,6 +837,16 @@ func (t *FilterTranslator[O]) translateSelectThisMdField(fieldName string,
 		result.sql = fieldName
 		result.kind = filterTranslatorStringKind
 		result.precedence = filterTranslatorMaxPrecedence
+	case "labels":
+		if testOnly {
+			result.sql = "true"
+			result.kind = filterTranslatorBooleanKind
+			result.precedence = filterTranslatorMaxPrecedence
+		} else {
+			result.sql = fieldName
+			result.kind = filterTranslatorMapKind
+			result.precedence = filterTranslatorMaxPrecedence
+		}
 	default:
 		err = fmt.Errorf("metadata doesn't have a '%s' field", fieldName)
 	}

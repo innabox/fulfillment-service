@@ -20,7 +20,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
@@ -274,6 +277,147 @@ var _ = Describe("Private host classes server", func() {
 			Expect(getResponse.GetObject().GetTitle()).To(Equal("Your title"))
 			Expect(getResponse.GetObject().GetDescription()).To(Equal("Your description."))
 		})
+
+		DescribeTable(
+			"Rejects invalid labels on create and update",
+			func(key string, value string, expected string) {
+				_, err := server.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Metadata: privatev1.Metadata_builder{
+							Labels: map[string]string{
+								key: value,
+							},
+						}.Build(),
+						Title:       "My title",
+						Description: "My description.",
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(Equal(expected))
+
+				createResponse, err := server.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Title:       "My title",
+						Description: "My description.",
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				object := createResponse.GetObject()
+
+				_, err = server.Update(ctx, privatev1.HostClassesUpdateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Id: object.GetId(),
+						Metadata: privatev1.Metadata_builder{
+							Labels: map[string]string{
+								key: value,
+							},
+						}.Build(),
+						Title:       "My title",
+						Description: "My description.",
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok = grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(Equal(expected))
+			},
+			Entry(
+				"Invalid label name character",
+				"bad^name",
+				"value",
+				"field 'metadata.labels' key 'bad^name' name must only contain lowercase letters (a-z), "+
+					"digits (0-9), hyphens (-), underscores (_) or dots (.), but contains '^' at position 3",
+			),
+			Entry(
+				"Invalid label prefix character",
+				"bad_prefix/name",
+				"value",
+				"field 'metadata.labels' key 'bad_prefix/name' prefix segment must only contain lowercase "+
+					"letters (a-z), digits (0-9) and hyphens (-), but contains '_' at position 3",
+			),
+			Entry(
+				"Invalid label value character",
+				"good",
+				"bad@value",
+				"field 'metadata.labels' key 'good' value must only contain lowercase letters (a-z), "+
+					"digits (0-9), hyphens (-), underscores (_) or dots (.), but contains '@' at position 3",
+			),
+		)
+
+		DescribeTable(
+			"Rejects invalid annotations on create and update",
+			func(key string, value string, expected string) {
+				annotationValue, err := anypb.New(&privatev1.Metadata{
+					Name: value,
+				})
+				Expect(err).ToNot(HaveOccurred())
+				_, err = server.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Metadata: privatev1.Metadata_builder{
+							Annotations: map[string]*anypb.Any{
+								key: annotationValue,
+							},
+						}.Build(),
+						Title:       "My title",
+						Description: "My description.",
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(Equal(expected))
+
+				createResponse, err := server.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Title:       "My title",
+						Description: "My description.",
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				object := createResponse.GetObject()
+
+				annotationValue, err = anypb.New(&privatev1.Metadata{
+					Name: value,
+				})
+				Expect(err).ToNot(HaveOccurred())
+				_, err = server.Update(ctx, privatev1.HostClassesUpdateRequest_builder{
+					Object: privatev1.HostClass_builder{
+						Id: object.GetId(),
+						Metadata: privatev1.Metadata_builder{
+							Annotations: map[string]*anypb.Any{
+								key: annotationValue,
+							},
+						}.Build(),
+						Title:       "My title",
+						Description: "My description.",
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok = grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(Equal(expected))
+			},
+			Entry(
+				"Invalid annotation name character",
+				"bad^annotation",
+				"value",
+				"field 'metadata.annotations' key 'bad^annotation' name must only contain lowercase letters "+
+					"(a-z), digits (0-9), hyphens (-), underscores (_) or dots (.), but contains '^' at position 3",
+			),
+			Entry(
+				"Invalid annotation prefix character",
+				"bad_prefix/annotation",
+				"value",
+				"field 'metadata.annotations' key 'bad_prefix/annotation' prefix segment must only contain "+
+					"lowercase letters (a-z), digits (0-9) and hyphens (-), but contains '_' at position 3",
+			),
+		)
 
 		It("Delete object", func() {
 			// Create the object:

@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/types/known/anypb"
+
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
@@ -122,6 +124,8 @@ func (r *ListRequest[O]) do(ctx context.Context) (response *ListResponse[O], err
 			finalizers,
 			creators,
 			tenants,
+			labels,
+			annotations,
 			data
 		from
 			 %s
@@ -177,6 +181,8 @@ func (r *ListRequest[O]) do(ctx context.Context) (response *ListResponse[O], err
 			finalizers []string
 			creators   []string
 			tenants    []string
+			labelsData []byte
+			annData    []byte
 			data       []byte
 		)
 		err = rows.Scan(
@@ -187,6 +193,8 @@ func (r *ListRequest[O]) do(ctx context.Context) (response *ListResponse[O], err
 			&finalizers,
 			&creators,
 			&tenants,
+			&labelsData,
+			&annData,
 			&data,
 		)
 		if err != nil {
@@ -197,7 +205,26 @@ func (r *ListRequest[O]) do(ctx context.Context) (response *ListResponse[O], err
 		if err != nil {
 			return
 		}
-		md := r.makeMetadata(creationTs, deletionTs, finalizers, creators, tenants, name)
+		var labels map[string]string
+		labels, err = r.unmarshalLabels(labelsData)
+		if err != nil {
+			return
+		}
+		var annotations map[string]*anypb.Any
+		annotations, err = r.unmarshalAnnotations(annData)
+		if err != nil {
+			return
+		}
+		md := r.makeMetadata(makeMetadataArgs{
+			creationTs:  creationTs,
+			deletionTs:  deletionTs,
+			finalizers:  finalizers,
+			creators:    creators,
+			tenants:     tenants,
+			name:        name,
+			labels:      labels,
+			annotations: annotations,
+		})
 		item.SetId(id)
 		r.setMetadata(item, md)
 		items = append(items, item)
