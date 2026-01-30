@@ -59,7 +59,7 @@ require (
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/itchyny/timefmt-go v0.1.6 // indirect
+	github.com/itchyny/timefmt-go v0.1.7 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -109,7 +109,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/cel-go v0.26.0
 	github.com/gorilla/handlers v1.5.2 // indirect
-	github.com/itchyny/gojq v0.12.17
+	github.com/itchyny/gojq v0.12.18
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.39.0
